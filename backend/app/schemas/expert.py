@@ -4,7 +4,8 @@ from datetime import datetime
 
 class ExpertBase(BaseModel):
     name: str
-    type: str
+    email: Optional[str] = None
+    password: Optional[str] = None
 
 class ExpertCreate(ExpertBase):
     pass
