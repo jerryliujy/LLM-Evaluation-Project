@@ -1,21 +1,25 @@
-import { createRouter, createWebHistory, RouteRecordRaw } from "vue-router";
-import HomeView from "../views/HomeView.vue";
+import { createRouter, createWebHistory, RouteRecordRaw } from 'vue-router';
+import HomeView from '../views/HomeView.vue';
+import RawQuestionManagementView from '../views/RawQuestionManagementView.vue'; // Import the new view
 
 const routes: Array<RouteRecordRaw> = [
   {
-    path: "/",
-    name: "home",
+    path: '/',
+    name: 'home',
     component: HomeView,
   },
   {
-    path: "/about",
-    name: "about",
-    // route level code-splitting
-    // this generates a separate chunk (about.[hash].js) for this route
-    // which is lazy-loaded when the route is visited.
-    component: () =>
-      import(/* webpackChunkName: "about" */ "../views/AboutView.vue"),
+    path: '/about',
+    name: 'about',
+    component: () => import(/* webpackChunkName: "about" */ '../views/AboutView.vue'),
   },
+  { // Add new route for raw question management
+    path: '/raw-question-management',
+    name: 'RawQuestionManagement',
+    component: RawQuestionManagementView,
+    // meta: { requiresAuth: true, roles: ['admin'] } // Example for future auth
+  },
+  // Define 'CreateRawQuestion' route here when implementing creation
 ];
 
 const router = createRouter({

@@ -1,3 +1,8 @@
+"""
+This script is from https://github.com/kkx9/dockerfile-llm.git
+I change its function to allow crawl multiple answers and additional information for single question.
+"""
+
 # 运行请前先运行
 # mkdir "D:\AutomationProfile\edge"
 # .\msedge.exe --remote-debugging-port=9222 --user-data-dir="D:\AutomationProfile\edge"
@@ -57,9 +62,12 @@ try:
                 tag_index = 1
                 while True:
                     try:
-                        tag = driver.find_elements(By.XPATH, f"/html/body/div[5]/div[3]/div[1]/div[3]/div[{index}]/div[2]/div[2]/div[1]/ul/li[{tag_index}]/a").text
-                        print(tag)
-                        tags.append(tag)
+                        tag_elements = driver.find_elements(By.XPATH, f"/html/body/div[5]/div[3]/div[1]/div[3]/div[{index}]/div[2]/div[2]/div[1]/ul/li[{tag_index}]/a")
+                        if len(tag_elements) == 0:
+                            break
+                        for tag_element in tag_elements:
+                            tag = tag_element.text
+                            tags.append(tag)
                         tag_index += 1
                     except Exception as e:
                         print(f"Error when fetching tag {tag_index} for question: {e}")
@@ -115,7 +123,7 @@ try:
                     "issued_at": issued_at,
                     "tags": tags,
                     "answers": [
-                        {"answer": i, "upvotes": upvote_counts[i], "answered_by": answerers[i], "answered_at": answer_dates[i]}
+                        {"answer": answers[i], "upvotes": upvote_counts[i], "answered_by": answerers[i], "answered_at": answer_dates[i]}
                         for i in range(len(answers))
                     ]
                 }
