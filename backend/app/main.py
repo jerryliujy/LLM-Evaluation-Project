@@ -1,5 +1,9 @@
 from fastapi import FastAPI
+from .db import database, models # Adjusted import
+from .routers import *
 from fastapi.middleware.cors import CORSMiddleware
+
+models.Base.metadata.create_all(bind=database.engine)
 
 app = FastAPI()
 
@@ -16,6 +20,11 @@ app.add_middleware(
     allow_methods=["*"],
     allow_headers=["*"],
 )
+
+app.include_router(raw_questions.router)
+app.include_router(raw_answers.router)
+app.include_router(expert_answers.router)
+app.include_router(experts.router)
 
 @app.get("/")
 def read_root():
