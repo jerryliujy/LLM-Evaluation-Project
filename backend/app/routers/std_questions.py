@@ -6,6 +6,7 @@ from ..db.database import get_db
 from ..models.std_question import StdQuestion
 from ..models.dataset import Dataset
 from ..models.raw_question import RawQuestion
+from ..models.tag import Tag
 from ..schemas.std_question import StdQuestionCreate, StdQuestionUpdate, StdQuestionResponse
 
 router = APIRouter(prefix="/std-questions", tags=["Standard Questions"])
@@ -215,3 +216,79 @@ def create_std_question_from_raw(
     )
     
     return create_std_question(std_question_data, db)
+
+@router.post("/{std_question_id}/tags")
+def add_tags_to_std_question(
+    std_question_id: int,
+    tag_labels: List[str],
+    db: Session = Depends(get_db)
+):
+    """为标准问题添加标签"""
+    std_question = db.query(StdQuestion).filter(StdQuestion.id == std_question_id).first()
+    if not std_question:
+        raise HTTPException(status_code=404, detail="Standard question not found")
+    
+    added_tags = []
+    for label in tag_labels:
+        # 查找或创建标签
+        tag = db.query(Tag).filter(Tag.label == label).first()
+        if not tag:
+            tag = Tag(label=label)
+            db.add(tag)
+            db.flush()
+        
+        # 添加关联（如果不存在）
+        if tag not in std_question.tags:
+            std_question.tags.append(tag)
+            added_tags.append(tag.label)
+    
+    db.commit()
+    return {"message": f"Added tags: {added_tags}"}
+
+@router.delete("/{std_question_id}/tags/{tag_label}")
+def remove_tag_from_std_question(
+    std_question_id: int,
+    tag_label: str,
+    db: Session = Depends(get_db)
+):
+    """从标准问题中移除标签"""
+    std_question = db.query(StdQuestion).filter(StdQuestion.id == std_question_id).first()
+    if not std_question:
+        raise HTTPException(status_code=404, detail="Standard question not found")
+    
+    tag = db.query(Tag).filter(Tag.label == tag_label).first()
+    if not tag:
+        raise HTTPException(status_code=404, detail="Tag not found")
+    
+    if tag in std_question.tags:
+        std_question.tags.remove(tag)
+        db.commit()
+        return {"message": f"Removed tag: {tag_label}"}
+    else:
+        raise HTTPException(status_code=400, detail="Tag not associated with this question")
+
+@router.post("/{std_question_id}/inherit-tags")
+def inherit_tags_from_raw_question(
+    std_question_id: int,
+    db: Session = Depends(get_db)
+):
+    """从原始问题继承标签到标准问题"""
+    std_question = db.query(StdQuestion).options(
+        joinedload(StdQuestion.raw_question)
+    ).filter(StdQuestion.id == std_question_id).first()
+    
+    if not std_question:
+        raise HTTPException(status_code=404, detail="Standard question not found")
+    
+    raw_question = std_question.raw_question
+    if not raw_question:
+        raise HTTPException(status_code=400, detail="No associated raw question found")
+    
+    inherited_tags = []
+    for tag in raw_question.tags:
+        if tag not in std_question.tags:
+            std_question.tags.append(tag)
+            inherited_tags.append(tag.label)
+    
+    db.commit()
+    return {"message": f"Inherited tags: {inherited_tags}"}

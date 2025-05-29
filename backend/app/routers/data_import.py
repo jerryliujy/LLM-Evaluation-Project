@@ -11,6 +11,7 @@ from ..models.raw_question import RawQuestion
 from ..models.raw_answer import RawAnswer
 from ..models.expert import Expert
 from ..models.expert_answer import ExpertAnswer
+from ..models.tag import Tag
 
 router = APIRouter(prefix="/api/data-import", tags=["data-import"])
 
@@ -66,22 +67,36 @@ async def upload_questions(
                         issued_at = datetime.strptime(item['issued_at'], '%Y-%m-%d %H:%M:%S')
                     except ValueError:
                         pass
-            
-            # 创建原始问题
+              # 创建原始问题
             raw_question = RawQuestion(
                 title=item['title'],
                 url=item.get('url'),
                 body=item.get('body'),
-                votes=int(item.get('votes', '0').replace(',', '')) if item.get('votes') else 0,
+                votes=str(item.get('votes', '0')),  # 确保为str类型
                 views=item.get('views'),
                 author=item.get('author'),
-                tags=item.get('tags'),
+                tags_json=item.get('tags'),  # 使用tags_json字段
                 issued_at=issued_at,
                 is_deleted=False
             )
             
             db.add(raw_question)
             db.flush()  # 获取生成的ID
+            
+            # 处理tags - 创建Tag对象并建立关联
+            if item.get('tags') and isinstance(item['tags'], list):
+                for tag_label in item['tags']:
+                    # 查找或创建标签
+                    tag = db.query(Tag).filter(Tag.label == tag_label).first()
+                    if not tag:
+                        tag = Tag(label=tag_label)
+                        db.add(tag)
+                        db.flush()
+                    
+                    # 建立关联
+                    if tag not in raw_question.tags:
+                        raw_question.tags.append(tag)
+            
             imported_questions += 1
             
             # 创建原始回答
@@ -96,11 +111,10 @@ async def upload_questions(
                                 answered_at = datetime.strptime(answer_data['answered_at'], '%Y-%m-%d %H:%M:%S')
                             except ValueError:
                                 pass
-                    
                     raw_answer = RawAnswer(
                         question_id=raw_question.id,
                         answer=answer_data.get('answer', ''),
-                        upvotes=answer_data.get('upvotes', 0),
+                        upvotes=str(answer_data.get('upvotes', '0')),  # 确保为str类型
                         answered_by=answer_data.get('answered_by'),
                         answered_at=answered_at,
                         is_deleted=False

@@ -1,6 +1,7 @@
 from pydantic import BaseModel
 from typing import Optional, List
 from datetime import datetime
+from .tag import TagResponse
 
 class StdQuestionBase(BaseModel):
     dataset_id: int
@@ -31,6 +32,10 @@ class StdQuestionWithDetails(StdQuestion):
     dataset: Optional[dict] = None
     raw_question: Optional[dict] = None
     std_answers: List[dict] = []
+    tags: List[TagResponse] = []
 
     class Config:
         from_attributes = True
+
+# 添加response模型的别名
+StdQuestionResponse = StdQuestionWithDetails
