@@ -1,5 +1,7 @@
 <template>
   <nav>
+    <router-link to="/">首页</router-link>
+    <router-link to="/data-import">数据导入</router-link>
     <router-link to="/raw-question-management">原始问题管理</router-link>
   </nav>
   <router-view />

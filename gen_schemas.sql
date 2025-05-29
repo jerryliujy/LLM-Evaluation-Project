@@ -1,31 +1,21 @@
--- 数据集及其版本
+-- 数据集
 CREATE TABLE `Dataset` (
   `id` INT NOT NULL AUTO_INCREMENT,
   `description` TEXT NOT NULL,
-  `create_time` DATETIME NOT NULL,
+  `create_time` DATETIME NOT NULL DEFAULT CURRENT_TIMESTAMP,
   PRIMARY KEY (`id`)
 ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4;
 
-CREATE TABLE `Version` (
-  `id` INT NOT NULL AUTO_INCREMENT,
-  `dataset_id` INT NOT NULL,
-  PRIMARY KEY (`id`),
-  KEY `idx_version_dataset` (`dataset_id`),
-  CONSTRAINT `fk_version_dataset`
-    FOREIGN KEY (`dataset_id`) REFERENCES `Dataset` (`id`)
-    ON DELETE CASCADE ON UPDATE CASCADE
-) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4;
-
--- 原始问题
+-- 原始问题 (修正字段以匹配测试数据，不直接关联dataset)
 CREATE TABLE `RawQuestion` (
   `id` INT NOT NULL AUTO_INCREMENT,
   `title` VARCHAR(512) NOT NULL,
   `url` VARCHAR(1024) DEFAULT NULL,
   `body` TEXT DEFAULT NULL,
-  `vote_count` INT NOT NULL DEFAULT 0,
-  `view_count` INT NOT NULL DEFAULT 0,
+  `votes` VARCHAR(20) NOT NULL DEFAULT 0,
+  `views` VARCHAR(20) DEFAULT NULL, -- 支持 "1.1m" 这样的格式
   `author` VARCHAR(255) DEFAULT NULL,
-  `tags` JSON DEFAULT NULL,
+  `tags_json` JSON DEFAULT NULL, -- 原始JSON格式tags，用于导入时临时存储
   `issued_at` DATETIME DEFAULT NULL,
   `created_at` DATETIME NOT NULL DEFAULT CURRENT_TIMESTAMP,
   `is_deleted` TINYINT(1) NOT NULL DEFAULT 0,
@@ -35,27 +25,25 @@ CREATE TABLE `RawQuestion` (
   UNIQUE INDEX `idx_rawquestion_url` (`url`)
 ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4;
 
--- 专家表
+-- 专家表 (简化字段)
 CREATE TABLE `Expert` (
   `id` INT NOT NULL AUTO_INCREMENT,
   `name` VARCHAR(255) NOT NULL,
-  `email` VARCHAR(255) NOT NULL,
-  `password` VARCHAR(255) NOT NULL,
-  `is_active` TINYINT(1) NOT NULL DEFAULT 1,
+  `email` VARCHAR(255) DEFAULT NULL,
   `is_deleted` TINYINT(1) NOT NULL DEFAULT 0,
   `created_at` DATETIME NOT NULL DEFAULT CURRENT_TIMESTAMP,
   PRIMARY KEY (`id`),
   INDEX `idx_expert_name` (`name`),
-  UNIQUE INDEX `idx_expert_email` (`email`)
+  INDEX `idx_expert_is_deleted` (`is_deleted`)
 ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4;
 
 -- 原始回答
 CREATE TABLE `RawAnswer` (
   `id` INT NOT NULL AUTO_INCREMENT,
   `question_id` INT NOT NULL,
-  `content` TEXT NOT NULL,
-  `vote_count` INT NOT NULL DEFAULT 0,
-  `author` VARCHAR(255) DEFAULT NULL,
+  `answer` TEXT NOT NULL,
+  `upvotes` VARCHAR(20) NOT NULL DEFAULT 0,
+  `answered_by` VARCHAR(255) DEFAULT NULL,
   `answered_at` DATETIME DEFAULT NULL,
   `is_deleted` TINYINT(1) NOT NULL DEFAULT 0,
   PRIMARY KEY (`id`),
@@ -89,65 +77,97 @@ CREATE TABLE `ExpertAnswer` (
     ON DELETE CASCADE ON UPDATE CASCADE
 ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4;
 
--- 标准问题及其来源
+-- 标准问题 (每个dataset独立存储，增加版本控制)
 CREATE TABLE `StdQuestion` (
   `id` INT NOT NULL AUTO_INCREMENT,
+  `dataset_id` INT NOT NULL,
   `raw_question_id` INT NOT NULL,
   `text` TEXT NOT NULL,
-  `create_time` DATETIME NOT NULL,
+  `create_time` DATETIME NOT NULL DEFAULT CURRENT_TIMESTAMP,
   `question_type` VARCHAR(50) NOT NULL,
   `is_valid` TINYINT(1) NOT NULL DEFAULT 1,
   `created_by` VARCHAR(100) DEFAULT NULL,
+  `version` INT NOT NULL DEFAULT 1,
+  `previous_version_id` INT DEFAULT NULL, -- 指向前一个版本
   PRIMARY KEY (`id`),
-  KEY `idx_sq_rawq` (`raw_question_id`),
+  INDEX `idx_stdquestion_dataset` (`dataset_id`),
+  INDEX `idx_stdquestion_rawq` (`raw_question_id`),
+  INDEX `idx_stdquestion_version` (`version`),
+  INDEX `idx_stdquestion_valid` (`is_valid`),
+  CONSTRAINT `fk_stdquestion_dataset`
+    FOREIGN KEY (`dataset_id`) REFERENCES `Dataset` (`id`)
+    ON DELETE CASCADE ON UPDATE CASCADE,
   CONSTRAINT `fk_stdquestion_rawq`
     FOREIGN KEY (`raw_question_id`) REFERENCES `RawQuestion` (`id`)
-    ON DELETE CASCADE ON UPDATE CASCADE
+    ON DELETE CASCADE ON UPDATE CASCADE,
+  CONSTRAINT `fk_stdquestion_previous`
+    FOREIGN KEY (`previous_version_id`) REFERENCES `StdQuestion` (`id`)
+    ON DELETE SET NULL ON UPDATE CASCADE
 ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4;
 
 -- 标准回答
 CREATE TABLE `StdAnswer` (
   `id` INT NOT NULL AUTO_INCREMENT,
   `std_question_id` INT NOT NULL,
+  `answer` TEXT NOT NULL,
   `is_valid` TINYINT(1) NOT NULL DEFAULT 1,
+  `created_by` VARCHAR(100) DEFAULT NULL,
+  `create_time` DATETIME NOT NULL DEFAULT CURRENT_TIMESTAMP,
+  `version` INT NOT NULL DEFAULT 1,
+  `previous_version_id` INT DEFAULT NULL, -- 指向前一个版本
   PRIMARY KEY (`id`),
   KEY `idx_sa_stdq` (`std_question_id`),
+  INDEX `idx_stdanswer_version` (`version`),
+  INDEX `idx_stdanswer_valid` (`is_valid`),
   CONSTRAINT `fk_stdanswer_stdq`
     FOREIGN KEY (`std_question_id`) REFERENCES `StdQuestion` (`id`)
-    ON DELETE CASCADE ON UPDATE CASCADE
+    ON DELETE CASCADE ON UPDATE CASCADE,
+  CONSTRAINT `fk_stdanswer_previous`
+    FOREIGN KEY (`previous_version_id`) REFERENCES `StdAnswer` (`id`)
+    ON DELETE SET NULL ON UPDATE CASCADE
 ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4;
 
 CREATE TABLE `StdAnswerScoringPoint` (
   `id` INT NOT NULL AUTO_INCREMENT,
   `std_answer_id` INT NOT NULL,
   `scoring_point_text` TEXT NOT NULL,
-  `point_order` INT DEFAULT 0, 
+  `point_order` INT DEFAULT 0,
+  `is_valid` TINYINT(1) NOT NULL DEFAULT 1,
+  `created_by` VARCHAR(100) DEFAULT NULL,
+  `create_time` DATETIME NOT NULL DEFAULT CURRENT_TIMESTAMP,
+  `version` INT NOT NULL DEFAULT 1,
+  `previous_version_id` INT DEFAULT NULL, -- 指向前一个版本
   PRIMARY KEY (`id`),
   KEY `idx_sasp_stdanswer` (`std_answer_id`),
+  INDEX `idx_sasp_version` (`version`),
+  INDEX `idx_sasp_valid` (`is_valid`),
   CONSTRAINT `fk_sasp_stdanswer`
     FOREIGN KEY (`std_answer_id`) REFERENCES `StdAnswer` (`id`)
-    ON DELETE CASCADE ON UPDATE CASCADE
-) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4;
-
--- Dataset ↔ Std_Question 多对多
-CREATE TABLE `DatasetQuestionRecord` (
-  `dataset_id` INT NOT NULL,
-  `std_question_id` INT NOT NULL,
-  PRIMARY KEY (`dataset_id`,`std_question_id`),
-  KEY `idx_dsq_dataset` (`dataset_id`),
-  KEY `idx_dsq_stdq` (`std_question_id`),
-  CONSTRAINT `fk_dsq_dataset`
-    FOREIGN KEY (`dataset_id`) REFERENCES `Dataset` (`id`)
     ON DELETE CASCADE ON UPDATE CASCADE,
-  CONSTRAINT `fk_dsq_stdquestion`
-    FOREIGN KEY (`std_question_id`) REFERENCES `StdQuestion` (`id`)
-    ON DELETE CASCADE ON UPDATE CASCADE
+  CONSTRAINT `fk_sasp_previous`
+    FOREIGN KEY (`previous_version_id`) REFERENCES `StdAnswerScoringPoint` (`id`)
+    ON DELETE SET NULL ON UPDATE CASCADE
 ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4;
 
 -- 标签与标准问题的多对多
 CREATE TABLE `Tag` (
   `label` VARCHAR(100) NOT NULL,
   PRIMARY KEY (`label`)
+) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4;
+
+-- 原始问题与标签的关联表
+CREATE TABLE `RawQuestionTagRecords` (
+  `raw_question_id` INT NOT NULL,
+  `tag_label` VARCHAR(100) NOT NULL,
+  PRIMARY KEY (`raw_question_id`,`tag_label`),
+  KEY `idx_rqt_rawq` (`raw_question_id`),
+  KEY `idx_rqt_tag` (`tag_label`),
+  CONSTRAINT `fk_rqt_rawq`
+    FOREIGN KEY (`raw_question_id`) REFERENCES `RawQuestion` (`id`)
+    ON DELETE CASCADE ON UPDATE CASCADE,
+  CONSTRAINT `fk_rqt_tag`
+    FOREIGN KEY (`tag_label`) REFERENCES `Tag` (`label`)
+    ON DELETE CASCADE ON UPDATE CASCADE
 ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4;
 
 CREATE TABLE `QuestionTagRecords` (
@@ -202,7 +222,7 @@ CREATE TABLE `Evaluation` (
   `std_question_id` INT NOT NULL,
   `llm_answer_id` INT NOT NULL,
   `score` DECIMAL(5,2) DEFAULT NULL,
-  `eval_method` VARCHAR(100) DEFAULT NULL,
+  `eval_by` VARCHAR(100) DEFAULT NULL,
   PRIMARY KEY (`std_question_id`,`llm_answer_id`),
   KEY `idx_eval_stdq` (`std_question_id`),
   KEY `idx_eval_llma` (`llm_answer_id`),

@@ -26,6 +26,11 @@ app.include_router(raw_questions.router)
 app.include_router(raw_answers.router)
 app.include_router(expert_answers.router)
 app.include_router(experts.router)
+from .routers import data_import, datasets, std_questions, std_answers
+app.include_router(data_import.router)
+app.include_router(datasets.router)
+app.include_router(std_questions.router)
+app.include_router(std_answers.router)
 
 @app.get("/")
 def read_root():

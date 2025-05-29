@@ -8,9 +8,9 @@ class RawAnswer(Base):
 
     id = Column(Integer, primary_key=True, index=True)
     question_id = Column(Integer, ForeignKey("RawQuestion.id"), nullable=False, index=True)
-    content = Column(Text, nullable=False)
-    vote_count = Column(Integer, default=0)
-    author = Column(String(255), nullable=True)
+    answer = Column(Text, nullable=False)  # 改为answer匹配测试数据
+    upvotes = Column(String(20), default=0)   # 改为upvotes匹配测试数据
+    answered_by = Column(String(255), nullable=True)  # 改为answered_by匹配测试数据
     answered_at = Column(DateTime, nullable=True) 
     is_deleted = Column(Boolean, default=False, nullable=False, index=True)
 

@@ -13,7 +13,6 @@ class ExpertCreate(ExpertBase):
 class Expert(ExpertBase):
     id: int
     created_at: datetime
-    is_active: bool
     is_deleted: bool
 
     class Config:
