@@ -18,5 +18,5 @@ class RawQuestion(Base):
     created_at = Column(DateTime(timezone=True), server_default=func.now())  # 记录入库时间
     is_deleted = Column(Boolean, default=False, nullable=False, index=True)
 
-    raw_answers = relationship("RawAnswer", back_populates="RawQuestion", cascade="all, delete-orphan", lazy="selectin")
-    expert_answers = relationship("ExpertAnswer", back_populates="RawQuestion", cascade="all, delete-orphan", lazy="selectin")
+    raw_answers = relationship("RawAnswer", back_populates="question", cascade="all, delete-orphan", lazy="selectin")
+    expert_answers = relationship("ExpertAnswer", back_populates="question", cascade="all, delete-orphan", lazy="selectin")

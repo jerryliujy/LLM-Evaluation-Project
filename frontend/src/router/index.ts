@@ -1,21 +1,23 @@
-import { createRouter, createWebHistory, RouteRecordRaw } from 'vue-router';
-import HomeView from '../views/HomeView.vue';
-import RawQuestionManagementView from '../views/RawQuestionManagementView.vue'; // Import the new view
+import { createRouter, createWebHistory, RouteRecordRaw } from "vue-router";
+import HomeView from "../views/HomeView.vue";
+import RawQuestionManagementView from "../views/RawQuestionManagementView.vue"; // Import the new view
 
 const routes: Array<RouteRecordRaw> = [
   {
-    path: '/',
-    name: 'home',
+    path: "/",
+    name: "home",
     component: HomeView,
   },
   {
-    path: '/about',
-    name: 'about',
-    component: () => import(/* webpackChunkName: "about" */ '../views/AboutView.vue'),
+    path: "/about",
+    name: "about",
+    component: () =>
+      import(/* webpackChunkName: "about" */ "../views/AboutView.vue"),
   },
-  { // Add new route for raw question management
-    path: '/raw-question-management',
-    name: 'RawQuestionManagement',
+  {
+    // Add new route for raw question management
+    path: "/raw-question-management",
+    name: "RawQuestionManagement",
     component: RawQuestionManagementView,
     // meta: { requiresAuth: true, roles: ['admin'] } // Example for future auth
   },

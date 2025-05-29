@@ -1,4 +1,4 @@
-import { RawAnswer, ExpertAnswer } from './answers';
+import { RawAnswer, ExpertAnswer } from "./answers";
 
 export interface RawQuestion {
   id: number;

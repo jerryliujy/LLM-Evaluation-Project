@@ -1,5 +1,6 @@
 from fastapi import FastAPI
-from .db import database, models # Adjusted import
+from .db import database
+from . import models  # Import models module
 from .routers import *
 from fastapi.middleware.cors import CORSMiddleware
 
