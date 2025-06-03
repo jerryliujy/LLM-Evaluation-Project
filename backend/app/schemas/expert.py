@@ -10,6 +10,15 @@ class ExpertBase(BaseModel):
 class ExpertCreate(ExpertBase):
     pass
 
+class ExpertLogin(BaseModel):
+    email: str
+    password: str
+
+class ExpertLoginResponse(BaseModel):
+    expert: 'Expert'
+    access_token: Optional[str] = None
+    token_type: Optional[str] = None
+
 class Expert(ExpertBase):
     id: int
     created_at: datetime
@@ -17,3 +26,6 @@ class Expert(ExpertBase):
 
     class Config:
         orm_mode = True
+
+# 解决前向引用
+ExpertLoginResponse.update_forward_refs()

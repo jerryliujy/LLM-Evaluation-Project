@@ -1,9 +1,11 @@
 from fastapi import APIRouter, Depends, HTTPException, UploadFile, File, Form
 from sqlalchemy.orm import Session
 from typing import List, Optional
+from pydantic import BaseModel
 import json
 import io
 from datetime import datetime
+from pydantic import BaseModel
 
 from ..db.database import get_db
 from ..models.dataset import Dataset
@@ -14,6 +16,9 @@ from ..models.expert_answer import ExpertAnswer
 from ..models.tag import Tag
 
 router = APIRouter(prefix="/api/data-import", tags=["data-import"])
+
+class JsonDataImport(BaseModel):
+    data: List[dict]
 
 @router.post("/dataset")
 async def create_dataset(
@@ -50,10 +55,10 @@ async def upload_questions(
         raise HTTPException(status_code=400, detail="Invalid JSON file")
     except Exception as e:
         raise HTTPException(status_code=400, detail=f"Error reading file: {str(e)}")
-    
-    # 处理数据
+      # 处理数据
     imported_questions = 0
     imported_answers = 0
+    imported_expert_answers = 0
     
     try:
         for item in data:
@@ -98,8 +103,7 @@ async def upload_questions(
                         raw_question.tags.append(tag)
             
             imported_questions += 1
-            
-            # 创建原始回答
+              # 创建原始回答
             if 'answers' in item and isinstance(item['answers'], list):
                 for answer_data in item['answers']:
                     answered_at = None
@@ -122,18 +126,126 @@ async def upload_questions(
                     
                     db.add(raw_answer)
                     imported_answers += 1
+              # 创建专家回答
+            if 'expert_answers' in item and isinstance(item['expert_answers'], list):
+                for expert_answer_data in item['expert_answers']:
+                    expert_answer = ExpertAnswer(
+                        question_id=raw_question.id,
+                        content=expert_answer_data.get('content', ''),
+                        source=expert_answer_data.get('source', 'Expert Review'),
+                        vote_count=expert_answer_data.get('vote_count', 0),
+                        author=expert_answer_data.get('expert_id', 1),  # 默认使用专家ID 1
+                        is_deleted=False
+                    )
+                    
+                    db.add(expert_answer)
+                    imported_expert_answers += 1
         
         db.commit()
-        
         return {
             "message": "Raw data imported successfully",
             "imported_questions": imported_questions,
-            "imported_answers": imported_answers
+            "imported_answers": imported_answers,
+            "imported_expert_answers": imported_expert_answers
         }
         
     except Exception as e:
         db.rollback()
         raise HTTPException(status_code=500, detail=f"Error importing data: {str(e)}")
+
+@router.post("/upload-json-data")
+async def upload_json_data(
+    json_data: JsonDataImport,
+    db: Session = Depends(get_db)
+):
+    """直接接受JSON数据并导入"""
+    
+    try:
+        data = json_data.data
+        imported_questions = 0
+        imported_answers = 0
+        imported_expert_answers = 0
+        
+        for item in data:
+            # 处理发布时间
+            issued_at = None
+            if item.get('issued_at'):
+                try:
+                    issued_at = datetime.strptime(item['issued_at'], '%Y-%m-%d %H:%M')
+                except ValueError:
+                    try:
+                        issued_at = datetime.strptime(item['issued_at'], '%Y-%m-%d %H:%M:%S')
+                    except ValueError:
+                        pass
+            
+            # 创建原始问题
+            raw_question = RawQuestion(
+                title=item.get('title', ''),
+                body=item.get('body', ''),
+                url=item.get('url', ''),
+                votes=str(item.get('votes', '0')),  # 确保为str类型
+                views=item.get('views', 0),
+                author=item.get('author'),
+                tags=','.join(item.get('tags', [])) if item.get('tags') else '',
+                issued_at=issued_at,
+                is_deleted=False
+            )
+            
+            db.add(raw_question)
+            db.flush()  # 立即获取 ID
+            imported_questions += 1
+            
+            # 创建原始回答
+            if 'answers' in item and isinstance(item['answers'], list):
+                for answer_data in item['answers']:
+                    answered_at = None
+                    if answer_data.get('answered_at'):
+                        try:
+                            answered_at = datetime.strptime(answer_data['answered_at'], '%Y-%m-%d %H:%M')
+                        except ValueError:
+                            try:
+                                answered_at = datetime.strptime(answer_data['answered_at'], '%Y-%m-%d %H:%M:%S')
+                            except ValueError:
+                                pass
+                    
+                    raw_answer = RawAnswer(
+                        question_id=raw_question.id,
+                        answer=answer_data.get('answer', ''),
+                        upvotes=str(answer_data.get('upvotes', '0')),
+                        answered_by=answer_data.get('answered_by'),
+                        answered_at=answered_at,
+                        is_deleted=False
+                    )
+                    
+                    db.add(raw_answer)
+                    imported_answers += 1
+            
+            # 创建专家回答
+            if 'expert_answers' in item and isinstance(item['expert_answers'], list):
+                for expert_answer_data in item['expert_answers']:
+                    expert_answer = ExpertAnswer(
+                        question_id=raw_question.id,
+                        content=expert_answer_data.get('content', ''),
+                        source=expert_answer_data.get('source', 'Expert Review'),
+                        vote_count=expert_answer_data.get('vote_count', 0),
+                        author=expert_answer_data.get('expert_id', 1),
+                        is_deleted=False
+                    )
+                    
+                    db.add(expert_answer)
+                    imported_expert_answers += 1
+        
+        db.commit()
+        return {
+            "message": "JSON data imported successfully",
+            "imported_questions": imported_questions,
+            "imported_answers": imported_answers,
+            "imported_expert_answers": imported_expert_answers
+        }
+        
+    except Exception as e:
+        db.rollback()
+        raise HTTPException(status_code=500, detail=f"Error importing JSON data: {str(e)}")
 
 @router.get("/datasets")
 async def list_datasets(db: Session = Depends(get_db)):

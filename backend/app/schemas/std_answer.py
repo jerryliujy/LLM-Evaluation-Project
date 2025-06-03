@@ -49,3 +49,14 @@ class StdAnswerWithDetails(StdAnswer):
 
     class Config:
         from_attributes = True
+
+# 添加缺失的响应类
+class StdAnswerScoringPointResponse(StdAnswerScoringPoint):
+    """标准答案评分点响应模型"""
+    class Config:
+        from_attributes = True
+
+class StdAnswerResponse(StdAnswerWithDetails):
+    """标准答案响应模型"""
+    class Config:
+        from_attributes = True

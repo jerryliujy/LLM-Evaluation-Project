@@ -1,7 +1,9 @@
 from pydantic import BaseModel
-from typing import Optional, List
+from typing import Optional, List, TYPE_CHECKING, ForwardRef
 from datetime import datetime
-from .tag import TagResponse
+
+if TYPE_CHECKING:
+    from .tag import TagResponse
 
 class StdQuestionBase(BaseModel):
     dataset_id: int
@@ -32,7 +34,7 @@ class StdQuestionWithDetails(StdQuestion):
     dataset: Optional[dict] = None
     raw_question: Optional[dict] = None
     std_answers: List[dict] = []
-    tags: List[TagResponse] = []
+    # 移除tags字段避免循环导入
 
     class Config:
         from_attributes = True

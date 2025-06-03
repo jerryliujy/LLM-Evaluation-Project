@@ -1,9 +1,11 @@
 from pydantic import BaseModel
-from typing import Optional, List
+from typing import Optional, List, TYPE_CHECKING, ForwardRef
 from datetime import datetime
 from .raw_answer import RawAnswer as RawAnswerSchema
 from .expert_answer import ExpertAnswer as ExpertAnswerSchema
-from .tag import TagResponse
+
+if TYPE_CHECKING:
+    from .tag import TagResponse
 
 class RawQuestionBase(BaseModel):
     title: str
@@ -24,7 +26,7 @@ class RawQuestion(RawQuestionBase):
     created_at: datetime
     raw_answers: List[RawAnswerSchema] = []
     expert_answers: List[ExpertAnswerSchema] = []
-    tags: List[TagResponse] = []  # 关联的Tag对象
+    # 移除tags字段避免循环导入
 
     class Config:
         from_attributes = True

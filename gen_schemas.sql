@@ -9,10 +9,10 @@ CREATE TABLE `Dataset` (
 -- 原始问题 (修正字段以匹配测试数据，不直接关联dataset)
 CREATE TABLE `RawQuestion` (
   `id` INT NOT NULL AUTO_INCREMENT,
-  `title` VARCHAR(512) NOT NULL,
-  `url` VARCHAR(1024) DEFAULT NULL,
+  `title` VARCHAR(255) NOT NULL,
+  `url` VARCHAR(255) DEFAULT NULL,
   `body` TEXT DEFAULT NULL,
-  `votes` VARCHAR(20) NOT NULL DEFAULT 0,
+  `votes` VARCHAR(20) DEFAULT NULL,
   `views` VARCHAR(20) DEFAULT NULL, -- 支持 "1.1m" 这样的格式
   `author` VARCHAR(255) DEFAULT NULL,
   `tags_json` JSON DEFAULT NULL, -- 原始JSON格式tags，用于导入时临时存储
@@ -42,7 +42,7 @@ CREATE TABLE `RawAnswer` (
   `id` INT NOT NULL AUTO_INCREMENT,
   `question_id` INT NOT NULL,
   `answer` TEXT NOT NULL,
-  `upvotes` VARCHAR(20) NOT NULL DEFAULT 0,
+  `upvotes` VARCHAR(20) DEFAULT NULL,
   `answered_by` VARCHAR(255) DEFAULT NULL,
   `answered_at` DATETIME DEFAULT NULL,
   `is_deleted` TINYINT(1) NOT NULL DEFAULT 0,

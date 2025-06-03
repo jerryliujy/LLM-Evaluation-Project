@@ -39,15 +39,25 @@ def list_tags(
 @router.get("/{tag_label}", response_model=TagWithQuestionsResponse)
 def get_tag_with_questions(tag_label: str, db: Session = Depends(get_db)):
     """获取标签及其关联的问题"""
-    tag = db.query(Tag).options(
-        joinedload(Tag.raw_questions),
-        joinedload(Tag.std_questions)
-    ).filter(Tag.label == tag_label).first()
+    tag = db.query(Tag).filter(Tag.label == tag_label).first()
     
     if not tag:
         raise HTTPException(status_code=404, detail="Tag not found")
     
-    return tag
+    # 计算关联的问题数量
+    raw_questions_count = db.query(func.count(RawQuestion.id)).join(
+        RawQuestion.tags
+    ).filter(Tag.label == tag_label).scalar() or 0
+    
+    std_questions_count = db.query(func.count(StdQuestion.id)).join(
+        StdQuestion.tags
+    ).filter(Tag.label == tag_label).scalar() or 0
+    
+    return TagWithQuestionsResponse(
+        label=tag.label,
+        raw_questions_count=raw_questions_count,
+        std_questions_count=std_questions_count
+    )
 
 @router.delete("/{tag_label}")
 def delete_tag(tag_label: str, db: Session = Depends(get_db)):

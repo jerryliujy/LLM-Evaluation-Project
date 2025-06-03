@@ -1,6 +1,5 @@
-from typing import List, Optional
+from typing import List, Optional, TYPE_CHECKING
 from pydantic import BaseModel
-
 
 class TagBase(BaseModel):
     label: str
@@ -15,16 +14,10 @@ class TagResponse(TagBase):
         from_attributes = True
 
 
+# 简化版本，避免循环导入
 class TagWithQuestionsResponse(TagResponse):
-    raw_questions: Optional[List["RawQuestionResponse"]] = []
-    std_questions: Optional[List["StdQuestionResponse"]] = []
+    raw_questions_count: Optional[int] = 0
+    std_questions_count: Optional[int] = 0
 
     class Config:
         from_attributes = True
-
-
-# 防止循环导入，在需要时再导入
-from typing import TYPE_CHECKING
-if TYPE_CHECKING:
-    from .raw_question import RawQuestionResponse
-    from .std_question import StdQuestionResponse
