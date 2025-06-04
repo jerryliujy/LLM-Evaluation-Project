@@ -1,7 +1,6 @@
 from fastapi import FastAPI
 from .db import database
 from . import models  # Import models module
-from .routers import *
 from fastapi.middleware.cors import CORSMiddleware
 
 models.Base.metadata.create_all(bind=database.engine)
@@ -22,16 +21,29 @@ app.add_middleware(
     allow_headers=["*"],
 )
 
+from .routers import (
+    raw_questions, 
+    raw_answers, 
+    expert_answers, 
+    data_import, 
+    datasets, 
+    std_questions, 
+    std_answers, 
+    tags, 
+    overview, 
+    auth
+)
+
+app.include_router(auth.router)
 app.include_router(raw_questions.router)
 app.include_router(raw_answers.router)
 app.include_router(expert_answers.router)
-app.include_router(experts.router)
-from .routers import data_import, datasets, std_questions, std_answers, tags
 app.include_router(data_import.router)
 app.include_router(datasets.router)
 app.include_router(std_questions.router)
 app.include_router(std_answers.router)
 app.include_router(tags.router)
+app.include_router(overview.router)
 
 @app.get("/")
 def read_root():

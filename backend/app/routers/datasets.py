@@ -1,20 +1,29 @@
 from typing import List, Optional
 from fastapi import APIRouter, Depends, HTTPException, Query
-from sqlalchemy.orm import Session
+from sqlalchemy.orm import Session, joinedload
+from sqlalchemy import func, and_
 
-from ..db.database import get_db
-from ..models.dataset import Dataset
-from ..schemas.dataset import DatasetCreate, DatasetUpdate, DatasetResponse
+from app.db.database import get_db
+from app.models.dataset import Dataset
+from app.models.user import User
+from app.schemas.dataset import DatasetCreate, DatasetUpdate, DatasetResponse, DatasetWithStats
+from app.auth import get_current_active_user
 
-router = APIRouter(prefix="/datasets", tags=["Datasets"])
+router = APIRouter(prefix="/api/datasets", tags=["Datasets"])
 
 @router.post("/", response_model=DatasetResponse)
 def create_dataset(
     dataset: DatasetCreate,
+    current_user: User = Depends(get_current_active_user),
     db: Session = Depends(get_db)
 ):
     """创建数据集"""
-    db_dataset = Dataset(**dataset.dict())
+    db_dataset = Dataset(
+        name=dataset.name,
+        description=dataset.description,
+        created_by=current_user.id,
+        is_public=dataset.is_public
+    )
     db.add(db_dataset)
     db.commit()
     db.refresh(db_dataset)
@@ -25,10 +34,93 @@ def create_dataset(
 def list_datasets(
     skip: int = Query(0, ge=0),
     limit: int = Query(100, ge=1, le=1000),
+    created_by_id: Optional[int] = Query(None),
+    public_only: bool = Query(True),
+    current_user: User = Depends(get_current_active_user),
     db: Session = Depends(get_db)
 ):
     """获取数据集列表"""
-    return db.query(Dataset).offset(skip).limit(limit).all()
+    query = db.query(Dataset)
+    
+    # 如果不是管理员，只能看到公开的数据集或自己的数据集
+    if current_user.role != "admin":
+        query = query.filter(
+            and_(
+                Dataset.is_public == True,
+                Dataset.created_by == current_user.id
+            ) if not public_only else Dataset.is_public == True
+        )
+    elif public_only:
+        query = query.filter(Dataset.is_public == True)
+    
+    if created_by_id:
+        query = query.filter(Dataset.created_by == created_by_id)
+    
+    return query.order_by(Dataset.create_time.desc()).offset(skip).limit(limit).all()
+
+@router.get("/marketplace", response_model=List[DatasetWithStats])
+def get_datasets_marketplace(
+    skip: int = Query(0, ge=0),
+    limit: int = Query(50, ge=1, le=100),
+    current_user_id: Optional[int] = Query(None),
+    db: Session = Depends(get_db)
+):
+    """获取数据库市场列表（包含统计信息）"""
+    from ..models.raw_question import RawQuestion
+    from ..models.std_question import StdQuestion
+    from ..models.std_answer import StdAnswer
+    
+    # 基础查询，包含创建者信息
+    query = db.query(Dataset).options(joinedload(Dataset.creator))
+    
+    # 只显示公开的数据集，或者当前用户的数据集
+    if current_user_id:
+        query = query.filter(
+            (Dataset.is_public == True) | (Dataset.created_by == current_user_id)
+        )
+    else:
+        query = query.filter(Dataset.is_public == True)
+    
+    datasets = query.order_by(Dataset.create_time.desc()).offset(skip).limit(limit).all()
+    
+    # 为每个数据集添加统计信息
+    result = []
+    for dataset in datasets:
+        # 计算各种统计数据
+        raw_questions_count = db.query(func.count(RawQuestion.id.distinct())).join(
+            StdQuestion, RawQuestion.id == StdQuestion.raw_question_id
+        ).filter(
+            StdQuestion.dataset_id == dataset.id,
+            StdQuestion.is_valid == True
+        ).scalar() or 0
+        
+        std_questions_count = db.query(func.count(StdQuestion.id)).filter(
+            StdQuestion.dataset_id == dataset.id,
+            StdQuestion.is_valid == True
+        ).scalar() or 0
+        
+        std_answers_count = db.query(func.count(StdAnswer.id)).join(StdQuestion).filter(
+            StdQuestion.dataset_id == dataset.id,
+            StdQuestion.is_valid == True,
+            StdAnswer.is_valid == True
+        ).scalar() or 0
+        
+        # 创建带统计信息的数据集对象
+        dataset_with_stats = DatasetWithStats(
+            id=dataset.id,
+            name=dataset.name,
+            description=dataset.description,
+            created_by=dataset.created_by,
+            is_public=dataset.is_public,
+            create_time=dataset.create_time,
+            raw_questions_count=raw_questions_count,
+            std_questions_count=std_questions_count,
+            std_answers_count=std_answers_count,
+            creator_username=dataset.creator.username if dataset.creator else None
+        )
+        result.append(dataset_with_stats)
+    
+    return result
 
 @router.get("/{dataset_id}", response_model=DatasetResponse)
 def get_dataset(dataset_id: int, db: Session = Depends(get_db)):
@@ -117,3 +209,15 @@ def get_dataset_stats(dataset_id: int, db: Session = Depends(get_db)):
         "std_questions_count": std_questions_count,
         "std_answers_count": std_answers_count
     }
+
+@router.get("/my", response_model=List[DatasetResponse])
+def get_my_datasets(
+    skip: int = Query(0, ge=0),
+    limit: int = Query(100, ge=1, le=1000),
+    current_user: User = Depends(get_current_active_user),
+    db: Session = Depends(get_db)
+):
+    """获取当前用户的数据集列表"""
+    query = db.query(Dataset).filter(Dataset.created_by == current_user.id)
+    datasets = query.order_by(Dataset.create_time.desc()).offset(skip).limit(limit).all()
+    return datasets

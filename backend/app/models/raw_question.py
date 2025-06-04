@@ -1,7 +1,7 @@
 from sqlalchemy import Column, Integer, String, Text, DateTime, Boolean, JSON, ForeignKey
 from sqlalchemy.orm import relationship
 from sqlalchemy.sql import func
-from ..db.database import Base
+from app.db.database import Base
 
 class RawQuestion(Base):
     __tablename__ = "RawQuestion"

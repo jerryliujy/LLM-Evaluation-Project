@@ -9,7 +9,7 @@ from ..models.raw_question import RawQuestion
 from ..models.std_question import StdQuestion
 from ..schemas.tag import TagCreate, TagResponse, TagWithQuestionsResponse
 
-router = APIRouter(prefix="/tags", tags=["Tags"])
+router = APIRouter(prefix="/api/tags", tags=["Tags"])
 
 @router.post("/", response_model=TagResponse)
 def create_tag(tag: TagCreate, db: Session = Depends(get_db)):

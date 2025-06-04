@@ -10,7 +10,7 @@ class ExpertAnswerBase(BaseModel):
 
 class ExpertAnswerCreate(ExpertAnswerBase):
     question_id: int 
-    expert_id: int
+    author_id: int
 
 class ExpertAnswer(ExpertAnswerBase):
     id: int

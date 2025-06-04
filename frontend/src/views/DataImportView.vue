@@ -1,204 +1,288 @@
 <template>
   <div class="data-import-container">
     <div class="header">
-      <h2>数据导入</h2>
-      <p class="subtitle">支持导入JSON格式的问答数据到数据库</p>
-    </div>
-
-    <!-- 文件上传区域 -->
-    <div class="upload-section">
-      <h3>上传数据文件</h3>
-      <div 
-        class="upload-area" 
-        @drop="handleDrop" 
-        @dragover.prevent 
-        @dragenter.prevent
-        @dragleave="handleDragLeave"
-        :class="{ 'drag-over': isDragOver }"
-      >
-        <div v-if="!uploading" class="upload-content">
-          <div class="upload-icon">📁</div>
-          <p class="upload-text">
-            拖拽JSON文件到此处，或
-            <label class="file-input-label">
-              <input
-                type="file"
-                ref="fileInput"
-                @change="handleFileSelect"
-                accept=".json"
-                class="file-input"
-              />
-              点击选择文件
-            </label>
-          </p>
-          <p class="upload-hint">支持的格式: .json</p>
-        </div>
-
-        <div v-else class="upload-progress">
-          <div class="progress-icon">⏳</div>
-          <p>正在上传和处理数据...</p>
-          <div class="progress-bar">
-            <div class="progress-fill" :style="{ width: `${uploadProgress}%` }"></div>
-          </div>
-        </div>
-      </div>
-
-      <!-- 错误信息 -->
-      <div v-if="error" class="error-message">
-        <h4>❌ 错误</h4>
-        <p>{{ error }}</p>
-        <button @click="clearError" class="clear-error-btn">清除</button>
-      </div>
-
-      <!-- 上传结果 -->
-      <div v-if="uploadResult" class="upload-result success">
-        <h4>✅ 上传成功</h4>
-        <div class="result-stats">
-          <div class="stat-item">
-            <span class="stat-label">导入问题:</span>
-            <span class="stat-value">{{ uploadResult.imported_questions || 0 }}</span>
-          </div>
-          <div class="stat-item">
-            <span class="stat-label">导入答案:</span>
-            <span class="stat-value">{{ uploadResult.imported_answers || 0 }}</span>
-          </div>
-          <div v-if="uploadResult.imported_expert_answers" class="stat-item">
-            <span class="stat-label">专家答案:</span>
-            <span class="stat-value">{{ uploadResult.imported_expert_answers }}</span>
-          </div>
-        </div>
-      </div>
-    </div>
-
-    <!-- 数据预览 -->
-    <div v-if="previewData.length > 0" class="preview-section">
-      <h3>数据预览</h3>
-      <div class="preview-stats">
-        <div class="stat-card">
-          <div class="stat-number">{{ previewData.length }}</div>
-          <div class="stat-label">总记录数</div>
-        </div>
-        <div class="stat-card">
-          <div class="stat-number">{{ getPreviewStats().questions }}</div>
-          <div class="stat-label">问题数</div>
-        </div>
-        <div class="stat-card">
-          <div class="stat-number">{{ getPreviewStats().answers }}</div>
-          <div class="stat-label">答案数</div>
-        </div>
-      </div>
-
-      <div class="preview-table-container">
-        <table class="preview-table">
-          <thead>
-            <tr>
-              <th>标题</th>
-              <th>作者</th>
-              <th>投票数</th>
-              <th>浏览数</th>
-              <th>答案数</th>
-              <th>发布时间</th>
-            </tr>
-          </thead>
-          <tbody>
-            <tr v-for="(item, index) in previewData.slice(0, 10)" :key="index">
-              <td class="title-cell">{{ item.title }}</td>
-              <td>{{ item.author }}</td>
-              <td>{{ item.votes }}</td>
-              <td>{{ item.views }}</td>
-              <td>{{ (item.answers || []).length }}</td>
-              <td>{{ formatDate(item.issued_at) }}</td>
-            </tr>
-          </tbody>
-        </table>
-        <p v-if="previewData.length > 10" class="preview-note">
-          显示前10条记录，总共{{ previewData.length }}条
-        </p>
-      </div>
-
-      <div class="preview-actions">
-        <button @click="clearPreview" class="clear-btn">清除预览</button>
-        <button @click="confirmUpload" class="upload-btn" :disabled="uploading">
-          确认导入到数据库
+      <div class="header-left">
+        <button @click="goBackToMarketplace" class="back-btn">
+          ← 返回数据库市场
         </button>
+        <div class="title-section">
+          <h2>数据导入</h2>
+          <p class="subtitle" v-if="currentDataset">
+            当前数据库: {{ currentDataset.description }}
+          </p>
+          <p class="subtitle" v-else>
+            创建数据集并导入不同类型的数据
+          </p>
+        </div>
       </div>
     </div>
 
-    <!-- 数据库状态 -->
-    <div class="database-status">
-      <h3>数据库状态</h3>
-      <div class="status-grid">
-        <div class="status-card">
-          <div class="status-icon">❓</div>
-          <div class="status-info">
-            <div class="status-number">{{ databaseStats.raw_questions }}</div>
-            <div class="status-label">原始问题</div>
-          </div>
-        </div>
-        <div class="status-card">
-          <div class="status-icon">💬</div>
-          <div class="status-info">
-            <div class="status-number">{{ databaseStats.raw_answers }}</div>
-            <div class="status-label">原始答案</div>
-          </div>
-        </div>
-        <div class="status-card">
-          <div class="status-icon">👨‍🏫</div>
-          <div class="status-info">
-            <div class="status-number">{{ databaseStats.expert_answers }}</div>
-            <div class="status-label">专家答案</div>
-          </div>
-        </div>
-        <div class="status-card">
-          <div class="status-icon">✅</div>
-          <div class="status-info">
-            <div class="status-number">{{ databaseStats.std_questions }}</div>
-            <div class="status-label">标准问题</div>
-          </div>
-        </div>
+    <!-- 步骤指示器 -->
+    <div class="steps-indicator">
+      <div class="step" :class="{ active: currentStep === 1 }">
+        <div class="step-number">1</div>
+        <div class="step-title">选择/创建数据集</div>
       </div>
-      <button @click="refreshDatabaseStats" class="refresh-btn" :disabled="loadingStats">
-        {{ loadingStats ? '刷新中...' : '刷新统计' }}
-      </button>
+      <div class="step" :class="{ active: currentStep === 2 }">
+        <div class="step-number">2</div>
+        <div class="step-title">选择数据类型</div>
+      </div>
+      <div class="step" :class="{ active: currentStep === 3 }">
+        <div class="step-number">3</div>
+        <div class="step-title">上传数据</div>
+      </div>
     </div>
 
-    <!-- 帮助信息 -->
-    <div class="help-section">
-      <h3>数据格式说明</h3>
-      <div class="help-content">
-        <p>支持的JSON格式示例：</p>
-        <pre class="code-example">
-[
-  {
-    "title": "问题标题",
-    "body": "问题内容",
-    "author": "提问者",
-    "votes": "5",
-    "views": 100,
-    "tags": ["tag1", "tag2"],
-    "issued_at": "2024-01-01 12:00:00",
-    "url": "https://example.com/question/1",
-    "answers": [
-      {
-        "answer": "答案内容",
-        "answered_by": "回答者",
-        "upvotes": "3",
-        "answered_at": "2024-01-01 13:00:00"
-      }
-    ]
-  }
-]</pre>
+    <!-- 第一步：选择或创建数据集 -->
+    <div v-if="currentStep === 1" class="step-content">
+      <div class="dataset-section">
+        <h3>选择现有数据集或创建新数据集</h3>
+        
+        <!-- 创建新数据集 -->
+        <div v-if="isCreatingNew" class="create-form">
+          <h4>创建新数据集</h4>
+          <div class="form-group">
+            <label class="form-label" for="datasetName">数据集名称：</label>
+            <input
+              id="datasetName"
+              v-model="newDatasetName"
+              type="text"
+              placeholder="请输入数据集名称"
+              class="form-input"
+            />
+          </div>
+          <div class="form-group">
+            <label class="form-label" for="datasetDescription">数据集描述：</label>
+            <textarea
+              id="datasetDescription"
+              v-model="newDatasetDescription"
+              placeholder="请输入数据集描述"
+              class="form-input"
+              rows="3"
+            ></textarea>
+          </div>
+          <div class="form-group">
+            <label class="form-label">
+              <input
+                type="checkbox"
+                v-model="newDatasetIsPublic"
+              />
+              公开数据集
+            </label>
+          </div>
+          <div class="form-actions">
+            <button @click="createDataset" :disabled="!newDatasetName.trim() || !newDatasetDescription.trim() || creatingDataset" class="btn btn-primary">
+              {{ creatingDataset ? '创建中...' : '创建数据集' }}
+            </button>
+            <button @click="cancelCreate" class="btn btn-secondary">取消</button>
+          </div>
+        </div>
+
+        <!-- 创建新数据集按钮 -->
+        <button v-if="!isCreatingNew" @click="showCreateNew" class="create-new-btn">
+          + 创建新数据集
+        </button>
+
+        <!-- 选择现有数据集 -->
+        <div v-if="datasets.length > 0 && !isCreatingNew" class="dataset-list">
+          <h4>选择现有数据集</h4>
+          <div
+            v-for="dataset in datasets"
+            :key="dataset.id"
+            @click="selectDataset(dataset)"
+            class="dataset-item"
+            :class="{ selected: selectedDataset?.id === dataset.id }"
+          >
+            <div class="dataset-name">{{ dataset.name }}</div>
+            <div class="dataset-description">{{ dataset.description }}</div>
+            <div class="dataset-meta">
+              <span class="dataset-visibility">{{ dataset.is_public ? '公开' : '私有' }}</span>
+              <span class="dataset-date">创建时间: {{ formatDate(dataset.create_time) }}</span>
+            </div>
+          </div>
+        </div>
+
+        <div class="step-actions">
+          <div></div>
+          <button @click="goToStep(2)" :disabled="!selectedDataset" class="next-btn">
+            下一步
+          </button>
+        </div>
+      </div>
+    </div>
+
+    <!-- 第二步：选择数据类型 -->
+    <div v-if="currentStep === 2" class="step-content">
+      <div class="data-type-section">
+        <h3>选择要导入的数据类型</h3>
+        <div class="data-types">
+          <div
+            @click="selectDataType('raw-qa')"
+            class="data-type-card"
+            :class="{ selected: selectedDataType === 'raw-qa' }"
+          >
+            <div class="type-icon">📝</div>
+            <h4>原始问答数据</h4>
+            <p>包含原始问题和对应的原始回答（一对多关系）</p>
+          </div>
+          
+          <div
+            @click="selectDataType('expert-answers')"
+            class="data-type-card"
+            :class="{ selected: selectedDataType === 'expert-answers' }"
+          >
+            <div class="type-icon">👨‍🏫</div>
+            <h4>专家回答</h4>
+            <p>针对已存在问题的专家回答</p>
+          </div>
+          
+          <div
+            @click="selectDataType('std-qa')"
+            class="data-type-card disabled"
+            title="暂未实现"
+          >
+            <div class="type-icon">✅</div>
+            <h4>标准问答对</h4>
+            <p>标准化的问题和答案对（暂未实现）</p>
+          </div>
+        </div>
+
+        <div class="step-actions">
+          <button @click="goToStep(1)" class="prev-btn">上一步</button>
+          <button @click="goToStep(3)" :disabled="!selectedDataType" class="next-btn">下一步</button>
+        </div>
+      </div>
+    </div>
+
+    <!-- 第三步：上传数据 -->
+    <div v-if="currentStep === 3" class="step-content">
+      <div class="upload-section">
+        <h3>上传{{ getDataTypeLabel() }}数据</h3>
+        
+        <!-- 数据格式说明 -->
+        <div class="format-info">
+          <h4>数据格式要求：</h4>
+          <pre class="format-example">{{ getFormatExample() }}</pre>
+        </div>
+
+        <!-- 文件上传区域 -->
+        <div 
+          class="upload-area" 
+          @drop="handleDrop" 
+          @dragover.prevent 
+          @dragenter.prevent
+          @dragleave="handleDragLeave"
+          :class="{ 'drag-over': isDragOver }"
+        >
+          <div v-if="!uploading" class="upload-content">
+            <div class="upload-icon">📁</div>
+            <p class="upload-text">
+              拖拽JSON文件到此处，或
+              <label class="file-input-label">
+                <input
+                  type="file"
+                  ref="fileInput"
+                  @change="handleFileSelect"
+                  accept=".json"
+                  class="file-input"
+                />
+                点击选择文件
+              </label>
+            </p>
+          </div>
+
+          <div v-else class="upload-progress">
+            <div class="progress-icon">⏳</div>
+            <p>正在上传和处理数据...</p>
+            <div class="progress-bar">
+              <div class="progress-fill" :style="{ width: `${uploadProgress}%` }"></div>
+            </div>
+          </div>
+        </div>
+
+        <!-- 错误信息 -->
+        <div v-if="error" class="error-message">
+          <h4>❌ 错误</h4>
+          <p>{{ error }}</p>
+          <button @click="clearError" class="clear-error-btn">清除</button>
+        </div>
+
+        <!-- 数据预览 -->
+        <div v-if="previewData.length > 0" class="preview-section">
+          <h4>数据预览</h4>
+          <div class="preview-stats">
+            <span>总记录数: {{ previewData.length }}</span>
+          </div>
+          
+          <div class="preview-table-container">
+            <table class="preview-table">
+              <thead>
+                <tr>
+                  <th v-for="header in getPreviewHeaders()" :key="header">{{ header }}</th>
+                </tr>
+              </thead>
+              <tbody>
+                <tr v-for="(item, index) in previewData.slice(0, 5)" :key="index">
+                  <td v-for="header in getPreviewHeaders()" :key="header" class="preview-cell">
+                    {{ getPreviewValue(item, header) }}
+                  </td>
+                </tr>
+              </tbody>
+            </table>
+            <p v-if="previewData.length > 5" class="preview-note">
+              显示前5条记录，总共{{ previewData.length }}条
+            </p>
+          </div>
+
+          <div class="preview-actions">
+            <button @click="clearPreview" class="clear-btn">清除预览</button>
+            <button @click="confirmUpload" class="upload-btn" :disabled="uploading">
+              确认导入到数据集
+            </button>
+          </div>
+        </div>
+
+        <!-- 上传结果 -->
+        <div v-if="uploadResult" class="upload-result success">
+          <h4>✅ 导入成功</h4>
+          <div class="result-stats">
+            <div v-if="uploadResult.imported_questions" class="stat-item">
+              <span class="stat-label">导入问题:</span>
+              <span class="stat-value">{{ uploadResult.imported_questions }}</span>
+            </div>
+            <div v-if="uploadResult.imported_answers" class="stat-item">
+              <span class="stat-label">导入答案:</span>
+              <span class="stat-value">{{ uploadResult.imported_answers }}</span>
+            </div>
+            <div v-if="uploadResult.imported_expert_answers" class="stat-item">
+              <span class="stat-label">导入专家答案:</span>
+              <span class="stat-value">{{ uploadResult.imported_expert_answers }}</span>
+            </div>
+          </div>
+        </div>
+
+        <div class="step-actions">
+          <button @click="goToStep(2)" class="prev-btn">上一步</button>
+          <button @click="resetWizard" class="reset-btn">重新开始</button>
+        </div>
       </div>
     </div>
   </div>
 </template>
 
 <script setup lang="ts">
-import { ref, onMounted } from 'vue'
-import { dataImportService } from '@/services/dataImportService'
+import { ref, onMounted, computed } from 'vue'
+import { useRoute, useRouter } from 'vue-router'
+import { dataImportService, type Dataset, type DataType } from '@/services/dataImportService'
 import { databaseService } from '@/services/databaseService'
+import { datasetService } from '@/services/datasetService'
 
-// 响应式数据
+// 路由相关
+const route = useRoute()
+const router = useRouter()
+
+// 响应式数据 - 统一定义，避免重复
+const currentStep = ref(1)
 const fileInput = ref<HTMLInputElement>()
 const uploading = ref(false)
 const uploadProgress = ref(0)
@@ -206,15 +290,201 @@ const error = ref('')
 const uploadResult = ref<any>(null)
 const previewData = ref<any[]>([])
 const isDragOver = ref(false)
-const loadingStats = ref(false)
 
-const databaseStats = ref({
-  raw_questions: 0,
-  raw_answers: 0,
-  expert_answers: 0,
-  std_questions: 0,
-  std_answers: 0
+// 数据集相关
+const datasets = ref<Dataset[]>([])
+const selectedDataset = ref<Dataset | null>(null)
+const newDatasetName = ref('')
+const newDatasetDescription = ref('')
+const newDatasetIsPublic = ref(true)
+const creatingDataset = ref(false)
+const isCreatingNew = ref(false)
+
+// 数据类型选择
+const selectedDataType = ref<DataType | null>(null)
+
+// 路由参数：数据集ID
+const datasetId = computed(() => route.query.datasetId as string)
+
+// 当前数据集信息（用于显示）
+const currentDataset = computed(() => {
+  if (datasetId.value) {
+    return datasets.value.find(d => d.id.toString() === datasetId.value)
+  }
+  return selectedDataset.value
 })
+
+// 返回到数据库市场
+const goBackToMarketplace = () => {
+  router.push({ name: 'DatasetMarketplace' })
+}
+
+// 重置向导
+const resetWizard = () => {
+  currentStep.value = 1
+  selectedDataset.value = null
+  selectedDataType.value = null
+  clearError()
+  clearPreview()
+  uploadResult.value = null
+  isCreatingNew.value = false
+  newDatasetDescription.value = ''
+}
+
+// 步骤导航
+const goToStep = (step: number) => {
+  if (step === 2 && !selectedDataset.value) {
+    error.value = '请先选择或创建数据集'
+    return
+  }
+  if (step === 3 && !selectedDataType.value) {
+    error.value = '请先选择数据类型'
+    return
+  }
+  currentStep.value = step
+  clearError()
+}
+
+// 数据集管理
+const loadDatasets = async () => {
+  try {
+    const data = await dataImportService.getDatasets()
+    datasets.value = data
+  } catch (err: any) {
+    error.value = '加载数据集失败: ' + err.message
+  }
+}
+
+const selectDataset = (dataset: Dataset) => {
+  selectedDataset.value = dataset
+  isCreatingNew.value = false
+}
+
+const showCreateNew = () => {
+  isCreatingNew.value = true
+  selectedDataset.value = null
+  newDatasetName.value = ''
+  newDatasetDescription.value = ''
+  newDatasetIsPublic.value = true
+}
+
+const createDataset = async () => {
+  if (!newDatasetName.value.trim() || !newDatasetDescription.value.trim()) {
+    error.value = '请填写数据集名称和描述'
+    return
+  }
+
+  creatingDataset.value = true
+  try {
+    const result = await dataImportService.createDataset(
+      newDatasetName.value.trim(),
+      newDatasetDescription.value.trim(),
+      newDatasetIsPublic.value
+    )
+    const newDataset: Dataset = {
+      id: result.dataset_id,
+      name: result.name,
+      description: result.description,
+      create_time: new Date().toISOString()
+    }
+    
+    datasets.value.unshift(newDataset)
+    selectedDataset.value = newDataset
+    isCreatingNew.value = false
+    newDatasetName.value = ''
+    newDatasetDescription.value = ''
+    newDatasetIsPublic.value = true
+  } catch (err: any) {
+    error.value = '创建数据集失败: ' + err.message
+  } finally {
+    creatingDataset.value = false
+  }
+}
+
+const cancelCreate = () => {
+  isCreatingNew.value = false
+  newDatasetName.value = ''
+  newDatasetDescription.value = ''
+  newDatasetIsPublic.value = true
+}
+
+// 数据类型选择
+const selectDataType = (type: DataType) => {
+  if (type === 'std-qa') return // 暂未实现
+  selectedDataType.value = type
+}
+
+const getDataTypeLabel = () => {
+  const labels = {
+    'raw-qa': '原始问答数据',
+    'expert-answers': '专家回答数据',
+    'std-qa': '标准问答对'
+  }
+  return selectedDataType.value ? labels[selectedDataType.value] : ''
+}
+
+const getFormatExample = () => {
+  if (!selectedDataType.value) return ''
+  
+  const examples = {
+    'raw-qa': `[
+  {
+    "title": "问题标题",
+    "body": "问题详细内容",
+    "url": "问题链接",
+    "votes": "投票数",
+    "views": "浏览数",
+    "author": "作者",
+    "tags": ["标签1", "标签2"],
+    "issued_at": "2024-01-01 12:00",
+    "answers": [
+      {
+        "answer": "回答内容",
+        "upvotes": "赞同数",
+        "answered_by": "回答者",
+        "answered_at": "2024-01-01 13:00"
+      }
+    ]
+  }
+]`,
+    'expert-answers': `[
+  {
+    "question_id": 123,
+    "content": "专家回答内容",
+    "source": "Expert Review",
+    "vote_count": 5,
+    "expert_id": 1
+  }
+]`,
+    'std-qa': `[
+  {
+    "question": "标准问题",
+    "answer": "标准答案",
+    "category": "分类",
+    "difficulty": "difficulty_level"
+  }
+]`
+  }
+  
+  return examples[selectedDataType.value]
+}
+
+// 预览相关
+const getPreviewHeaders = () => {
+  if (!selectedDataType.value || previewData.value.length === 0) return []
+  
+  const firstItem = previewData.value[0]
+  return Object.keys(firstItem).slice(0, 5) // 只显示前5个字段
+}
+
+const getPreviewValue = (item: any, header: string) => {
+  const value = item[header]
+  if (typeof value === 'object') {
+    return JSON.stringify(value).substring(0, 50) + '...'
+  }
+  const stringValue = String(value || '')
+  return stringValue.length > 30 ? stringValue.substring(0, 30) + '...' : stringValue
+}
 
 // 拖拽处理
 const handleDrop = (event: DragEvent) => {
@@ -251,11 +521,19 @@ const handleFile = async (file: File) => {
   uploadResult.value = null
   
   try {
-    // 读取文件内容进行预览
     const text = await file.text()
     const data = JSON.parse(text)
     
     if (Array.isArray(data)) {
+      // 验证数据格式
+      if (selectedDataType.value) {
+        const validation = dataImportService.validateDataFormat(selectedDataType.value, data)
+        if (!validation.isValid) {
+          error.value = '数据格式验证失败:\n' + validation.errors.join('\n')
+          return
+        }
+      }
+      
       previewData.value = data
     } else {
       error.value = 'JSON文件应该包含一个数组'
@@ -273,6 +551,11 @@ const confirmUpload = async () => {
     return
   }
 
+  if (!selectedDataset.value || !selectedDataType.value) {
+    error.value = '请确保已选择数据集和数据类型'
+    return
+  }
+
   uploading.value = true
   uploadProgress.value = 0
   error.value = ''
@@ -285,19 +568,25 @@ const confirmUpload = async () => {
       }
     }, 200)
 
-    // 调用上传服务
-    const result = await dataImportService.uploadData(previewData.value)
+    let result
+    // 根据数据类型调用不同的上传方法
+    switch (selectedDataType.value) {
+      case 'raw-qa':
+        result = await dataImportService.uploadRawQAData(selectedDataset.value.id, previewData.value)
+        break
+      case 'expert-answers':
+        result = await dataImportService.uploadExpertAnswers(selectedDataset.value.id, previewData.value)
+        break
+      case 'std-qa':
+        result = await dataImportService.uploadStdQAData(selectedDataset.value.id, previewData.value)
+        break
+    }
     
     clearInterval(progressInterval)
     uploadProgress.value = 100
 
     uploadResult.value = result
-
-    // 清除预览数据
     previewData.value = []
-    
-    // 刷新数据库统计
-    await refreshDatabaseStats()
 
   } catch (err: any) {
     error.value = err.message || '上传失败'
@@ -308,30 +597,7 @@ const confirmUpload = async () => {
   }
 }
 
-// 刷新数据库统计
-const refreshDatabaseStats = async () => {
-  loadingStats.value = true
-  try {
-    const stats = await databaseService.getDatabaseStats()
-    databaseStats.value = stats
-  } catch (err) {
-    console.error('Failed to refresh database stats:', err)
-  } finally {
-    loadingStats.value = false
-  }
-}
-
-// 获取预览统计
-const getPreviewStats = () => {
-  const questions = previewData.value.length
-  const answers = previewData.value.reduce((total, item) => {
-    return total + (item.answers?.length || 0)
-  }, 0)
-  
-  return { questions, answers }
-}
-
-// 清除预览
+// 工具函数
 const clearPreview = () => {
   previewData.value = []
   if (fileInput.value) {
@@ -339,12 +605,10 @@ const clearPreview = () => {
   }
 }
 
-// 清除错误
 const clearError = () => {
   error.value = ''
 }
 
-// 格式化日期
 const formatDate = (dateStr: string) => {
   try {
     return new Date(dateStr).toLocaleDateString('zh-CN')
@@ -353,13 +617,24 @@ const formatDate = (dateStr: string) => {
   }
 }
 
-// 组件挂载时加载数据库统计
-onMounted(() => {
-  refreshDatabaseStats()
+// 组件挂载时加载数据集
+onMounted(async () => {
+  await loadDatasets()
+  
+  // 如果URL参数中有数据集ID，自动选择该数据集
+  if (datasetId.value) {
+    const dataset = datasets.value.find(d => d.id.toString() === datasetId.value)
+    if (dataset) {
+      selectedDataset.value = dataset
+      // 如果指定了数据集，直接跳到数据类型选择步骤
+      currentStep.value = 2
+    }
+  }
 })
 </script>
 
 <style scoped>
+/* 保持原有的CSS样式不变 */
 .data-import-container {
   max-width: 1200px;
   margin: 0 auto;
@@ -381,10 +656,244 @@ onMounted(() => {
   margin: 0;
 }
 
-.upload-section {
+/* 步骤指示器样式 */
+.steps-indicator {
+  display: flex;
+  justify-content: center;
+  margin-bottom: 40px;
+  position: relative;
+}
+
+.steps-indicator::before {
+  content: '';
+  position: absolute;
+  top: 20px;
+  left: 25%;
+  right: 25%;
+  height: 2px;
+  background: #e9ecef;
+  z-index: 1;
+}
+
+.step {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  position: relative;
+  z-index: 2;
+  min-width: 120px;
+}
+
+.step-number {
+  width: 40px;
+  height: 40px;
+  border-radius: 50%;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  font-weight: bold;
+  margin-bottom: 8px;
+  transition: all 0.3s ease;
+  background: #e9ecef;
+  color: #6c757d;
+}
+
+.step.active .step-number {
+  background: #007bff;
+  color: white;
+}
+
+.step-title {
+  font-size: 14px;
+  font-weight: 500;
+  text-align: center;
+  color: #6c757d;
+}
+
+.step.active .step-title {
+  color: #333;
+}
+
+/* 步骤内容样式 */
+.step-content {
+  background: white;
+  border-radius: 12px;
+  padding: 30px;
+  box-shadow: 0 2px 10px rgba(0, 0, 0, 0.1);
+}
+
+.step-content h3 {
+  margin: 0 0 20px 0;
+  color: #333;
+  font-size: 24px;
+}
+
+/* 数据集选择样式 */
+.create-new-btn {
+  width: 100%;
+  padding: 15px;
+  border: 2px dashed #007bff;
+  background: transparent;
+  color: #007bff;
+  border-radius: 8px;
+  cursor: pointer;
+  font-size: 16px;
+  margin-bottom: 20px;
+  transition: all 0.3s ease;
+}
+
+.create-new-btn:hover {
+  background: #f0f8ff;
+}
+
+.create-form {
+  background: #f8f9fa;
+  padding: 20px;
+  border-radius: 8px;
+  margin-bottom: 20px;
+}
+
+.form-group {
+  margin-bottom: 15px;
+}
+
+.form-label {
+  display: block;
+  margin-bottom: 5px;
+  font-weight: 500;
+  color: #333;
+}
+
+.form-input {
+  width: 100%;
+  padding: 10px;
+  border: 1px solid #ddd;
+  border-radius: 4px;
+  font-size: 14px;
+  box-sizing: border-box;
+}
+
+.form-actions {
+  display: flex;
+  gap: 10px;
+}
+
+.btn {
+  padding: 10px 20px;
+  border: none;
+  border-radius: 4px;
+  cursor: pointer;
+  font-size: 14px;
+  transition: all 0.3s ease;
+}
+
+.btn-primary {
+  background: #007bff;
+  color: white;
+}
+
+.btn-primary:hover:not(:disabled) {
+  background: #0056b3;
+}
+
+.btn-secondary {
+  background: #6c757d;
+  color: white;
+}
+
+.btn-secondary:hover {
+  background: #5a6268;
+}
+
+.btn:disabled {
+  opacity: 0.5;
+  cursor: not-allowed;
+}
+
+.dataset-list {
+  margin-bottom: 20px;
+}
+
+.dataset-item {
+  border: 2px solid #e9ecef;
+  border-radius: 8px;
+  padding: 15px;
+  margin-bottom: 10px;
+  cursor: pointer;
+  transition: all 0.3s ease;
+}
+
+.dataset-item:hover {
+  border-color: #007bff;
+  background: #f8f9fa;
+}
+
+.dataset-item.selected {
+  border-color: #007bff;
+  background: #e3f2fd;
+}
+
+.dataset-name {
+  font-weight: 600;
+  margin-bottom: 5px;
+  color: #333;
+}
+
+.dataset-date {
+  font-size: 14px;
+  color: #666;
+}
+
+/* 数据类型选择样式 */
+.data-types {
+  display: grid;
+  grid-template-columns: repeat(auto-fit, minmax(250px, 1fr));
+  gap: 20px;
   margin-bottom: 30px;
 }
 
+.data-type-card {
+  border: 2px solid #e9ecef;
+  border-radius: 12px;
+  padding: 20px;
+  text-align: center;
+  cursor: pointer;
+  transition: all 0.3s ease;
+}
+
+.data-type-card:hover:not(.disabled) {
+  border-color: #007bff;
+  transform: translateY(-2px);
+  box-shadow: 0 4px 15px rgba(0, 123, 255, 0.15);
+}
+
+.data-type-card.selected {
+  border-color: #007bff;
+  background: #f0f8ff;
+}
+
+.data-type-card.disabled {
+  opacity: 0.5;
+  cursor: not-allowed;
+}
+
+.type-icon {
+  font-size: 32px;
+  margin-bottom: 10px;
+}
+
+.data-type-card h4 {
+  margin: 0 0 8px 0;
+  color: #333;
+}
+
+.data-type-card p {
+  margin: 0;
+  color: #666;
+  font-size: 14px;
+}
+
+/* 上传区域样式 */
 .upload-area {
   border: 2px dashed #ddd;
   border-radius: 8px;
@@ -393,6 +902,7 @@ onMounted(() => {
   background: #fafafa;
   transition: all 0.3s ease;
   cursor: pointer;
+  margin-bottom: 20px;
 }
 
 .upload-area:hover,
@@ -429,12 +939,6 @@ onMounted(() => {
   display: none;
 }
 
-.upload-hint {
-  margin: 0;
-  color: #666;
-  font-size: 14px;
-}
-
 .upload-progress {
   display: flex;
   flex-direction: column;
@@ -461,8 +965,33 @@ onMounted(() => {
   transition: width 0.3s ease;
 }
 
+/* 格式信息样式 */
+.format-info {
+  margin-bottom: 20px;
+  background: #f8f9fa;
+  padding: 15px;
+  border-radius: 8px;
+}
+
+.format-info h4 {
+  margin: 0 0 10px 0;
+  color: #333;
+}
+
+.format-example {
+  background: #2d3748;
+  color: #e2e8f0;
+  padding: 15px;
+  border-radius: 6px;
+  font-size: 12px;
+  overflow-x: auto;
+  margin: 0;
+  white-space: pre;
+}
+
+/* 错误信息样式 */
 .error-message {
-  margin-top: 20px;
+  margin-bottom: 20px;
   padding: 15px;
   background: #f8d7da;
   border: 1px solid #f5c6cb;
@@ -480,8 +1009,68 @@ onMounted(() => {
   cursor: pointer;
 }
 
+/* 预览表格样式 */
+.preview-section {
+  margin-bottom: 20px;
+  background: #f8f9fa;
+  padding: 20px;
+  border-radius: 8px;
+}
+
+.preview-stats {
+  margin-bottom: 15px;
+  font-weight: 500;
+  color: #333;
+}
+
+.preview-table-container {
+  overflow-x: auto;
+  border-radius: 6px;
+  border: 1px solid #dee2e6;
+  margin-bottom: 15px;
+}
+
+.preview-table {
+  width: 100%;
+  border-collapse: collapse;
+  background: white;
+  font-size: 12px;
+}
+
+.preview-table th,
+.preview-table td {
+  padding: 8px 12px;
+  text-align: left;
+  border-bottom: 1px solid #dee2e6;
+}
+
+.preview-table th {
+  background: #f8f9fa;
+  font-weight: 600;
+  color: #333;
+}
+
+.preview-cell {
+  max-width: 150px;
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+
+.preview-note {
+  margin: 10px 0 0 0;
+  font-size: 12px;
+  color: #666;
+}
+
+.preview-actions {
+  display: flex;
+  gap: 10px;
+}
+
+/* 上传结果样式 */
 .upload-result {
-  margin-top: 20px;
+  margin-bottom: 20px;
   padding: 15px;
   border-radius: 4px;
 }
@@ -514,82 +1103,14 @@ onMounted(() => {
   font-weight: bold;
 }
 
-.preview-section {
-  margin-bottom: 30px;
-}
-
-.preview-stats {
-  display: flex;
-  gap: 15px;
-  margin-bottom: 20px;
-}
-
-.stat-card {
-  flex: 1;
-  padding: 15px;
-  background: white;
-  border: 1px solid #ddd;
-  border-radius: 8px;
-  text-align: center;
-}
-
-.stat-number {
-  font-size: 24px;
-  font-weight: bold;
-  color: #333;
-}
-
-.preview-table-container {
-  border: 1px solid #ddd;
-  border-radius: 8px;
-  overflow: hidden;
-  margin-bottom: 15px;
-}
-
-.preview-table {
-  width: 100%;
-  border-collapse: collapse;
-  font-size: 12px;
-}
-
-.preview-table th,
-.preview-table td {
-  padding: 8px;
-  text-align: left;
-  border-bottom: 1px solid #eee;
-}
-
-.preview-table th {
-  background: #f8f9fa;
-  font-weight: bold;
-}
-
-.title-cell {
-  max-width: 200px;
-  overflow: hidden;
-  text-overflow: ellipsis;
-  white-space: nowrap;
-}
-
-.preview-note {
-  padding: 10px;
-  background: #e9ecef;
-  margin: 0;
-  font-size: 12px;
-  color: #495057;
-}
-
-.preview-actions {
-  display: flex;
-  gap: 10px;
-}
-
-.clear-btn, .upload-btn, .refresh-btn {
+/* 按钮样式 */
+.clear-btn, .upload-btn, .reset-btn {
   padding: 10px 20px;
   border: none;
   border-radius: 4px;
   cursor: pointer;
   font-size: 14px;
+  transition: all 0.3s ease;
 }
 
 .clear-btn {
@@ -598,87 +1119,63 @@ onMounted(() => {
 }
 
 .upload-btn {
-  background: #007bff;
+  background: #28a745;
   color: white;
 }
 
-.refresh-btn {
-  background: #28a745;
+.reset-btn {
+  background: #17a2b8;
   color: white;
 }
 
 .clear-btn:hover,
 .upload-btn:hover:not(:disabled),
-.refresh-btn:hover:not(:disabled) {
+.reset-btn:hover {
   opacity: 0.9;
 }
 
-.upload-btn:disabled,
-.refresh-btn:disabled {
+.upload-btn:disabled {
   opacity: 0.6;
   cursor: not-allowed;
 }
 
-.database-status {
-  margin-bottom: 30px;
-}
-
-.status-grid {
-  display: grid;
-  grid-template-columns: repeat(auto-fit, minmax(200px, 1fr));
-  gap: 15px;
-  margin-bottom: 15px;
-}
-
-.status-card {
+/* 步骤操作按钮样式 */
+.step-actions {
   display: flex;
-  align-items: center;
-  gap: 15px;
-  padding: 15px;
-  background: white;
-  border: 1px solid #ddd;
-  border-radius: 8px;
-  box-shadow: 0 2px 4px rgba(0, 0, 0, 0.1);
+  justify-content: space-between;
+  margin-top: 30px;
 }
 
-.status-icon {
-  font-size: 24px;
+.prev-btn, .next-btn {
+  padding: 12px 24px;
+  border: none;
+  border-radius: 6px;
+  font-size: 16px;
+  cursor: pointer;
+  transition: all 0.3s ease;
 }
 
-.status-info {
-  display: flex;
-  flex-direction: column;
-  gap: 5px;
+.prev-btn {
+  background: #6c757d;
+  color: white;
 }
 
-.status-number {
-  font-size: 24px;
-  font-weight: bold;
-  color: #333;
+.prev-btn:hover {
+  background: #5a6268;
 }
 
-.status-label {
-  font-size: 12px;
-  color: #666;
+.next-btn {
+  background: #007bff;
+  color: white;
 }
 
-.help-section {
-  background: #f8f9fa;
-  padding: 20px;
-  border-radius: 8px;
+.next-btn:hover:not(:disabled) {
+  background: #0056b3;
 }
 
-.help-content {
-  margin-top: 15px;
-}
-
-.code-example {
-  background: #2d3748;
-  color: #e2e8f0;
-  padding: 15px;
-  border-radius: 4px;
-  overflow-x: auto;
-  font-size: 12px;
-  line-height: 1.4;
+.next-btn:disabled {
+  background: #e9ecef;
+  color: #6c757d;
+  cursor: not-allowed;
 }
 </style>

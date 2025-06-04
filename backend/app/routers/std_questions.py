@@ -9,7 +9,7 @@ from ..models.raw_question import RawQuestion
 from ..models.tag import Tag
 from ..schemas.std_question import StdQuestionCreate, StdQuestionUpdate, StdQuestionResponse
 
-router = APIRouter(prefix="/std-questions", tags=["Standard Questions"])
+router = APIRouter(prefix="/api/std-questions", tags=["Standard Questions"])
 
 @router.post("/", response_model=StdQuestionResponse)
 def create_std_question(

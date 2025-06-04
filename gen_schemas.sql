@@ -1,9 +1,31 @@
+-- 用户表
+CREATE TABLE `User` (
+  `id` INT NOT NULL AUTO_INCREMENT,
+  `username` VARCHAR(50) NOT NULL UNIQUE,
+  `password_hash` VARCHAR(255) NOT NULL,
+  `role` ENUM('admin', 'user', 'expert') NOT NULL DEFAULT 'user',
+  `is_active` TINYINT(1) NOT NULL DEFAULT 1,
+  `created_at` DATETIME NOT NULL DEFAULT CURRENT_TIMESTAMP,
+  PRIMARY KEY (`id`),
+  UNIQUE INDEX `idx_user_username` (`username`),
+  INDEX `idx_user_role` (`role`),
+  INDEX `idx_user_active` (`is_active`)
+) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4;
+
 -- 数据集
 CREATE TABLE `Dataset` (
   `id` INT NOT NULL AUTO_INCREMENT,
+  `name` VARCHAR(255) NOT NULL,
   `description` TEXT NOT NULL,
+  `created_by` INT NOT NULL,
+  `is_public` TINYINT(1) NOT NULL DEFAULT 0,
   `create_time` DATETIME NOT NULL DEFAULT CURRENT_TIMESTAMP,
-  PRIMARY KEY (`id`)
+  PRIMARY KEY (`id`),
+  INDEX `idx_dataset_created_by` (`created_by`),
+  INDEX `idx_dataset_public` (`is_public`),
+  CONSTRAINT `fk_dataset_user`
+    FOREIGN KEY (`created_by`) REFERENCES `User` (`id`)
+    ON DELETE CASCADE ON UPDATE CASCADE
 ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4;
 
 -- 原始问题 (修正字段以匹配测试数据，不直接关联dataset)
@@ -23,18 +45,6 @@ CREATE TABLE `RawQuestion` (
   INDEX `idx_rawquestion_title` (`title`),
   INDEX `idx_rawquestion_is_deleted` (`is_deleted`),
   UNIQUE INDEX `idx_rawquestion_url` (`url`)
-) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4;
-
--- 专家表 (简化字段)
-CREATE TABLE `Expert` (
-  `id` INT NOT NULL AUTO_INCREMENT,
-  `name` VARCHAR(255) NOT NULL,
-  `email` VARCHAR(255) DEFAULT NULL,
-  `is_deleted` TINYINT(1) NOT NULL DEFAULT 0,
-  `created_at` DATETIME NOT NULL DEFAULT CURRENT_TIMESTAMP,
-  PRIMARY KEY (`id`),
-  INDEX `idx_expert_name` (`name`),
-  INDEX `idx_expert_is_deleted` (`is_deleted`)
 ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4;
 
 -- 原始回答
@@ -73,7 +83,7 @@ CREATE TABLE `ExpertAnswer` (
     FOREIGN KEY (`question_id`) REFERENCES `RawQuestion` (`id`)
     ON DELETE CASCADE ON UPDATE CASCADE,
   CONSTRAINT `fk_expertanswer_expert`
-    FOREIGN KEY (`author`) REFERENCES `Expert` (`id`)
+    FOREIGN KEY (`author`) REFERENCES `User` (`id`)
     ON DELETE CASCADE ON UPDATE CASCADE
 ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4;
 

@@ -1,14 +1,22 @@
 <template>
-  <div class="database-view">
-    <div class="header">
-      <h2>数据库管理</h2>
-      <div class="header-actions">
-        <select v-model="selectedTable" @change="loadTableData" class="table-select">
+  <div class="database-view">    <div class="header">
+      <div class="header-left">
+        <button @click="goBackToMarketplace" class="back-btn">
+          ← 返回数据库市场
+        </button>
+        <div class="dataset-info" v-if="currentDataset">
+          <h2>{{ currentDataset.name }}</h2>
+          <p class="dataset-description">{{ currentDataset.description }}</p>
+        </div>
+        <h2 v-else>数据库管理</h2>
+      </div>
+      <div class="header-actions">        <select v-model="selectedTable" @change="loadTableData" class="table-select">
           <option value="raw_questions">原始问题</option>
           <option value="raw_answers">原始答案</option>
           <option value="expert_answers">专家答案</option>
           <option value="std_questions">标准问题</option>
           <option value="std_answers">标准答案</option>
+          <option value="overview_std">标准问题总览</option>
         </select>
         <button @click="refreshData" class="refresh-btn" :disabled="loading">
           {{ loading ? "加载中..." : "刷新" }}
@@ -30,10 +38,8 @@
         <span class="stat-label">已删除:</span>
         <span class="stat-value">{{ deletedCount }}</span>
       </div>
-    </div>
-
-    <!-- 操作栏 -->
-    <div class="actions-bar">
+    </div>    <!-- 操作栏 -->
+    <div class="actions-bar" v-if="!isOverviewTable">
       <div class="bulk-actions">
         <button 
           @click="selectAll" 
@@ -76,12 +82,26 @@
       </div>
     </div>
 
+    <!-- 总览操作栏 -->
+    <div class="actions-bar" v-else>
+      <div class="overview-info">
+        <span class="info-text">总览模式：数据仅供查看，无法编辑</span>
+      </div>
+      
+      <div class="view-options">
+        <select v-model="itemsPerPage" @change="loadTableData" class="per-page-select">
+          <option value="20">20条/页</option>
+          <option value="50">50条/页</option>
+          <option value="100">100条/页</option>
+        </select>
+      </div>
+    </div>
+
     <!-- 数据表格 -->
     <div class="table-container">
-      <table class="data-table" v-if="currentData.length > 0">
-        <thead>
+      <table class="data-table" v-if="currentData.length > 0">        <thead>
           <tr>
-            <th class="checkbox-col">
+            <th class="checkbox-col" v-if="!isOverviewTable">
               <input 
                 type="checkbox" 
                 :checked="selectedItems.length === currentData.length && currentData.length > 0"
@@ -91,7 +111,7 @@
             <th v-for="column in tableColumns" :key="column.key" :class="column.className">
               {{ column.label }}
             </th>
-            <th class="actions-col">操作</th>
+            <th class="actions-col" v-if="!isOverviewTable">操作</th>
           </tr>
         </thead>
         <tbody>
@@ -100,7 +120,7 @@
             :key="item.id" 
             :class="{ 'deleted-row': item.is_deleted }"
           >
-            <td class="checkbox-col">
+            <td class="checkbox-col" v-if="!isOverviewTable">
               <input 
                 type="checkbox" 
                 :value="item.id" 
@@ -130,9 +150,8 @@
                 <span v-else class="default-content">
                   {{ item[column.key] }}
                 </span>
-              </div>
-            </td>
-            <td class="actions-col">
+              </div>            </td>
+            <td class="actions-col" v-if="!isOverviewTable">
               <div class="row-actions">
                 <button 
                   @click="viewItem(item)" 
@@ -282,7 +301,13 @@
 
 <script setup lang="ts">
 import { ref, computed, onMounted } from "vue";
+import { useRoute, useRouter } from "vue-router";
 import { databaseService } from "@/services/databaseService";
+import { datasetService } from "@/services/datasetService";
+
+// 路由
+const route = useRoute();
+const router = useRouter();
 
 // 类型定义
 interface TableColumn {
@@ -298,7 +323,7 @@ interface TableConfig {
   editable: string[];
 }
 
-type TableName = 'raw_questions' | 'raw_answers' | 'expert_answers' | 'std_questions' | 'std_answers';
+type TableName = 'raw_questions' | 'raw_answers' | 'expert_answers' | 'std_questions' | 'std_answers' | 'overview_std';
 
 interface DatabaseItem {
   id: number;
@@ -308,6 +333,8 @@ interface DatabaseItem {
 
 // 响应式数据
 const selectedTable = ref<TableName>("raw_questions");
+const currentDatasetId = ref<number | undefined>(undefined);
+const currentDataset = ref<any>(null);
 const currentData = ref<DatabaseItem[]>([]);
 const selectedItems = ref<number[]>([]);
 const loading = ref(false);
@@ -375,8 +402,7 @@ const tableConfigs: Record<TableName, TableConfig> = {
       { key: "created_by", label: "创建者", type: "text", className: "author-col" },
     ],
     editable: ["text", "question_type", "created_by"]
-  },
-  std_answers: {
+  },  std_answers: {
     columns: [
       { key: "id", label: "ID", type: "number", className: "id-col" },
       { key: "std_question_id", label: "标准问题ID", type: "number", className: "question-id-col" },
@@ -387,6 +413,19 @@ const tableConfigs: Record<TableName, TableConfig> = {
       { key: "created_by", label: "创建者", type: "text", className: "author-col" },
     ],
     editable: ["answer_text", "answer_type", "is_correct", "created_by"]
+  },
+  overview_std: {
+    columns: [
+      { key: "id", label: "ID", type: "number", className: "id-col" },
+      { key: "text", label: "标准问题", type: "text", className: "title-col", multiline: true },
+      { key: "answer_text", label: "标准答案", type: "text", className: "answer-col", multiline: true },
+      { key: "raw_questions", label: "原始问题", type: "text", className: "title-col", multiline: true },
+      { key: "raw_answers", label: "原始回答", type: "text", className: "answer-col", multiline: true },
+      { key: "expert_answers", label: "专家回答", type: "text", className: "answer-col", multiline: true },
+      { key: "question_type", label: "问题类型", type: "text", className: "type-col" },
+      { key: "created_by", label: "创建者", type: "text", className: "author-col" },
+    ],
+    editable: []
   }
 };
 
@@ -408,23 +447,52 @@ const totalPages = computed(() => {
   return Math.ceil(totalItems.value / itemsPerPage.value);
 });
 
+const isOverviewTable = computed(() => {
+  return selectedTable.value === 'overview_std';
+});
+
 // 方法
+const goBackToMarketplace = () => {
+  router.push('/');
+};
+
+const loadDataset = async () => {
+  if (!currentDatasetId.value) return;
+  
+  try {
+    currentDataset.value = await datasetService.getDataset(currentDatasetId.value);
+  } catch (error) {
+    showMessage("加载数据集信息失败", "error");
+    console.error("Load dataset error:", error);
+  }
+};
+
 const loadTableData = async () => {
   loading.value = true;
   try {
     const skip = (currentPage.value - 1) * itemsPerPage.value;
     const limit = itemsPerPage.value;
     
-    const result = await databaseService.getTableData(
-      selectedTable.value,
-      skip,
-      limit,
-      showDeleted.value
-    );
+    let result;
+    if (selectedTable.value === 'overview_std') {
+      result = await databaseService.getStdQuestionsOverview(
+        currentDatasetId.value, 
+        skip, 
+        limit
+      );
+    } else {
+      result = await databaseService.getTableData(
+        selectedTable.value,
+        skip,
+        limit,
+        showDeleted.value,
+        currentDatasetId.value
+      );
+    }
     
     currentData.value = result.data;
     totalItems.value = result.total;
-    deletedCount.value = result.deletedCount;
+    deletedCount.value = result.deletedCount || 0;
     selectedItems.value = [];
   } catch (error) {
     showMessage("加载数据失败", "error");
@@ -507,6 +575,8 @@ const editItem = (item: any) => {
 };
 
 const saveEdit = async () => {
+  if (!selectedItem.value) return;
+  
   saving.value = true;
   try {
     await databaseService.updateItem(selectedTable.value, selectedItem.value.id, editForm.value);
@@ -540,8 +610,26 @@ const formatCellValue = (value: any, column: any) => {
   if (!value) return "";
   
   if (column.type === "text") {
-    const text = String(value);
-    return text.length > 50 ? text.substring(0, 50) + "..." : text;
+    let text = "";
+    
+    // 处理数组类型的数据（总览中的关联数据）
+    if (Array.isArray(value)) {
+      if (value.length === 0) return "无";
+      text = value.map((item: any) => {
+        if (typeof item === 'object') {
+          // 对于总览数据，显示主要内容
+          return item.content || item.answer || item.text || item.title || JSON.stringify(item);
+        }
+        return String(item);
+      }).join("; ");
+    } else if (typeof value === 'object') {
+      // 处理对象类型
+      text = value.content || value.answer || value.text || value.title || JSON.stringify(value);
+    } else {
+      text = String(value);
+    }
+    
+    return text.length > 100 ? text.substring(0, 100) + "..." : text;
   }
   
   return value;
@@ -591,7 +679,14 @@ const showMessage = (text: string, type: "success" | "error" = "success") => {
 };
 
 // 生命周期
-onMounted(() => {
+onMounted(async () => {
+  // 从路由参数获取数据集ID
+  const datasetId = route.query.dataset;
+  if (datasetId && !isNaN(Number(datasetId))) {
+    currentDatasetId.value = Number(datasetId);
+    await loadDataset();
+  }
+  
   loadTableData();
 });
 </script>
@@ -1084,6 +1179,31 @@ onMounted(() => {
     transform: translateX(0);
     opacity: 1;
   }
+}
+
+/* 总览表格样式 */
+.overview-info {
+  padding: 10px 15px;
+  background: #e3f2fd;
+  border-radius: 4px;
+  color: #1976d2;
+  font-weight: 500;
+}
+
+.overview-info .info-text {
+  font-size: 14px;
+}
+
+/* 总览表格内容样式 */
+.cell-content.text {
+  max-width: 300px;
+  line-height: 1.4;
+}
+
+.cell-content.text .text-content {
+  display: block;
+  white-space: pre-wrap;
+  word-break: break-word;
 }
 
 /* 响应式设计 */

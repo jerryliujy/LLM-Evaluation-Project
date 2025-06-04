@@ -1,9 +1,9 @@
 from fastapi import APIRouter, Depends, HTTPException, Body
 from sqlalchemy.orm import Session
 from typing import List
-from ..crud import crud_expert_answer
-from ..schemas import ExpertAnswer, Msg
-from ..db.database import get_db
+from app.crud import crud_expert_answer
+from app.schemas import ExpertAnswer, Msg
+from app.db.database import get_db
 
 router = APIRouter(
     prefix="/api/expert_answers",

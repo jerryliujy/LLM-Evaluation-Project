@@ -6,13 +6,24 @@ interface TableDataResult {
   deletedCount: number;
 }
 
+interface OverviewStatistics {
+  raw_questions_count: number;
+  std_questions_count: number;
+  total_raw_answers: number;
+  total_expert_answers: number;
+  total_std_answers: number;
+  avg_raw_answers_per_question: number;
+  avg_expert_answers_per_question: number;
+}
+
 export const databaseService = {
   // 获取表格数据
   async getTableData(
     tableName: string,
     skip = 0,
     limit = 20,
-    includeDeleted = false
+    includeDeleted = false,
+    datasetId?: number
   ): Promise<TableDataResult> {
     const endpoint = this.getTableEndpoint(tableName);
     const params = new URLSearchParams({
@@ -22,6 +33,10 @@ export const databaseService = {
 
     if (includeDeleted) {
       params.append("include_deleted", "true");
+    }
+
+    if (datasetId) {
+      params.append("dataset_id", datasetId.toString());
     }
 
     const response = await fetch(`${endpoint}?${params}`);
@@ -143,7 +158,6 @@ export const databaseService = {
 
     return response.json();
   },
-
   // 获取表格对应的API端点
   getTableEndpoint(tableName: string): string {
     const endpointMap: Record<string, string> = {
@@ -152,6 +166,8 @@ export const databaseService = {
       expert_answers: `${API_BASE_URL}/expert_answers`,
       std_questions: `${API_BASE_URL}/std-questions`,
       std_answers: `${API_BASE_URL}/std-answers`,
+      overview_raw: `${API_BASE_URL}/overview/raw-questions`,
+      overview_std: `${API_BASE_URL}/overview/std-questions`,
     };
 
     const endpoint = endpointMap[tableName];
@@ -160,6 +176,71 @@ export const databaseService = {
     }
 
     return endpoint;
+  },
+  // 获取原始问题总览
+  async getRawQuestionsOverview(
+    skip = 0,
+    limit = 20,
+    datasetId?: number
+  ): Promise<TableDataResult> {
+    const params = new URLSearchParams({
+      skip: skip.toString(),
+      limit: limit.toString(),
+    });
+
+    if (datasetId) {
+      params.append("dataset_id", datasetId.toString());
+    }
+
+    const response = await fetch(`${API_BASE_URL}/overview/raw-questions?${params}`);
+    if (!response.ok) {
+      throw new Error("Failed to fetch raw questions overview");
+    }
+
+    const data = await response.json();
+    return {
+      data: data.data || data,
+      total: data.total || data.length,
+      deletedCount: 0,
+    };
+  },
+
+  // 获取标准问题总览
+  async getStdQuestionsOverview(
+    skip = 0,
+    limit = 20,
+    datasetId?: number
+  ): Promise<TableDataResult> {
+    const params = new URLSearchParams({
+      skip: skip.toString(),
+      limit: limit.toString(),
+    });
+
+    if (datasetId) {
+      params.append("dataset_id", datasetId.toString());
+    }
+
+    const response = await fetch(`${API_BASE_URL}/overview/std-questions?${params}`);
+    if (!response.ok) {
+      throw new Error("Failed to fetch std questions overview");
+    }
+
+    const data = await response.json();
+    return {
+      data: data.data || data,
+      total: data.total || data.length,
+      deletedCount: 0,
+    };
+  },
+
+  // 获取总览统计信息
+  async getOverviewStatistics(): Promise<OverviewStatistics> {
+    const response = await fetch(`${API_BASE_URL}/overview/statistics`);
+    if (!response.ok) {
+      throw new Error("Failed to fetch overview statistics");
+    }
+
+    return response.json();
   },
 
   // 获取数据库统计信息

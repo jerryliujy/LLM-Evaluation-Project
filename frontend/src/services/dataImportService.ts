@@ -1,12 +1,13 @@
 import axios from "axios";
-import { ApiMessage } from "@/types/api";
 import { API_BASE_URL } from "./apiConstants";
 
 const DATA_IMPORT_ENDPOINT = `${API_BASE_URL}/data-import`;
 
 export interface Dataset {
   id: number;
+  name: string;
   description: string;
+  is_public?: boolean;
   create_time: string;
 }
 
@@ -17,13 +18,19 @@ export interface DataImportResult {
   imported_expert_answers?: number;
 }
 
+export type DataType = 'raw-qa' | 'expert-answers' | 'std-qa';
+
 export const dataImportService = {
   // 创建数据集
   async createDataset(
-    description: string
-  ): Promise<{ dataset_id: number; description: string }> {
+    name: string,
+    description: string,
+    isPublic = true
+  ): Promise<{ dataset_id: number; name: string; description: string }> {
     const formData = new FormData();
+    formData.append("name", name);
     formData.append("description", description);
+    formData.append("is_public", isPublic.toString());
 
     const response = await axios.post(
       `${DATA_IMPORT_ENDPOINT}/dataset`,
@@ -31,33 +38,33 @@ export const dataImportService = {
       {
         headers: {
           "Content-Type": "multipart/form-data",
+          "Authorization": `Bearer ${localStorage.getItem('access_token')}`,
         },
       }
     );
     return response.data;
   },
 
-  // 上传问题文件
-  async uploadQuestions(file: File): Promise<DataImportResult> {
-    const formData = new FormData();
-    formData.append("file", file);
-
-    const response = await axios.post<DataImportResult>(
-      `${DATA_IMPORT_ENDPOINT}/upload-questions`,
-      formData,
+  // 获取数据集列表
+  async getDatasets(): Promise<Dataset[]> {
+    const response = await axios.get<Dataset[]>(
+      `${DATA_IMPORT_ENDPOINT}/datasets`,
       {
         headers: {
-          "Content-Type": "multipart/form-data",
+          "Authorization": `Bearer ${localStorage.getItem('access_token')}`,
         },
       }
     );
     return response.data;
   },
 
-  // 直接上传JSON数据
-  async uploadData(data: any[]): Promise<DataImportResult> {
+  // 上传原始Q&A数据到指定数据集
+  async uploadRawQAData(
+    datasetId: number,
+    data: any[]
+  ): Promise<DataImportResult> {
     const response = await axios.post<DataImportResult>(
-      `${DATA_IMPORT_ENDPOINT}/upload-json-data`,
+      `${DATA_IMPORT_ENDPOINT}/raw-qa/${datasetId}`,
       { data },
       {
         headers: {
@@ -68,11 +75,99 @@ export const dataImportService = {
     return response.data;
   },
 
-  // 获取数据集列表
-  async getDatasets(): Promise<Dataset[]> {
-    const response = await axios.get<Dataset[]>(
-      `${DATA_IMPORT_ENDPOINT}/datasets`
+  // 上传专家回答数据到指定数据集
+  async uploadExpertAnswers(
+    datasetId: number,
+    data: any[]
+  ): Promise<DataImportResult> {
+    const response = await axios.post<DataImportResult>(
+      `${DATA_IMPORT_ENDPOINT}/expert-answers/${datasetId}`,
+      { data },
+      {
+        headers: {
+          "Content-Type": "application/json",
+        },
+      }
     );
     return response.data;
   },
+
+  // 上传标准Q&A数据到指定数据集（暂未实现）
+  async uploadStdQAData(
+    datasetId: number, 
+    data: any[]
+  ): Promise<DataImportResult> {
+    const response = await axios.post<DataImportResult>(
+      `${DATA_IMPORT_ENDPOINT}/std-qa/${datasetId}`,
+      { data },
+      {
+        headers: {
+          "Content-Type": "application/json",
+        },
+      }
+    );
+    return response.data;
+  },
+
+  // 验证数据格式
+  validateDataFormat(dataType: DataType, data: any[]): {
+    isValid: boolean;
+    errors: string[];
+  } {
+    const errors: string[] = [];
+    
+    if (!Array.isArray(data) || data.length === 0) {
+      errors.push("数据必须是非空数组");
+      return { isValid: false, errors };
+    }
+
+    switch (dataType) {
+      case 'raw-qa':
+        // 验证原始Q&A数据格式
+        data.forEach((item, index) => {
+          if (!item.title) {
+            errors.push(`第${index + 1}项缺少标题(title)字段`);
+          }
+          if (!item.answers || !Array.isArray(item.answers)) {
+            errors.push(`第${index + 1}项缺少或格式错误的回答(answers)字段`);
+          }
+        });
+        break;
+        
+      case 'expert-answers':
+        // 验证专家回答数据格式
+        data.forEach((item, index) => {
+          if (!item.question_id && !item.title) {
+            errors.push(`第${index + 1}项缺少问题ID(question_id)或标题(title)字段`);
+          }
+          if (!item.expert_answers || !Array.isArray(item.expert_answers)) {
+            errors.push(`第${index + 1}项缺少或格式错误的专家回答(expert_answers)字段`);
+          }
+        });
+        break;
+        
+      case 'std-qa':
+        // 验证标准Q&A数据格式
+        data.forEach((item, index) => {
+          if (!item.question) {
+            errors.push(`第${index + 1}项缺少问题(question)字段`);
+          }
+          if (!item.answer) {
+            errors.push(`第${index + 1}项缺少回答(answer)字段`);
+          }
+        });
+        break;
+    }
+
+    return {
+      isValid: errors.length === 0,
+      errors
+    };
+  },
+
+  // 预览数据（获取前几项进行展示）
+  previewData(data: any[], maxItems = 3): any[] {
+    return data.slice(0, maxItems);
+  },
+
 };

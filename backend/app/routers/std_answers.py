@@ -10,7 +10,7 @@ from ..schemas.std_answer import (
     StdAnswerScoringPointCreate, StdAnswerScoringPointResponse
 )
 
-router = APIRouter(prefix="/std-answers", tags=["Standard Answers"])
+router = APIRouter(prefix="/api/std-answers", tags=["Standard Answers"])
 
 @router.post("/", response_model=StdAnswerResponse)
 def create_std_answer(
