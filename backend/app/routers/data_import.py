@@ -73,12 +73,14 @@ async def list_datasets(
 async def list_raw_questions(
     skip: int = 0,
     limit: int = 100,
+    current_user: User = Depends(get_current_active_user),
     db: Session = Depends(get_db)
 ):
-    """获取原始问题列表"""
+    """获取当前用户的原始问题列表"""
     
     questions = db.query(RawQuestion).filter(
-        RawQuestion.is_deleted == False
+        RawQuestion.is_deleted == False,
+        RawQuestion.created_by == current_user.id
     ).offset(skip).limit(limit).all()
     
     return [
@@ -96,18 +98,13 @@ async def list_raw_questions(
         for question in questions
     ]
 
-@router.post("/raw-qa/{dataset_id}")
+@router.post("/raw-qa")
 async def upload_raw_qa_data(
-    dataset_id: int,
     json_data: JsonDataImport,
+    current_user: User = Depends(get_current_active_user),
     db: Session = Depends(get_db)
 ):
-    """上传原始Q&A数据到指定数据集"""
-    
-    # 验证数据集是否存在
-    dataset = db.query(Dataset).filter(Dataset.id == dataset_id).first()
-    if not dataset:
-        raise HTTPException(status_code=404, detail="Dataset not found")
+    """上传原始Q&A数据到当前用户的原始问题池"""
     
     try:
         data = json_data.data
@@ -126,7 +123,7 @@ async def upload_raw_qa_data(
                     except ValueError:
                         pass
             
-            # 创建原始问题，关联到数据集
+            # 创建原始问题，关联到当前用户
             raw_question = RawQuestion(
                 title=item.get('title', ''),
                 body=item.get('body', ''),
@@ -136,6 +133,7 @@ async def upload_raw_qa_data(
                 author=item.get('author'),
                 tags_json=item.get('tags'),
                 issued_at=issued_at,
+                created_by=current_user.id,  # 关联到当前用户
                 is_deleted=False
             )
             
@@ -179,11 +177,10 @@ async def upload_raw_qa_data(
                     
                     db.add(raw_answer)
                     imported_answers += 1
-        
-        db.commit()
+          db.commit()
         return {
-            "message": f"Raw Q&A data imported successfully to dataset {dataset.description}",
-            "dataset_id": dataset_id,
+            "message": f"Raw Q&A data imported successfully to user {current_user.username}'s question pool",
+            "user_id": current_user.id,
             "imported_questions": imported_questions,
             "imported_answers": imported_answers
         }

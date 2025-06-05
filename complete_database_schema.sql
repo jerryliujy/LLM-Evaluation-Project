@@ -44,11 +44,15 @@ CREATE TABLE `RawQuestion` (
   `tags_json` JSON DEFAULT NULL, -- 原始JSON格式tags，用于导入时临时存储
   `issued_at` DATETIME DEFAULT NULL,
   `created_at` DATETIME NOT NULL DEFAULT CURRENT_TIMESTAMP,
+  `created_by` VARCHAR(100) DEFAULT NULL,
   `is_deleted` TINYINT(1) NOT NULL DEFAULT 0,
   PRIMARY KEY (`id`),
   INDEX `idx_rawquestion_title` (`title`),
   INDEX `idx_rawquestion_is_deleted` (`is_deleted`),
   UNIQUE INDEX `idx_rawquestion_url` (`url`)
+  CONSTRAINT `fk_raw_question_user`
+    FOREIGN KEY (`created_by`) REFERENCES `User` (`id`)
+    ON DELETE CASCADE ON UPDATE CASCADE
 ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4;
 
 -- 标准问题
