@@ -128,7 +128,6 @@
 import { ref, computed, watch, nextTick } from 'vue'
 import { ElMessage, type FormInstance, type FormRules } from 'element-plus'
 import { RawQuestion } from '@/types/questions'
-import { useRawQuestionStore } from '@/store/rawQuestionStore'
 
 interface Props {
   visible: boolean
@@ -137,13 +136,11 @@ interface Props {
 
 interface Emits {
   (e: 'update:visible', value: boolean): void
-  (e: 'save'): void
+  (e: 'save', questionData: Partial<RawQuestion>): void
 }
 
 const props = defineProps<Props>()
 const emit = defineEmits<Emits>()
-
-const store = useRawQuestionStore()
 
 // 响应式数据
 const formRef = ref<FormInstance>()
@@ -253,8 +250,7 @@ const handleSave = async () => {
     await formRef.value.validate()
     loading.value = true
 
-    const questionData: RawQuestion = {
-      id: props.question?.id || Date.now() + Math.random(),
+    const questionData: Partial<RawQuestion> = {
       title: formData.value.title,
       body: formData.value.body,
       author: formData.value.author,
@@ -263,21 +259,17 @@ const handleSave = async () => {
       vote_count: formData.value.vote_count,
       issued_at: formData.value.issued_at || new Date().toISOString(),
       tags: formData.value.tags,
-      raw_answers: props.question?.raw_answers || [],
-      expert_answers: props.question?.expert_answers || [],
-      is_deleted: false
     }
 
-    if (isEdit.value) {
-      store.updateQuestion(questionData)
-    } else {
-      store.addQuestion(questionData)
+    // 如果是编辑模式，包含ID
+    if (isEdit.value && props.question) {
+      questionData.id = props.question.id
     }
 
-    emit('save')
-    ElMessage.success(isEdit.value ? '问题已更新' : '问题已创建')
+    emit('save', questionData)
   } catch (error) {
     console.error('保存问题失败:', error)
+    ElMessage.error('保存失败')
   } finally {
     loading.value = false
   }

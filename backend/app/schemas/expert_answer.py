@@ -18,7 +18,6 @@ class ExpertAnswer(ExpertAnswerBase):
     author: int
     created_at: datetime
     is_deleted: bool
-    referenced_by_std_answer_id: Optional[int] = None
 
     class Config:
         from_attributes = True

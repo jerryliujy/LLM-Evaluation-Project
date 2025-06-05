@@ -1,6 +1,6 @@
 from fastapi import APIRouter, Depends, HTTPException, Body, Query
 from sqlalchemy.orm import Session
-from typing import List
+from typing import List, Optional
 from ..crud import crud_raw_question
 from ..schemas import RawQuestion, Msg
 from ..schemas.common import PaginatedResponse
@@ -20,11 +20,12 @@ def read_raw_questions_api(
     limit: int = Query(20, ge=1, le=100), 
     include_deleted: bool = Query(False),
     deleted_only: bool = Query(False),
+    current_user: User = Depends(get_current_active_user),
     db: Session = Depends(get_db)
 ):
     """获取分页的原始问题列表"""
     result = crud_raw_question.get_raw_questions_paginated(
-        db, skip=skip, limit=limit, include_deleted=include_deleted, deleted_only=deleted_only
+        db, skip=skip, limit=limit, include_deleted=include_deleted, deleted_only=deleted_only, created_by=current_user.id 
     )
     return result
 

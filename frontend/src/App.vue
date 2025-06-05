@@ -2,8 +2,7 @@
   <nav>
     <div class="nav-section">
       <router-link to="/">首页</router-link>
-      <router-link to="/data-import">数据导入</router-link>
-      <router-link to="/database-view">数据库管理</router-link>
+      <router-link to="/marketplace">数据库市场</router-link>
       <router-link to="/raw-question-management">原始问题池</router-link>
     </div>
   </nav>

@@ -21,37 +21,33 @@ export interface DataImportResult {
 export type DataType = 'raw-qa' | 'expert-answers' | 'std-qa';
 
 export const dataImportService = {
-  // 创建数据集
+  // 创建数据集 (调整为调用 /api/datasets/ endpoint)
   async createDataset(
     name: string,
     description: string,
     isPublic = true
-  ): Promise<{ dataset_id: number; name: string; description: string }> {
-    const formData = new FormData();
-    formData.append("name", name);
-    formData.append("description", description);
-    formData.append("is_public", isPublic.toString());
-
-    const response = await apiClient.post('/data-import/dataset', formData, {
-      headers: {
-        'Content-Type': 'multipart/form-data',
-      },
+  ): Promise<{ id: number; name: string; description: string }> { // Adjusted return type to match common DatasetResponse
+    const response = await apiClient.post('/datasets/', { // Changed endpoint
+      name,
+      description,
+      is_public: isPublic 
     });
     return response.data;
   },
 
   // 获取数据集列表
-  async getDatasets(): Promise<Dataset[]> {
-    const response = await apiClient.get('/data-import/datasets');
+  async getDatasets(skip = 0, limit = 100, public_only = true): Promise<Dataset[]> { // Added params for pagination and filtering
+    const response = await apiClient.get('/datasets/', { 
+      params: { skip, limit, public_only }
+    });
     return response.data;
   },
 
-  // 上传原始Q&A数据到指定数据集
-  async uploadRawQAData(
-    datasetId: number,
+  // 上传原始Q&A数据到用户的原始问题池
+  async uploadRawQAToPool(
     data: any[]
   ): Promise<DataImportResult> {
-    const response = await apiClient.post(`/data-import/raw-qa/${datasetId}`, { data });
+    const response = await apiClient.post('/data-import/raw-qa', { data });
     return response.data;
   },
 

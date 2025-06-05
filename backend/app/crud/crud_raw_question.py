@@ -25,9 +25,12 @@ def get_raw_questions(db: Session, skip: int = 0, limit: int = 10) -> List[model
         selectinload(models.RawQuestion.tags)  
     ).filter(models.RawQuestion.is_deleted == False).order_by(models.RawQuestion.id.asc()).offset(skip).limit(limit).all()
 
-def get_raw_questions_count(db: Session, include_deleted: bool = False, deleted_only: bool = False) -> int:
+def get_raw_questions_count(db: Session, include_deleted: bool = False, deleted_only: bool = False, created_by: Optional[int] = None) -> int:
     """获取原始问题总数"""
     query = db.query(models.RawQuestion)
+    
+    if created_by is not None:
+        query = query.filter(models.RawQuestion.created_by == created_by)
     
     if deleted_only:
         query = query.filter(models.RawQuestion.is_deleted == True)
@@ -36,7 +39,7 @@ def get_raw_questions_count(db: Session, include_deleted: bool = False, deleted_
     
     return query.count()
 
-def get_raw_questions_paginated(db: Session, skip: int = 0, limit: int = 10, include_deleted: bool = False, deleted_only: bool = False):
+def get_raw_questions_paginated(db: Session, skip: int = 0, limit: int = 10, include_deleted: bool = False, deleted_only: bool = False, created_by: int = None):
     """获取分页的原始问题数据和元数据"""
     # 获取数据
     query = db.query(models.RawQuestion).options(
@@ -44,6 +47,9 @@ def get_raw_questions_paginated(db: Session, skip: int = 0, limit: int = 10, inc
         selectinload(models.RawQuestion.expert_answers.and_(models.ExpertAnswer.is_deleted == False)),
         selectinload(models.RawQuestion.tags)
     )
+    
+    if created_by is not None:
+        query = query.filter(models.RawQuestion.created_by == created_by)
     
     if deleted_only:
         # 只显示已删除的
@@ -56,7 +62,7 @@ def get_raw_questions_paginated(db: Session, skip: int = 0, limit: int = 10, inc
     questions = query.order_by(models.RawQuestion.id.asc()).offset(skip).limit(limit).all()
     
     # 获取总数
-    total = get_raw_questions_count(db, include_deleted, deleted_only)
+    total = get_raw_questions_count(db, include_deleted, deleted_only, created_by)
     
     return {
         "data": questions,

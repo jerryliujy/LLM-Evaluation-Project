@@ -177,7 +177,7 @@ async def upload_raw_qa_data(
                     
                     db.add(raw_answer)
                     imported_answers += 1
-          db.commit()
+        db.commit()
         return {
             "message": f"Raw Q&A data imported successfully to user {current_user.username}'s question pool",
             "user_id": current_user.id,

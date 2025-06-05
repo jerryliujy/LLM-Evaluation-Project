@@ -15,22 +15,21 @@
         </button>
       </div>
     </div>
-    
-    <div class="header">
-      <h2>数据库市场</h2>
-      <div class="header-actions">
-        <button 
-          v-if="userInfo?.role === 'admin'"
-          @click="showCreateModal = true" 
-          class="create-btn"
-        >
-          创建新数据库
+      <div class="header">
+      <h2>数据库市场</h2>      <div class="header-actions">
+        <button v-if="userInfo?.role === 'admin'" @click="showCreateModal = true" class="create-btn">
+          <span class="btn-icon">🏗️</span>
+          <span>手动创建数据库</span>
+        </button>
+        <button v-if="userInfo?.role === 'admin'" @click="goToDataImportForNew" class="create-btn">
+          <span class="btn-icon">📁</span>
+          <span>导入创建数据库</span>
         </button>
         <button @click="refreshDatasets" class="refresh-btn" :disabled="loading">
           {{ loading ? "加载中..." : "刷新" }}
         </button>
       </div>
-    </div>   
+    </div>
 
     <!-- 筛选区域 -->
     <div class="filters">
@@ -244,7 +243,7 @@
 </template>
 
 <script setup lang="ts">
-import { ref, computed, onMounted } from "vue";
+import { ref, computed, onMounted, onUnmounted } from "vue";
 import { useRouter, useRoute } from "vue-router";
 import { datasetService, type DatasetWithStats, type DatasetCreate } from "@/services/datasetService";
 import { authService, type User } from "@/services/authService";
@@ -315,6 +314,13 @@ const goToDataImport = (dataset: DatasetWithStats) => {
   router.push({
     name: "DataImport",
     query: { datasetId: dataset.id.toString() }
+  });
+};
+
+const goToDataImportForNew = () => {
+  // 跳转到数据导入页面，不传递数据集ID（创建新数据集）
+  router.push({
+    name: "DataImport"
   });
 };
 
@@ -404,6 +410,14 @@ const showMessage = (text: string, type: "success" | "error" = "success") => {
   }, 3000);
 };
 
+const handleClickOutside = (event: MouseEvent) => {
+  const target = event.target as HTMLElement;
+  if (!target.closest('.modal')) {
+    showCreateModal.value = false;
+    showEditModal.value = false;
+  }
+};
+
 // 生命周期
 // 组件挂载时初始化
 onMounted(async () => {
@@ -423,6 +437,14 @@ onMounted(async () => {
   }
   
   refreshDatasets();
+  
+  // 添加点击外部关闭下拉菜单的事件监听器
+  document.addEventListener('click', handleClickOutside);
+});
+
+onUnmounted(() => {
+  // 清除事件监听器
+  document.removeEventListener('click', handleClickOutside);
 });
 
 // 用户相关方法
@@ -590,8 +612,14 @@ const isDatasetOwner = (dataset: DatasetWithStats) => {
 }
 
 .refresh-btn:disabled {
-  background-color: #6c757d;
+  opacity: 0.6;
   cursor: not-allowed;
+  transform: none !important;
+}
+
+.btn-icon {
+  font-size: 16px;
+  line-height: 1;
 }
 
 .user-section {
@@ -937,5 +965,77 @@ const isDatasetOwner = (dataset: DatasetWithStats) => {
 
 .message.error {
   background-color: #dc3545;
+}
+
+/* 下拉菜单样式 */
+/* 美化头部和按钮样式 */
+.header {
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+  background: linear-gradient(135deg, #667eea 0%, #764ba2 100%);
+  color: white;
+  padding: 24px 32px;
+  border-radius: 12px;
+  margin-bottom: 24px;
+  box-shadow: 0 4px 20px rgba(102, 126, 234, 0.3);
+}
+
+.header h2 {
+  margin: 0;
+  color: white;
+  font-size: 28px;
+  font-weight: 600;
+}
+
+.header-actions {
+  display: flex;
+  gap: 12px;
+  align-items: center;
+}
+
+.create-btn, .refresh-btn {
+  padding: 10px 20px;
+  border: none;
+  border-radius: 8px;
+  cursor: pointer;
+  font-size: 14px;
+  font-weight: 500;
+  transition: all 0.2s ease;
+  display: flex;
+  align-items: center;
+  gap: 8px;
+}
+
+.create-btn {
+  background: rgba(255, 255, 255, 0.2);
+  color: white;
+  border: 1px solid rgba(255, 255, 255, 0.3);
+}
+
+.create-btn:hover {
+  background: rgba(255, 255, 255, 0.3);
+  transform: translateY(-1px);
+}
+
+.refresh-btn {
+  background: rgba(255, 255, 255, 0.1);
+  color: white;
+  border: 1px solid rgba(255, 255, 255, 0.2);
+}
+
+.refresh-btn:hover {
+  background: rgba(255, 255, 255, 0.2);
+}
+
+.refresh-btn:disabled {
+  opacity: 0.6;
+  cursor: not-allowed;
+  transform: none !important;
+}
+
+.btn-icon {
+  font-size: 16px;
+  line-height: 1;
 }
 </style>

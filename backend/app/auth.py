@@ -108,20 +108,20 @@ async def require_admin(current_user: User = Depends(get_current_active_user)) -
         )
     return current_user
 
-async def require_admin_or_expert(current_user: User = Depends(get_current_active_user)) -> User:
-    """要求管理员或专家权限"""
-    if current_user.role not in ["admin", "expert"]:
-        raise HTTPException(
-            status_code=status.HTTP_403_FORBIDDEN,
-            detail="Admin or expert privileges required"
-        )
-    return current_user
-
 async def require_expert(current_user: User = Depends(get_current_active_user)) -> User:
     """要求专家权限"""
     if current_user.role != "expert":
         raise HTTPException(
             status_code=status.HTTP_403_FORBIDDEN,
             detail="Expert privileges required"
+        )
+    return current_user
+
+async def require_admin_or_expert(current_user: User = Depends(get_current_active_user)) -> User:
+    """要求管理员或专家权限"""
+    if current_user.role not in ["admin", "expert"]:
+        raise HTTPException(
+            status_code=status.HTTP_403_FORBIDDEN,
+            detail="Admin or expert privileges required"
         )
     return current_user

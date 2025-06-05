@@ -12,9 +12,7 @@ class RawAnswer(Base):
     upvotes = Column(String(20), default=0)   
     answered_by = Column(String(255), nullable=True) 
     answered_at = Column(DateTime, nullable=True) 
-    created_by = Column(String(100), nullable=True)  # id of the user
     is_deleted = Column(Boolean, default=False, nullable=False, index=True)
-    referenced_by_std_answer_id = Column(Integer, ForeignKey("StdAnswer.id"), nullable=True, index=True)    # 关系
     question = relationship("RawQuestion", back_populates="raw_answers")
     
     # 多对多关系记录

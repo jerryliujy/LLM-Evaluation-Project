@@ -1,4 +1,4 @@
-import { RawAnswer, ExpertAnswer } from "./answers";
+import { RawAnswer, ExpertAnswer, StdAnswer } from "./answers";
 
 export interface RawQuestion {
   id: number;
@@ -10,7 +10,22 @@ export interface RawQuestion {
   author?: string;
   tags?: string[];
   issued_at?: string | Date;
+  created_at?: string | Date;
   is_deleted: boolean;
   raw_answers: RawAnswer[];
   expert_answers: ExpertAnswer[];
+}
+
+export interface StdQuestion {
+  id: number;
+  dataset_id: number;
+  raw_question_id: number;
+  text: string;
+  create_time: string | Date;
+  question_type: string;
+  is_valid: boolean;
+  created_by?: string;
+  version: number;
+  previous_version_id?: number; // Nullable for the first version
+  std_answers?: StdAnswer[]; // Optional relationship to standard answers
 }

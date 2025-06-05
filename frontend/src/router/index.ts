@@ -1,6 +1,5 @@
 import { createRouter, createWebHistory, RouteRecordRaw } from "vue-router";
 import HomeView from "../views/HomeView.vue";
-import DataImportView from "../views/DataImportView.vue";
 import DatasetMarketplaceView from "../views/DatasetMarketplaceView.vue";
 import RoleSelectionView from "../views/RoleSelectionView.vue";
 import LoginView from "../views/LoginView.vue";
@@ -34,19 +33,6 @@ const routes: Array<RouteRecordRaw> = [
     name: "DatasetMarketplace",
     component: DatasetMarketplaceView,
     meta: { requiresAuth: true }
-  },
-  {
-    path: "/data-import",
-    name: "DataImport",
-    component: DataImportView,
-    meta: { requiresAuth: true, role: 'admin' }
-  },
-  {
-    path: "/database-view",
-    name: "DatabaseView",
-    component: () => 
-      import(/* webpackChunkName: "database" */ "../views/DatabaseView.vue"),
-    meta: { requiresAuth: true, role: 'admin' }
   },
   {
     path: "/raw-question-management",

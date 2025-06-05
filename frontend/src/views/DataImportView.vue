@@ -300,9 +300,6 @@ const newDatasetIsPublic = ref(true)
 const creatingDataset = ref(false)
 const isCreatingNew = ref(false)
 
-// 数据类型选择
-const selectedDataType = ref<DataType | null>(null)
-
 // 路由参数：数据集ID
 const datasetId = computed(() => route.query.datasetId as string)
 
@@ -323,7 +320,6 @@ const goBackToMarketplace = () => {
 const resetWizard = () => {
   currentStep.value = 1
   selectedDataset.value = null
-  selectedDataType.value = null
   clearError()
   clearPreview()
   uploadResult.value = null
@@ -337,10 +333,7 @@ const goToStep = (step: number) => {
     error.value = '请先选择或创建数据集'
     return
   }
-  if (step === 3 && !selectedDataType.value) {
-    error.value = '请先选择数据类型'
-    return
-  }
+  
   currentStep.value = step
   clearError()
 }
@@ -408,70 +401,10 @@ const cancelCreate = () => {
   newDatasetIsPublic.value = true
 }
 
-// 数据类型选择
-const selectDataType = (type: DataType) => {
-  if (type === 'std-qa') return // 暂未实现
-  selectedDataType.value = type
-}
-
-const getDataTypeLabel = () => {
-  const labels = {
-    'raw-qa': '原始问答数据',
-    'expert-answers': '专家回答数据',
-    'std-qa': '标准问答对'
-  }
-  return selectedDataType.value ? labels[selectedDataType.value] : ''
-}
-
-const getFormatExample = () => {
-  if (!selectedDataType.value) return ''
-  
-  const examples = {
-    'raw-qa': `[
-  {
-    "title": "问题标题",
-    "body": "问题详细内容",
-    "url": "问题链接",
-    "votes": "投票数",
-    "views": "浏览数",
-    "author": "作者",
-    "tags": ["标签1", "标签2"],
-    "issued_at": "2024-01-01 12:00",
-    "answers": [
-      {
-        "answer": "回答内容",
-        "upvotes": "赞同数",
-        "answered_by": "回答者",
-        "answered_at": "2024-01-01 13:00"
-      }
-    ]
-  }
-]`,
-    'expert-answers': `[
-  {
-    "question_id": 123,
-    "content": "专家回答内容",
-    "source": "Expert Review",
-    "vote_count": 5,
-    "expert_id": 1
-  }
-]`,
-    'std-qa': `[
-  {
-    "question": "标准问题",
-    "answer": "标准答案",
-    "category": "分类",
-    "difficulty": "difficulty_level"
-  }
-]`
-  }
-  
-  return examples[selectedDataType.value]
-}
 
 // 预览相关
 const getPreviewHeaders = () => {
-  if (!selectedDataType.value || previewData.value.length === 0) return []
+  if (previewData.value.length === 0) return []
   
   const firstItem = previewData.value[0]
   return Object.keys(firstItem).slice(0, 5) // 只显示前5个字段
@@ -526,12 +459,10 @@ const handleFile = async (file: File) => {
     
     if (Array.isArray(data)) {
       // 验证数据格式
-      if (selectedDataType.value) {
-        const validation = dataImportService.validateDataFormat(selectedDataType.value, data)
-        if (!validation.isValid) {
-          error.value = '数据格式验证失败:\n' + validation.errors.join('\n')
-          return
-        }
+      const validation = dataImportService.validateDataFormat('std-qa', data)
+      if (!validation.isValid) {
+        error.value = '数据格式验证失败:\n' + validation.errors.join('\n')
+        return
       }
       
       previewData.value = data
@@ -551,8 +482,8 @@ const confirmUpload = async () => {
     return
   }
 
-  if (!selectedDataset.value || !selectedDataType.value) {
-    error.value = '请确保已选择数据集和数据类型'
+  if (!selectedDataset.value) {
+    error.value = '请确保已选择数据集'
     return
   }
 
@@ -568,19 +499,7 @@ const confirmUpload = async () => {
       }
     }, 200)
 
-    let result
-    // 根据数据类型调用不同的上传方法
-    switch (selectedDataType.value) {
-      case 'raw-qa':
-        result = await dataImportService.uploadRawQAData(selectedDataset.value.id, previewData.value)
-        break
-      case 'expert-answers':
-        result = await dataImportService.uploadExpertAnswers(selectedDataset.value.id, previewData.value)
-        break
-      case 'std-qa':
-        result = await dataImportService.uploadStdQAData(selectedDataset.value.id, previewData.value)
-        break
-    }
+    const result = await dataImportService.uploadStdQAData(selectedDataset.value.id, previewData.value)
     
     clearInterval(progressInterval)
     uploadProgress.value = 100
