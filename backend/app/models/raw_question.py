@@ -17,8 +17,10 @@ class RawQuestion(Base):
     issued_at = Column(DateTime, nullable=True)
     created_at = Column(DateTime(timezone=True), server_default=func.now())  # 记录入库时间
     is_deleted = Column(Boolean, default=False, nullable=False, index=True)
-    
-    # 关系
+      # 关系
     raw_answers = relationship("RawAnswer", back_populates="question", cascade="all, delete-orphan", lazy="selectin")
     expert_answers = relationship("ExpertAnswer", back_populates="question", cascade="all, delete-orphan", lazy="selectin")
     tags = relationship("Tag", secondary="RawQuestionTagRecords", back_populates="raw_questions")
+    
+    # 多对多关系记录
+    std_question_records = relationship("StdQuestionRawQuestionRecord", back_populates="raw_question", cascade="all, delete-orphan")

@@ -27,10 +27,14 @@ export const useRawQuestionStore = defineStore("rawQuestion", {
   actions: {
     async loadInitialQuestions() {
       this.currentPage = 0;
-      this.questions = [];
-      this.hasMore = true;
       this.clearSelections();
-      await this.loadMoreQuestions();
+      this.loadFromLocalStorage();
+      
+      // 如果本地没有数据，创建一些示例数据
+      if (this.questions.length === 0) {
+        await this.loadMoreQuestions();
+      }
+      this.hasMore = false; // 本地存储模式下不需要分页
     },
 
     async loadMoreQuestions() {
@@ -38,27 +42,59 @@ export const useRawQuestionStore = defineStore("rawQuestion", {
       this.isLoading = true;
 
       try {
-        // 临时模拟数据
+        // 创建示例数据
         const mockQuestions: RawQuestion[] = [
           {
             id: Date.now() + Math.random(),
-            title: `示例问题 ${this.questions.length + 1}`,
-            body: "这是一个示例问题的内容...",
-            author: "示例用户",
-            tags: ["javascript", "typescript"],
+            title: "如何在 React 中使用 TypeScript？",
+            body: "我想在现有的 React 项目中引入 TypeScript，请问应该如何配置和使用？有什么最佳实践吗？",
+            author: "React新手",
+            tags: ["javascript", "typescript", "react"],
             issued_at: new Date().toISOString(),
-            view_count: Math.floor(Math.random() * 1000),
-            vote_count: Math.floor(Math.random() * 10),
+            view_count: 156,
+            vote_count: 12,
+            raw_answers: [
+              {
+                id: Date.now() + Math.random() + 1,
+                question_id: Date.now() + Math.random(),
+                content: "你可以使用 Create React App 的 TypeScript 模板来快速开始...",
+                author: "资深开发者",
+                vote_count: 8,
+                answered_at: new Date().toISOString(),
+                is_deleted: false
+              }
+            ],
+            expert_answers: [
+              {
+                id: Date.now() + Math.random() + 2,
+                question_id: Date.now() + Math.random(),
+                content: "TypeScript 与 React 结合使用的最佳实践包括：1. 正确定义组件 Props 类型 2. 使用泛型处理状态...",
+                source: "官方文档",
+                author: "TypeScript 专家",
+                created_at: new Date().toISOString(),
+                is_deleted: false
+              }
+            ],
+            is_deleted: false,
+          },
+          {
+            id: Date.now() + Math.random() + 100,
+            title: "Docker 容器化部署最佳实践",
+            body: "项目需要使用 Docker 进行容器化部署，请问有哪些需要注意的事项和最佳实践？",
+            author: "DevOps工程师",
+            tags: ["docker", "deployment", "devops"],
+            issued_at: new Date().toISOString(),
+            view_count: 89,
+            vote_count: 6,
             raw_answers: [],
             expert_answers: [],
             is_deleted: false,
           },
         ];
 
-        if (mockQuestions.length < this.itemsPerPage) {
-          this.hasMore = false;
-        }
         this.questions.push(...mockQuestions);
+        this.saveToLocalStorage();
+        this.hasMore = false;
         this.currentPage++;
       } catch (error) {
         console.error("Failed to fetch raw questions:", error);
@@ -231,6 +267,104 @@ export const useRawQuestionStore = defineStore("rawQuestion", {
     clearRecentlyDeleted() {
       this.recentlyDeleted = [];
     },
+
+    deleteSelectedQuestions() {
+      const questionIds = Array.from(this.selectedItemIds.questions);
+      questionIds.forEach((id) => {
+        const question = this.questions.find((q) => q.id === id);
+        if (question) {
+          this.deleteQuestion(question);
+        }
+      });
+      this.clearSelections();
+    },
+
+    addQuestion(question: RawQuestion) {
+      this.questions.unshift(question);
+      // 保存到本地存储
+      this.saveToLocalStorage();
+    },
+
+    updateQuestion(updatedQuestion: RawQuestion) {
+      const index = this.questions.findIndex((q) => q.id === updatedQuestion.id);
+      if (index !== -1) {
+        this.questions[index] = updatedQuestion;
+        this.saveToLocalStorage();
+      }
+    },
+
+    addRawAnswer(answer: RawAnswer) {
+      const question = this.questions.find((q) => q.id === answer.question_id);
+      if (question) {
+        question.raw_answers.push(answer);
+        this.saveToLocalStorage();
+      }
+    },
+
+    updateRawAnswer(updatedAnswer: RawAnswer) {
+      const question = this.questions.find((q) => q.id === updatedAnswer.question_id);
+      if (question) {
+        const index = question.raw_answers.findIndex((a) => a.id === updatedAnswer.id);
+        if (index !== -1) {
+          question.raw_answers[index] = updatedAnswer;
+          this.saveToLocalStorage();
+        }
+      }
+    },
+
+    addExpertAnswer(answer: ExpertAnswer) {
+      const question = this.questions.find((q) => q.id === answer.question_id);
+      if (question) {
+        question.expert_answers.push(answer);
+        this.saveToLocalStorage();
+      }
+    },
+
+    updateExpertAnswer(updatedAnswer: ExpertAnswer) {
+      const question = this.questions.find((q) => q.id === updatedAnswer.question_id);
+      if (question) {
+        const index = question.expert_answers.findIndex((a) => a.id === updatedAnswer.id);
+        if (index !== -1) {
+          question.expert_answers[index] = updatedAnswer;
+          this.saveToLocalStorage();
+        }
+      }
+    },
+
+    undoLastDelete() {
+      if (this.recentlyDeleted.length > 0) {
+        const lastDeleted = this.recentlyDeleted[0];
+        this.restoreItem(lastDeleted);
+        this.saveToLocalStorage();
+      }
+    },
+
+    saveToLocalStorage() {
+      try {
+        const data = {
+          questions: this.questions,
+          timestamp: Date.now()
+        };
+        localStorage.setItem('rawQuestionPool', JSON.stringify(data));
+      } catch (error) {
+        console.error('保存到本地存储失败:', error);
+      }
+    },
+
+    loadFromLocalStorage() {
+      try {
+        const stored = localStorage.getItem('rawQuestionPool');
+        if (stored) {
+          const data = JSON.parse(stored);
+          if (data.questions && Array.isArray(data.questions)) {
+            this.questions = data.questions;
+          }
+        }
+      } catch (error) {
+        console.error('从本地存储加载失败:', error);
+      }
+    },
+
   },
 
   getters: {

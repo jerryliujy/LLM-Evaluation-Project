@@ -5,6 +5,8 @@ from ..crud import crud_raw_question
 from ..schemas import RawQuestion, Msg
 from ..schemas.common import PaginatedResponse
 from ..db.database import get_db
+from ..auth import require_admin_or_expert, get_current_active_user
+from ..models.user import User
 
 router = APIRouter(
     prefix="/api/raw_questions",
@@ -27,14 +29,22 @@ def read_raw_questions_api(
     return result
 
 @router.delete("/{question_id}/", response_model=Msg)
-def delete_raw_question_api(question_id: int, db: Session = Depends(get_db)):
+def delete_raw_question_api(
+    question_id: int, 
+    db: Session = Depends(get_db),
+    current_user: User = Depends(require_admin_or_expert)
+):
     db_question = crud_raw_question.set_raw_question_deleted_status(db, question_id=question_id, deleted_status=True)
     if db_question is None:
         raise HTTPException(status_code=404, detail="RawQuestion not found or already processed")
     return Msg(message=f"Raw question {question_id} marked as deleted")
 
 @router.post("/{question_id}/restore/", response_model=RawQuestion)
-def restore_raw_question_api(question_id: int, db: Session = Depends(get_db)):
+def restore_raw_question_api(
+    question_id: int, 
+    db: Session = Depends(get_db),
+    current_user: User = Depends(require_admin_or_expert)
+):
     initial_check = crud_raw_question.get_raw_question_including_deleted(db, question_id=question_id)
     if not initial_check:
         raise HTTPException(status_code=404, detail="RawQuestion not found")
@@ -47,7 +57,11 @@ def restore_raw_question_api(question_id: int, db: Session = Depends(get_db)):
     return db_question
 
 @router.delete("/{question_id}/force-delete/", response_model=Msg)
-def force_delete_raw_question_api(question_id: int, db: Session = Depends(get_db)):
+def force_delete_raw_question_api(
+    question_id: int, 
+    db: Session = Depends(get_db),
+    current_user: User = Depends(require_admin_or_expert)
+):
     """永久删除原始问题"""
     initial_check = crud_raw_question.get_raw_question_including_deleted(db, question_id=question_id)
     if not initial_check:
@@ -63,14 +77,22 @@ def force_delete_raw_question_api(question_id: int, db: Session = Depends(get_db
     return Msg(message=f"Raw question {question_id} permanently deleted")
 
 @router.post("/delete-multiple/", response_model=Msg)
-def delete_multiple_raw_questions_api(question_ids: List[int] = Body(...), db: Session = Depends(get_db)):
+def delete_multiple_raw_questions_api(
+    question_ids: List[int] = Body(...), 
+    db: Session = Depends(get_db),
+    current_user: User = Depends(require_admin_or_expert)
+):
     if not question_ids:
         raise HTTPException(status_code=400, detail="No question IDs provided")
     num_deleted = crud_raw_question.set_multiple_raw_questions_deleted_status(db, question_ids=question_ids, deleted_status=True)
     return Msg(message=f"Successfully marked {num_deleted} raw questions as deleted")
 
 @router.post("/restore-multiple/", response_model=Msg)
-def restore_multiple_raw_questions_api(question_ids: List[int] = Body(...), db: Session = Depends(get_db)):
+def restore_multiple_raw_questions_api(
+    question_ids: List[int] = Body(...), 
+    db: Session = Depends(get_db),
+    current_user: User = Depends(require_admin_or_expert)
+):
     if not question_ids:
         raise HTTPException(status_code=400, detail="No question IDs provided")
     num_restored = crud_raw_question.set_multiple_raw_questions_deleted_status(db, question_ids=question_ids, deleted_status=False)

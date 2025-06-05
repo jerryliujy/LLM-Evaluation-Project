@@ -86,3 +86,42 @@ async def get_current_active_user(current_user: User = Depends(get_current_user)
     if not current_user.is_active:
         raise HTTPException(status_code=400, detail="Inactive user")
     return current_user
+
+# 基于角色的权限检查
+async def require_role(required_role: str):
+    """创建需要特定角色的依赖函数"""
+    async def role_checker(current_user: User = Depends(get_current_active_user)) -> User:
+        if current_user.role != required_role:
+            raise HTTPException(
+                status_code=status.HTTP_403_FORBIDDEN,
+                detail=f"Insufficient permissions. Required role: {required_role}"
+            )
+        return current_user
+    return role_checker
+
+async def require_admin(current_user: User = Depends(get_current_active_user)) -> User:
+    """要求管理员权限"""
+    if current_user.role != "admin":
+        raise HTTPException(
+            status_code=status.HTTP_403_FORBIDDEN,
+            detail="Admin privileges required"
+        )
+    return current_user
+
+async def require_admin_or_expert(current_user: User = Depends(get_current_active_user)) -> User:
+    """要求管理员或专家权限"""
+    if current_user.role not in ["admin", "expert"]:
+        raise HTTPException(
+            status_code=status.HTTP_403_FORBIDDEN,
+            detail="Admin or expert privileges required"
+        )
+    return current_user
+
+async def require_expert(current_user: User = Depends(get_current_active_user)) -> User:
+    """要求专家权限"""
+    if current_user.role != "expert":
+        raise HTTPException(
+            status_code=status.HTTP_403_FORBIDDEN,
+            detail="Expert privileges required"
+        )
+    return current_user

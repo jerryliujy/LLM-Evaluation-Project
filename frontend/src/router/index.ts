@@ -4,6 +4,7 @@ import DataImportView from "../views/DataImportView.vue";
 import DatasetMarketplaceView from "../views/DatasetMarketplaceView.vue";
 import RoleSelectionView from "../views/RoleSelectionView.vue";
 import LoginView from "../views/LoginView.vue";
+import RawQuestionManagementView from "../views/RawQuestionManagementView.vue";
 
 const routes: Array<RouteRecordRaw> = [
   {
@@ -45,6 +46,12 @@ const routes: Array<RouteRecordRaw> = [
     name: "DatabaseView",
     component: () => 
       import(/* webpackChunkName: "database" */ "../views/DatabaseView.vue"),
+    meta: { requiresAuth: true, role: 'admin' }
+  },
+  {
+    path: "/raw-question-management",
+    name: "RawQuestionManagement",
+    component: RawQuestionManagementView,
     meta: { requiresAuth: true, role: 'admin' }
   },
 ];

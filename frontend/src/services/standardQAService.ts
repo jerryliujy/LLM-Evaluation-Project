@@ -2,80 +2,132 @@ import { apiClient } from './api'
 
 export interface StandardQuestion {
   id?: number
-  title: string
-  body?: string
-  difficulty?: 'beginner' | 'intermediate' | 'advanced'
-  category?: string
+  dataset_id: number
+  question_text: string
+  difficulty_level?: string
+  knowledge_points?: string[]
   tags?: string[]
+  notes?: string
+  created_by?: string
   created_at?: Date
+  updated_at?: Date
+  is_valid?: boolean
+  question_type?: string
+  version?: number
 }
 
 export interface StandardAnswer {
   id?: number
   std_question_id?: number
-  content: string
-  source?: string
-  confidence?: 'high' | 'medium' | 'low'
-  tags?: string[]
+  answer_text: string
+  answer_type?: string
+  scoring_points?: ScoringPoint[]
+  total_score?: number
+  explanation?: string
+  created_by?: string
   created_at?: Date
-  referenced_raw_answer_ids?: number[]
-  referenced_expert_answer_ids?: number[]
+  updated_at?: Date
+  is_valid?: boolean
+  version?: number
 }
 
-export interface StandardQAPair {
-  question: StandardQuestion
-  answer: StandardAnswer
-  references?: {
-    question_ids?: number[]
-    raw_answer_ids?: number[]
-    expert_answer_ids?: number[]
-  }
+export interface ScoringPoint {
+  id?: number
+  scoring_point_text: string
+  point_order?: number
+  score?: number
+}
+
+export interface RelationRecord {
+  id?: number
+  notes?: string
+  created_by?: string
+  created_at?: Date
+}
+
+export interface RawQuestionRelation extends RelationRecord {
+  raw_question_id: number
+}
+
+export interface RawAnswerRelation extends RelationRecord {
+  raw_answer_id: number
+}
+
+export interface ExpertAnswerRelation extends RelationRecord {
+  expert_answer_id: number
+}
+
+export interface StandardQAWithRelations {
+  std_question: StandardQuestion
+  std_answer: StandardAnswer
+  raw_question_relations?: RawQuestionRelation[]
+  raw_answer_relations?: RawAnswerRelation[]
+  expert_answer_relations?: ExpertAnswerRelation[]
+}
+
+export interface CreateStandardQARequest {
+  // 标准问题字段
+  dataset_id: number
+  question_text: string
+  difficulty_level?: string
+  knowledge_points?: string[]
+  tags?: string[]
+  notes?: string
+  created_by?: string
+  
+  // 标准答案字段
+  answer_text: string
+  answer_type?: string
+  scoring_points?: ScoringPoint[]
+  total_score?: number
+  explanation?: string
+  
+  // 关系记录
+  raw_question_relations?: RawQuestionRelation[]
+  raw_answer_relations?: RawAnswerRelation[]
+  expert_answer_relations?: ExpertAnswerRelation[]
 }
 
 class StandardQAService {
-  // 创建标准问答对
-  async createStandardQA(data: StandardQAPair): Promise<any> {
+  // 使用新的多对多关系架构创建标准问答对
+  async createStandardQAWithRelations(data: CreateStandardQARequest): Promise<StandardQAWithRelations> {
     try {
-      // 首先创建标准问题
-      const questionResponse = await apiClient.post('/std-questions/', {
-        title: data.question.title,
-        body: data.question.body || '',
-        difficulty: data.question.difficulty || 'intermediate',
-        category: data.question.category || '',
-        tags: data.question.tags || []
-      })
-
-      const questionId = questionResponse.data.id
-
-      // 然后创建标准回答，关联到问题
-      const answerResponse = await apiClient.post('/std-answers/', {
-        std_question_id: questionId,
-        content: data.answer.content,
-        source: data.answer.source || '',
-        confidence: data.answer.confidence || 'medium',
-        tags: data.answer.tags || [],
-        referenced_raw_answer_ids: data.references?.raw_answer_ids || [],
-        referenced_expert_answer_ids: data.references?.expert_answer_ids || []
-      })
-
-      return {
-        question: questionResponse.data,
-        answer: answerResponse.data
-      }
+      const response = await apiClient.post('/std-qa-management/create-with-relations', data)
+      return response.data
     } catch (error) {
       console.error('创建标准问答失败:', error)
       throw error
     }
   }
 
-  // 获取所有标准问题
+  // 获取标准问答及其关系记录
+  async getStandardQAWithRelations(questionId: number): Promise<StandardQAWithRelations> {
+    try {
+      const response = await apiClient.get(`/std-qa-management/${questionId}/with-relations`)
+      return response.data
+    } catch (error) {
+      console.error('获取标准问答及关系失败:', error)
+      throw error
+    }
+  }
+
+  // 删除标准问答及其所有关系记录
+  async deleteStandardQAWithRelations(questionId: number): Promise<void> {
+    try {
+      await apiClient.delete(`/std-qa-management/${questionId}/with-relations`)
+    } catch (error) {
+      console.error('删除标准问答及关系失败:', error)
+      throw error
+    }
+  }
+
+  // 获取所有标准问题（分页）
   async getStandardQuestions(params?: {
     skip?: number
     limit?: number
-    category?: string
-    difficulty?: string
-    search?: string
-  }): Promise<StandardQuestion[]> {
+    include_deleted?: boolean
+    deleted_only?: boolean
+  }): Promise<{items: StandardQuestion[], total: number, page: number, per_page: number, pages: number}> {
     try {
       const response = await apiClient.get('/std-questions/', { params })
       return response.data
@@ -86,9 +138,9 @@ class StandardQAService {
   }
 
   // 获取特定问题的标准回答
-  async getStandardAnswers(questionId: number): Promise<StandardAnswer[]> {
+  async getStandardAnswersByQuestionId(questionId: number): Promise<StandardAnswer[]> {
     try {
-      const response = await apiClient.get(`/std-answers/question/${questionId}`)
+      const response = await apiClient.get(`/std-answers/by-question/${questionId}`)
       return response.data
     } catch (error) {
       console.error('获取标准回答失败:', error)
@@ -96,25 +148,38 @@ class StandardQAService {
     }
   }
 
-  // 获取标准问答对（包含问题和回答）
+  // 获取所有标准答案（分页）
+  async getStandardAnswers(params?: {
+    skip?: number
+    limit?: number
+    include_deleted?: boolean
+    deleted_only?: boolean
+  }): Promise<{items: StandardAnswer[], total: number, page: number, per_page: number, pages: number}> {
+    try {
+      const response = await apiClient.get('/std-answers/', { params })
+      return response.data
+    } catch (error) {
+      console.error('获取标准答案失败:', error)
+      throw error
+    }
+  }
+  // 获取标准问答对（包含问题和回答）- 兼容性方法
   async getStandardQAPairs(params?: {
     skip?: number
     limit?: number
-    category?: string
-    difficulty?: string
-    search?: string
-  }): Promise<StandardQAPair[]> {
+    include_deleted?: boolean
+  }): Promise<StandardQAWithRelations[]> {
     try {
-      const questions = await this.getStandardQuestions(params)
-      const qaPairs: StandardQAPair[] = []
+      const questionsResponse = await this.getStandardQuestions(params)
+      const qaPairs: StandardQAWithRelations[] = []
 
-      for (const question of questions) {
-        const answers = await this.getStandardAnswers(question.id!)
-        if (answers.length > 0) {
-          qaPairs.push({
-            question,
-            answer: answers[0] // 假设每个问题只有一个标准回答
-          })
+      for (const question of questionsResponse.items) {
+        try {
+          const qaWithRelations = await this.getStandardQAWithRelations(question.id!)
+          qaPairs.push(qaWithRelations)
+        } catch (error) {
+          // 如果获取关系失败，可能是因为没有对应的答案，跳过这个问题
+          console.warn(`跳过问题 ${question.id}:`, error)
         }
       }
 
@@ -147,32 +212,111 @@ class StandardQAService {
     }
   }
 
-  // 删除标准问题（会同时删除相关回答）
+  // 删除标准问题（软删除）
   async deleteStandardQuestion(id: number): Promise<void> {
     try {
-      await apiClient.delete(`/std-questions/${id}`)
+      await apiClient.delete(`/std-questions/${id}/`)
     } catch (error) {
       console.error('删除标准问题失败:', error)
       throw error
     }
   }
 
-  // 删除标准回答
+  // 恢复标准问题
+  async restoreStandardQuestion(id: number): Promise<StandardQuestion> {
+    try {
+      const response = await apiClient.post(`/std-questions/${id}/restore/`)
+      return response.data
+    } catch (error) {
+      console.error('恢复标准问题失败:', error)
+      throw error
+    }
+  }
+
+  // 删除标准回答（软删除）
   async deleteStandardAnswer(id: number): Promise<void> {
     try {
-      await apiClient.delete(`/std-answers/${id}`)
+      await apiClient.delete(`/std-answers/${id}/`)
     } catch (error) {
       console.error('删除标准回答失败:', error)
       throw error
     }
   }
 
+  // 恢复标准回答
+  async restoreStandardAnswer(id: number): Promise<StandardAnswer> {
+    try {
+      const response = await apiClient.post(`/std-answers/${id}/restore/`)
+      return response.data
+    } catch (error) {
+      console.error('恢复标准回答失败:', error)
+      throw error
+    }
+  }
+
+  // 关系记录管理方法
+  // 创建标准问题-原始问题关系记录
+  async createStdQuestionRawQuestionRelation(data: {
+    std_question_id: number
+    raw_question_id: number
+    notes?: string
+    created_by?: string
+  }): Promise<RelationRecord> {
+    try {
+      const response = await apiClient.post('/relationship-records/std-question-raw-question', data)
+      return response.data
+    } catch (error) {
+      console.error('创建标准问题-原始问题关系失败:', error)
+      throw error
+    }
+  }
+  // 创建标准答案-原始答案关系记录
+  async createStdAnswerRawAnswerRelation(data: {
+    std_answer_id: number
+    raw_answer_id: number
+    notes?: string
+    created_by?: string
+  }): Promise<RelationRecord> {
+    try {
+      const response = await apiClient.post('/relationship-records/std-answer-raw-answer', data)
+      return response.data
+    } catch (error) {
+      console.error('创建标准答案-原始答案关系失败:', error)
+      throw error
+    }
+  }
+  // 创建标准答案-专家答案关系记录
+  async createStdAnswerExpertAnswerRelation(data: {
+    std_answer_id: number
+    expert_answer_id: number
+    notes?: string
+    created_by?: string
+  }): Promise<RelationRecord> {
+    try {
+      const response = await apiClient.post('/relationship-records/std-answer-expert-answer', data)
+      return response.data
+    } catch (error) {
+      console.error('创建标准答案-专家答案关系失败:', error)
+      throw error
+    }
+  }
+
+  // 删除关系记录
+  async deleteRelationRecord(recordType: 'std-question-raw-question' | 'std-answer-raw-answer' | 'std-answer-expert-answer', recordId: number): Promise<void> {
+    try {
+      await apiClient.delete(`/relationship-records/${recordType}/${recordId}`)
+    } catch (error) {
+      console.error('删除关系记录失败:', error)
+      throw error
+    }
+  }
+
   // 搜索标准问答
   async searchStandardQA(query: string, filters?: {
-    category?: string
-    difficulty?: string
-    confidence?: string
-  }): Promise<StandardQAPair[]> {
+    dataset_id?: number
+    difficulty_level?: string
+    include_deleted?: boolean
+  }): Promise<StandardQAWithRelations[]> {
     try {
       const params = {
         search: query,
@@ -183,6 +327,46 @@ class StandardQAService {
       console.error('搜索标准问答失败:', error)
       throw error
     }
+  }
+  // 兼容性方法 - 旧版本API的封装
+  /**
+   * @deprecated 使用 createStandardQAWithRelations 替代
+   */
+  async createStandardQA(data: {
+    question: {
+      dataset_id: number
+      question_text: string
+      difficulty_level?: string
+      knowledge_points?: string[]
+      tags?: string[]
+      notes?: string
+      created_by?: string
+    }
+    answer: {
+      answer_text: string
+      answer_type?: string
+      scoring_points?: ScoringPoint[]
+      total_score?: number
+      explanation?: string
+      created_by?: string
+    }
+    relations?: {
+      raw_question_ids?: number[]
+      raw_answer_ids?: number[]
+      expert_answer_ids?: number[]
+    }
+  }): Promise<StandardQAWithRelations> {
+    console.warn('⚠️ createStandardQA is deprecated: 使用 createStandardQAWithRelations 替代')
+    
+    const request: CreateStandardQARequest = {
+      ...data.question,
+      ...data.answer,
+      raw_question_relations: data.relations?.raw_question_ids?.map(id => ({ raw_question_id: id })) || [],
+      raw_answer_relations: data.relations?.raw_answer_ids?.map(id => ({ raw_answer_id: id })) || [],
+      expert_answer_relations: data.relations?.expert_answer_ids?.map(id => ({ expert_answer_id: id })) || []
+    }
+    
+    return this.createStandardQAWithRelations(request)
   }
 }
 

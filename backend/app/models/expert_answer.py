@@ -12,10 +12,9 @@ class ExpertAnswer(Base):
     author = Column(Integer, ForeignKey("User.id"), nullable=False, index=True)
     created_at = Column(DateTime(timezone=True), server_default=func.now())   
     is_deleted = Column(Boolean, default=False, nullable=False, index=True)
-    referenced_by_std_answer_id = Column(Integer, ForeignKey("StdAnswer.id"), nullable=True, index=True)
-
-    # 关系
+    referenced_by_std_answer_id = Column(Integer, ForeignKey("StdAnswer.id"), nullable=True, index=True)    # 关系
     question = relationship("RawQuestion", back_populates="expert_answers")
     author_user = relationship("User")
-    # 被哪个标准回答引用
-    referenced_by_std_answer = relationship("StdAnswer", back_populates="referenced_expert_answers")
+    
+    # 多对多关系记录
+    std_answer_records = relationship("StdAnswerExpertAnswerRecord", back_populates="expert_answer", cascade="all, delete-orphan")

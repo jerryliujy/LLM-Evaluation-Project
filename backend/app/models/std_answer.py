@@ -13,16 +13,15 @@ class StdAnswer(Base):
     created_by = Column(String(100), nullable=True)
     create_time = Column(DateTime(timezone=True), server_default=func.now())
     version = Column(Integer, default=1, nullable=False, index=True)
-    previous_version_id = Column(Integer, ForeignKey("StdAnswer.id"), nullable=True)
-
-    # Relationships
+    previous_version_id = Column(Integer, ForeignKey("StdAnswer.id"), nullable=True)    # Relationships
     std_question = relationship("StdQuestion", back_populates="std_answer")
     previous_version = relationship("StdAnswer", remote_side=[id])
     scoring_points = relationship("StdAnswerScoringPoint", back_populates="std_answer", cascade="all, delete-orphan")
     
-    # 引用的原始回答和专家回答 (一对多关系)
-    referenced_raw_answers = relationship("RawAnswer", back_populates="referenced_by_std_answer")
-    referenced_expert_answers = relationship("ExpertAnswer", back_populates="referenced_by_std_answer")
+    
+    # 多对多关系记录
+    raw_answer_records = relationship("StdAnswerRawAnswerRecord", back_populates="std_answer", cascade="all, delete-orphan")
+    expert_answer_records = relationship("StdAnswerExpertAnswerRecord", back_populates="std_answer", cascade="all, delete-orphan")
 
 class StdAnswerScoringPoint(Base):
     __tablename__ = "StdAnswerScoringPoint"

@@ -7,8 +7,6 @@ def get_std_answer(db: Session, answer_id: int, include_deleted: bool = False) -
     query = db.query(models.StdAnswer).options(
         selectinload(models.StdAnswer.std_question),
         selectinload(models.StdAnswer.scoring_points.and_(models.StdAnswerScoringPoint.is_valid == True)),
-        selectinload(models.StdAnswer.referenced_raw_answers),
-        selectinload(models.StdAnswer.referenced_expert_answers)
     ).filter(models.StdAnswer.id == answer_id)
     
     if not include_deleted:
@@ -36,8 +34,6 @@ def get_std_answers_paginated(db: Session, skip: int = 0, limit: int = 10, inclu
     query = db.query(models.StdAnswer).options(
         selectinload(models.StdAnswer.std_question),
         selectinload(models.StdAnswer.scoring_points.and_(models.StdAnswerScoringPoint.is_valid == True)),
-        selectinload(models.StdAnswer.referenced_raw_answers),
-        selectinload(models.StdAnswer.referenced_expert_answers)
     ).order_by(models.StdAnswer.id.asc())
     
     if deleted_only:

@@ -12,7 +12,7 @@ class StdQuestion(Base):
     text = Column(Text, nullable=False)
     create_time = Column(DateTime(timezone=True), server_default=func.now())
     question_type = Column(String(50), nullable=False)
-    is_valid = Column(Boolean, default=True, nullable=False, index=True)    
+    is_valid = Column(Boolean, default=True, nullable=False, index=True)
     created_by = Column(String(100), nullable=True)
     version = Column(Integer, default=1, nullable=False, index=True)
     previous_version_id = Column(Integer, ForeignKey("StdQuestion.id"), nullable=True)

@@ -1,748 +1,1085 @@
 <template>
-  <div class="modal-overlay" @click="$emit('cancel')">
-    <div class="modal standard-qa-modal" @click.stop>
-      <div class="modal-header">
+  <div v-if="dialogVisible" class="dialog-overlay" @click="handleOverlayClick">
+    <div class="dialog" @click.stop>
+      <div class="dialog-header">
         <h3>创建标准问答</h3>
-        <button @click="$emit('cancel')" class="close-btn">×</button>
+        <button class="close-btn" @click="handleClose">&times;</button>
       </div>
-      <div class="modal-body">
-        <div class="selected-content">
-          <h4>选中的内容概览</h4>
-          <div class="content-summary">
-            <div class="summary-item">
-              <span class="summary-label">问题:</span>
-              <span class="summary-count">{{ selectedItems.questions.length }} 个</span>
-            </div>
-            <div class="summary-item">
-              <span class="summary-label">原始回答:</span>
-              <span class="summary-count">{{ selectedItems.rawAnswers.length }} 个</span>
-            </div>
-            <div class="summary-item">
-              <span class="summary-label">专家回答:</span>
-              <span class="summary-count">{{ selectedItems.expertAnswers.length }} 个</span>
+      
+      <div class="dialog-body">
+        <div class="standard-qa-content">
+          <!-- 选中内容概览 -->
+          <div class="selected-summary">
+            <h4>选中的内容概览</h4>
+            <div class="summary-stats">
+              <span class="tag tag-info">原始问题: {{ selectedQuestionCount }} 个</span>
+              <span class="tag tag-success">原始回答: {{ selectedRawAnswerCount }} 个</span>
+              <span class="tag tag-warning">专家回答: {{ selectedExpertAnswerCount }} 个</span>
             </div>
           </div>
-        </div>
 
-        <form @submit.prevent="handleSave">
-          <div class="form-section">
-            <h4>标准问题</h4>
-            <div class="form-group">
-              <label for="std_question_title">问题标题 *</label>
-              <input
-                id="std_question_title"
-                v-model="formData.question.title"
-                type="text"
-                required
-                class="form-control"
-                placeholder="输入标准问题标题"
-              >
-            </div>
-
-            <div class="form-group">
-              <label for="std_question_body">问题内容</label>
-              <textarea
-                id="std_question_body"
-                v-model="formData.question.body"
-                class="form-control"
-                rows="4"
-                placeholder="输入标准问题的详细内容"
-              ></textarea>
-            </div>
-
-            <div class="form-row">
-              <div class="form-group">
-                <label for="difficulty">难度等级</label>
-                <select
-                  id="difficulty"
-                  v-model="formData.question.difficulty"
-                  class="form-control"
+          <!-- 表单 -->
+          <form ref="formRef" @submit.prevent="handleSave" class="form">
+            <!-- 标准问题部分 -->
+            <div class="form-section">
+              <h4>标准问题</h4>
+              
+              <div class="form-item">
+                <label class="form-label required">数据集</label>
+                <select 
+                  v-model="formData.dataset_id" 
+                  class="form-select"
+                  :disabled="datasetsLoading"
+                  required
                 >
+                  <option value="">选择数据集</option>
+                  <option 
+                    v-for="dataset in datasets" 
+                    :key="dataset.id" 
+                    :value="dataset.id"
+                  >
+                    {{ dataset.name }}
+                  </option>
+                </select>
+                <div v-if="datasetsLoading" class="loading-text">加载中...</div>
+              </div>
+
+              <div class="form-item">
+                <label class="form-label required">问题内容</label>
+                <textarea
+                  v-model="formData.question_text"
+                  class="form-textarea"
+                  placeholder="请输入标准问题的详细内容"
+                  rows="4"
+                  maxlength="1000"
+                  required
+                ></textarea>
+                <div class="char-count">{{ formData.question_text.length }}/1000</div>
+              </div>
+
+              <div class="form-item">
+                <label class="form-label">难度等级</label>
+                <select v-model="formData.difficulty_level" class="form-select">
+                  <option value="">选择难度等级</option>
                   <option value="beginner">初级</option>
                   <option value="intermediate">中级</option>
                   <option value="advanced">高级</option>
                 </select>
               </div>
 
-              <div class="form-group">
-                <label for="category">分类</label>
-                <input
-                  id="category"
-                  v-model="formData.question.category"
-                  type="text"
-                  class="form-control"
-                  placeholder="问题分类"
-                >
-              </div>
-            </div>
-
-            <div class="form-group">
-              <label for="question_tags">标签</label>
-              <div class="tags-input">
-                <div class="tags-display">
+              <div class="form-item">
+                <label class="form-label">知识点</label>
+                <div class="tags-input">
                   <span
-                    v-for="(tag, index) in formData.question.tags"
-                    :key="index"
-                    class="tag"
+                    v-for="point in formData.knowledge_points"
+                    :key="point"
+                    class="tag tag-closable"
+                  >
+                    {{ point }}
+                    <button 
+                      type="button" 
+                      class="tag-close" 
+                      @click="removeKnowledgePoint(point)"
+                    >
+                      ×
+                    </button>
+                  </span>
+                  <input
+                    v-if="knowledgePointInputVisible"
+                    ref="knowledgePointInputRef"
+                    v-model="knowledgePointInputValue"
+                    class="tag-input"
+                    @keyup.enter="handleKnowledgePointInputConfirm"
+                    @blur="handleKnowledgePointInputConfirm"
+                    placeholder="输入知识点"
+                  />
+                  <button 
+                    v-else 
+                    type="button"
+                    class="btn btn-small btn-secondary" 
+                    @click="showKnowledgePointInput"
+                  >
+                    + 添加知识点
+                  </button>
+                </div>
+              </div>
+
+              <div class="form-item">
+                <label class="form-label">标签</label>
+                <div class="tags-input">
+                  <span
+                    v-for="tag in formData.tags"
+                    :key="tag"
+                    class="tag tag-closable"
                   >
                     {{ tag }}
-                    <button
-                      type="button"
-                      @click="removeQuestionTag(index)"
-                      class="tag-remove"
-                    >×</button>
+                    <button 
+                      type="button" 
+                      class="tag-close" 
+                      @click="removeTag(tag)"
+                    >
+                      ×
+                    </button>
                   </span>
+                  <input
+                    v-if="tagInputVisible"
+                    ref="tagInputRef"
+                    v-model="tagInputValue"
+                    class="tag-input"
+                    @keyup.enter="handleTagInputConfirm"
+                    @blur="handleTagInputConfirm"
+                    placeholder="输入标签"
+                  />
+                  <button 
+                    v-else 
+                    type="button"
+                    class="btn btn-small btn-secondary" 
+                    @click="showTagInput"
+                  >
+                    + 添加标签
+                  </button>
                 </div>
-                <input
-                  v-model="newQuestionTag"
-                  type="text"
-                  class="form-control"
-                  placeholder="输入标签后按回车添加"
-                  @keydown.enter.prevent="addQuestionTag"
-                  @keydown.space.prevent="addQuestionTag"
-                >
-              </div>
-            </div>
-          </div>
-
-          <div class="form-section">
-            <h4>标准回答</h4>
-            <div class="form-group">
-              <label for="std_answer_content">回答内容 *</label>
-              <textarea
-                id="std_answer_content"
-                v-model="formData.answer.content"
-                required
-                class="form-control"
-                rows="8"
-                placeholder="输入标准回答内容"
-              ></textarea>
-            </div>
-
-            <div class="form-row">
-              <div class="form-group">
-                <label for="answer_source">来源</label>
-                <input
-                  id="answer_source"
-                  v-model="formData.answer.source"
-                  type="text"
-                  class="form-control"
-                  placeholder="回答来源"
-                >
               </div>
 
-              <div class="form-group">
-                <label for="confidence">置信度</label>
-                <select
-                  id="confidence"
-                  v-model="formData.answer.confidence"
-                  class="form-control"
-                >
-                  <option value="high">高</option>
-                  <option value="medium">中</option>
-                  <option value="low">低</option>
-                </select>
+              <div class="form-item">
+                <label class="form-label">备注</label>
+                <textarea
+                  v-model="formData.notes"
+                  class="form-textarea"
+                  placeholder="问题备注（可选）"
+                  rows="2"
+                ></textarea>
               </div>
             </div>
 
-            <div class="form-group">
-              <label for="answer_tags">回答标签</label>
-              <div class="tags-input">
-                <div class="tags-display">
-                  <span
-                    v-for="(tag, index) in formData.answer.tags"
+            <!-- 标准回答部分 -->
+            <div class="form-section">
+              <h4>标准回答</h4>
+              
+              <div class="form-item">
+                <label class="form-label required">回答内容</label>
+                <textarea
+                  v-model="formData.answer_text"
+                  class="form-textarea"
+                  placeholder="请输入标准回答内容"
+                  rows="6"
+                  maxlength="2000"
+                  required
+                ></textarea>
+                <div class="char-count">{{ formData.answer_text.length }}/2000</div>
+              </div>
+
+              <div class="form-row">
+                <div class="form-item">
+                  <label class="form-label">回答类型</label>
+                  <select v-model="formData.answer_type" class="form-select">
+                    <option value="">选择回答类型</option>
+                    <option value="direct">直接答案</option>
+                    <option value="step-by-step">步骤指导</option>
+                    <option value="code-example">代码示例</option>
+                    <option value="reference">参考链接</option>
+                    <option value="comprehensive">综合答案</option>
+                  </select>
+                </div>
+                <div class="form-item">
+                  <label class="form-label">总分</label>
+                  <input
+                    v-model.number="formData.total_score"
+                    type="number"
+                    class="form-input"
+                    min="0"
+                    max="100"
+                    placeholder="总分"
+                  />
+                </div>
+              </div>
+
+              <div class="form-item">
+                <label class="form-label">评分点</label>
+                <div class="scoring-points">
+                  <div 
+                    v-for="(point, index) in formData.scoring_points" 
                     :key="index"
-                    class="tag"
+                    class="scoring-point-item"
                   >
-                    {{ tag }}
-                    <button
+                    <input
+                      v-model="point.scoring_point_text"
+                      type="text"
+                      class="form-input"
+                      placeholder="评分点内容"
+                    />
+                    <input
+                      v-model.number="point.score"
+                      type="number"
+                      class="form-input score-input"
+                      min="0"
+                      max="100"
+                      placeholder="分值"
+                    />
+                    <button 
                       type="button"
-                      @click="removeAnswerTag(index)"
-                      class="tag-remove"
-                    >×</button>
-                  </span>
+                      class="btn btn-small btn-danger"
+                      @click="removeScoringPoint(index)"
+                    >
+                      删除
+                    </button>
+                  </div>
+                  <button 
+                    type="button"
+                    class="btn btn-small btn-secondary" 
+                    @click="addScoringPoint"
+                  >
+                    + 添加评分点
+                  </button>
                 </div>
-                <input
-                  v-model="newAnswerTag"
-                  type="text"
-                  class="form-control"
-                  placeholder="输入标签后按回车添加"
-                  @keydown.enter.prevent="addAnswerTag"
-                  @keydown.space.prevent="addAnswerTag"
+              </div>
+
+              <div class="form-item">
+                <label class="form-label">详细解释</label>
+                <textarea
+                  v-model="formData.explanation"
+                  class="form-textarea"
+                  placeholder="对回答的详细解释（可选）"
+                  rows="3"
+                ></textarea>
+              </div>
+            </div>
+
+            <!-- 关系配置部分 -->
+            <div class="form-section">
+              <h4>关系配置</h4>
+              
+              <!-- 原始问题关系 -->
+              <div v-if="selectedQuestions.length > 0" class="relation-group">
+                <h5>关联的原始问题 ({{ selectedQuestions.length }})</h5>
+                <div 
+                  v-for="(question, index) in selectedQuestions" 
+                  :key="question.id"
+                  class="relation-item"
                 >
-              </div>
-            </div>
-          </div>
-
-          <!-- 参考内容预览 -->
-          <div class="form-section">
-            <h4>参考内容</h4>
-            <div class="reference-content">
-              <!-- 参考问题 -->
-              <div v-if="selectedItems.questions.length > 0" class="reference-section">
-                <h5>参考问题 ({{ selectedItems.questions.length }})</h5>
-                <div class="reference-items">
-                  <div
-                    v-for="question in selectedItems.questions"
-                    :key="question.id"
-                    class="reference-item"
-                  >
-                    <h6>{{ question.title }}</h6>
-                    <p v-if="question.body">{{ truncateText(question.body, 100) }}</p>
-                    <div class="reference-meta">
-                      <span>作者: {{ question.author || '未知' }}</span>
-                      <span v-if="question.tags?.length">
-                        标签: {{ question.tags.join(', ') }}
-                      </span>
-                    </div>
+                  <div class="relation-content">
+                    <strong>{{ question.title }}</strong>
+                    <p>{{ truncateText(question.body || '', 100) }}</p>
+                  </div>
+                  <div class="relation-config">
+                    <input
+                      v-model="rawQuestionRelations[index].notes"
+                      type="text"
+                      class="form-input small"
+                      placeholder="备注"
+                    />
                   </div>
                 </div>
               </div>
 
-              <!-- 参考的原始回答 -->
-              <div v-if="selectedItems.rawAnswers.length > 0" class="reference-section">
-                <h5>参考原始回答 ({{ selectedItems.rawAnswers.length }})</h5>
-                <div class="reference-items">
-                  <div
-                    v-for="answer in selectedItems.rawAnswers"
-                    :key="answer.id"
-                    class="reference-item"
-                  >
-                    <p>{{ truncateText(answer.content, 150) }}</p>
-                    <div class="reference-meta">
-                      <span>作者: {{ answer.author || '未知' }}</span>
-                      <span>问题: {{ answer.question?.title }}</span>
-                    </div>
+              <!-- 原始回答关系 -->
+              <div v-if="selectedRawAnswers.length > 0" class="relation-group">
+                <h5>关联的原始回答 ({{ selectedRawAnswers.length }})</h5>
+                <div 
+                  v-for="(answer, index) in selectedRawAnswers" 
+                  :key="answer.id"
+                  class="relation-item"
+                >
+                  <div class="relation-content">
+                    <strong>原始回答</strong>
+                    <p>{{ truncateText(answer.content, 100) }}</p>
+                    <small>{{ answer.author || '匿名' }} · {{ formatDate(answer.answered_at) }}</small>
+                  </div>
+                  <div class="relation-config">
+                    <input
+                      v-model="rawAnswerRelations[index].notes"
+                      type="text"
+                      class="form-input small"
+                      placeholder="备注"
+                    />
                   </div>
                 </div>
               </div>
 
-              <!-- 参考的专家回答 -->
-              <div v-if="selectedItems.expertAnswers.length > 0" class="reference-section">
-                <h5>参考专家回答 ({{ selectedItems.expertAnswers.length }})</h5>
-                <div class="reference-items">
-                  <div
-                    v-for="answer in selectedItems.expertAnswers"
-                    :key="answer.id"
-                    class="reference-item expert-reference"
-                  >
-                    <p>{{ truncateText(answer.content, 150) }}</p>
-                    <div class="reference-meta">
-                      <span>作者: {{ answer.author || '未知' }}</span>
-                      <span>来源: {{ answer.source }}</span>
-                      <span>问题: {{ answer.question?.title }}</span>
-                    </div>
+              <!-- 专家回答关系 -->
+              <div v-if="selectedExpertAnswers.length > 0" class="relation-group">
+                <h5>关联的专家回答 ({{ selectedExpertAnswers.length }})</h5>
+                <div 
+                  v-for="(answer, index) in selectedExpertAnswers" 
+                  :key="answer.id"
+                  class="relation-item"
+                >
+                  <div class="relation-content">
+                    <strong>专家回答</strong>
+                    <p>{{ truncateText(answer.content, 100) }}</p>
+                    <small>来源: {{ answer.source }} | 作者: {{ answer.author || '匿名' }}</small>
+                  </div>
+                  <div class="relation-config">
+                    <input
+                      v-model="expertAnswerRelations[index].notes"
+                      type="text"
+                      class="form-input small"
+                      placeholder="备注"
+                    />
                   </div>
                 </div>
               </div>
             </div>
-          </div>
+          </form>
+        </div>
+      </div>
 
-          <div class="form-actions">
-            <button type="button" @click="$emit('cancel')" class="btn btn-secondary">
-              取消
-            </button>
-            <button type="button" @click="autoGenerate" class="btn btn-info">
-              智能生成
-            </button>
-            <button type="submit" class="btn btn-primary">
-              创建标准问答
-            </button>
-          </div>
-        </form>
+      <div class="dialog-footer">
+        <button 
+          type="button"
+          class="btn btn-secondary" 
+          @click="handleClose"
+        >
+          取消
+        </button>
+        <button 
+          type="button"
+          class="btn btn-primary" 
+          @click="handleSave" 
+          :disabled="loading"
+        >
+          {{ loading ? '创建中...' : '创建标准问答' }}
+        </button>
       </div>
     </div>
   </div>
 </template>
 
 <script setup lang="ts">
-import { ref, onMounted } from 'vue'
-import { standardQAService } from '@/services/standardQAService'
+import { ref, computed, watch, nextTick, onMounted } from 'vue'
+import { RawQuestion } from '@/types/questions'
+import { RawAnswer, ExpertAnswer } from '@/types/answers'
+import { 
+  standardQAService, 
+  type CreateStandardQARequest,
+  type ScoringPoint,
+  type RawQuestionRelation,
+  type RawAnswerRelation,
+  type ExpertAnswerRelation
+} from '@/services/standardQAService'
+import { datasetService, type Dataset } from '@/services/datasetService'
+import { authService } from '@/services/authService'
 
 interface Props {
+  visible: boolean
   selectedItems: {
-    questions: any[]
-    rawAnswers: any[]
-    expertAnswers: any[]
+    questions: Set<number>
+    rawAnswers: Set<number>
+    expertAnswers: Set<number>
   }
+  questions: RawQuestion[]
+}
+
+interface Emits {
+  (e: 'update:visible', value: boolean): void
+  (e: 'created'): void
 }
 
 const props = defineProps<Props>()
-const emit = defineEmits<{
-  save: [standardQA: any]
-  cancel: []
-}>()
+const emit = defineEmits<Emits>()
+
+// 响应式数据
+const formRef = ref<HTMLFormElement>()
+const loading = ref(false)
+const datasetsLoading = ref(false)
+const datasets = ref<Dataset[]>([])
+
+// 标签和知识点输入
+const knowledgePointInputVisible = ref(false)
+const knowledgePointInputValue = ref('')
+const knowledgePointInputRef = ref<HTMLInputElement>()
+const tagInputVisible = ref(false)
+const tagInputValue = ref('')
+const tagInputRef = ref<HTMLInputElement>()
 
 // 表单数据
-const formData = ref({
-  question: {
-    title: '',
-    body: '',
-    difficulty: 'intermediate' as 'beginner' | 'intermediate' | 'advanced',
-    category: '',
-    tags: [] as string[]
-  },
-  answer: {
-    content: '',
-    source: '',
-    confidence: 'high' as 'high' | 'medium' | 'low',
-    tags: [] as string[]
-  }
+const formData = ref<CreateStandardQARequest>({
+  dataset_id: 0,
+  question_text: '',
+  difficulty_level: '',
+  knowledge_points: [],
+  tags: [],
+  notes: '',
+  answer_text: '',
+  answer_type: '',
+  scoring_points: [],
+  total_score: undefined,
+  explanation: '',
+  raw_question_relations: [],
+  raw_answer_relations: [],
+  expert_answer_relations: []
 })
 
-const newQuestionTag = ref('')
-const newAnswerTag = ref('')
-const isLoading = ref(false)
+// 关系记录
+const rawQuestionRelations = ref<RawQuestionRelation[]>([])
+const rawAnswerRelations = ref<RawAnswerRelation[]>([])
+const expertAnswerRelations = ref<ExpertAnswerRelation[]>([])
 
-// 初始化表单数据
-onMounted(() => {
-  // 如果只有一个问题被选中，使用它作为标准问题的基础
-  if (props.selectedItems.questions.length === 1) {
-    const question = props.selectedItems.questions[0]
-    formData.value.question.title = question.title
-    formData.value.question.body = question.body || ''
-    formData.value.question.tags = [...(question.tags || [])]
-  }
-
-  // 如果有专家回答，优先使用专家回答作为标准回答的基础
-  if (props.selectedItems.expertAnswers.length > 0) {
-    const expertAnswer = props.selectedItems.expertAnswers[0]
-    formData.value.answer.content = expertAnswer.content
-    formData.value.answer.source = expertAnswer.source
-  } else if (props.selectedItems.rawAnswers.length > 0) {
-    // 否则使用原始回答
-    const rawAnswer = props.selectedItems.rawAnswers[0]
-    formData.value.answer.content = rawAnswer.content
-  }
+// 计算属性
+const dialogVisible = computed({
+  get: () => props.visible,
+  set: (value) => emit('update:visible', value)
 })
 
-// 工具函数
+const selectedQuestionCount = computed(() => props.selectedItems.questions.size)
+const selectedRawAnswerCount = computed(() => props.selectedItems.rawAnswers.size)
+const selectedExpertAnswerCount = computed(() => props.selectedItems.expertAnswers.size)
+
+const selectedQuestions = computed(() => 
+  props.questions.filter(q => props.selectedItems.questions.has(q.id))
+)
+
+const selectedRawAnswers = computed(() => {
+  const answers: RawAnswer[] = []
+  props.questions.forEach(q => {
+    q.raw_answers.forEach(a => {
+      if (props.selectedItems.rawAnswers.has(a.id)) {
+        answers.push(a)
+      }
+    })
+  })
+  return answers
+})
+
+const selectedExpertAnswers = computed(() => {
+  const answers: ExpertAnswer[] = []
+  props.questions.forEach(q => {
+    q.expert_answers.forEach(a => {
+      if (props.selectedItems.expertAnswers.has(a.id)) {
+        answers.push(a)
+      }
+    })
+  })
+  return answers
+})
+
+// 监听选中内容变化，自动填充部分内容
+watch(() => props.selectedItems, () => {
+  if (selectedQuestions.value.length === 1) {
+    const question = selectedQuestions.value[0]
+    formData.value.question_text = question.title + '\n' + (question.body || '')
+    if (question.tags) {
+      formData.value.tags = [...question.tags]
+    }
+  }
+  
+  // 如果有专家回答，可以作为标准回答的参考
+  if (selectedExpertAnswers.value.length === 1) {
+    const expertAnswer = selectedExpertAnswers.value[0]
+    if (!formData.value.answer_text) {
+      formData.value.answer_text = expertAnswer.content
+    }
+  }
+
+  // 初始化关系记录
+  initializeRelations()
+}, { deep: true })
+
+// 方法
+const loadDatasets = async () => {
+  datasetsLoading.value = true
+  try {
+    // 获取用户可访问的数据集
+    datasets.value = await datasetService.getUserDatasets()
+  } catch (error) {
+    console.error('加载数据集失败:', error)
+    showMessage('加载数据集失败', 'error')
+  } finally {
+    datasetsLoading.value = false
+  }
+}
+
+const initializeRelations = () => {
+  // 初始化原始问题关系记录
+  rawQuestionRelations.value = selectedQuestions.value.map(q => ({
+    raw_question_id: q.id,
+    notes: ''
+  }))
+
+  // 初始化原始回答关系记录
+  rawAnswerRelations.value = selectedRawAnswers.value.map(a => ({
+    raw_answer_id: a.id,
+    notes: ''
+  }))
+
+  // 初始化专家回答关系记录
+  expertAnswerRelations.value = selectedExpertAnswers.value.map(a => ({
+    expert_answer_id: a.id,
+    notes: ''
+  }))
+}
+
+const removeKnowledgePoint = (point: string) => {
+  formData.value.knowledge_points = formData.value.knowledge_points?.filter(p => p !== point) || []
+}
+
+const showKnowledgePointInput = () => {
+  knowledgePointInputVisible.value = true
+  nextTick(() => {
+    knowledgePointInputRef.value?.focus()
+  })
+}
+
+const handleKnowledgePointInputConfirm = () => {
+  const value = knowledgePointInputValue.value.trim()
+  if (value && !(formData.value.knowledge_points || []).includes(value)) {
+    formData.value.knowledge_points = [...(formData.value.knowledge_points || []), value]
+  }
+  knowledgePointInputVisible.value = false
+  knowledgePointInputValue.value = ''
+}
+
+const removeTag = (tag: string) => {
+  formData.value.tags = formData.value.tags?.filter(t => t !== tag) || []
+}
+
+const showTagInput = () => {
+  tagInputVisible.value = true
+  nextTick(() => {
+    tagInputRef.value?.focus()
+  })
+}
+
+const handleTagInputConfirm = () => {
+  const value = tagInputValue.value.trim()
+  if (value && !(formData.value.tags || []).includes(value)) {
+    formData.value.tags = [...(formData.value.tags || []), value]
+  }
+  tagInputVisible.value = false
+  tagInputValue.value = ''
+}
+
+const addScoringPoint = () => {
+  formData.value.scoring_points = [
+    ...(formData.value.scoring_points || []),
+    { scoring_point_text: '', score: 0 }
+  ]
+}
+
+const removeScoringPoint = (index: number) => {
+  formData.value.scoring_points?.splice(index, 1)
+}
+
 const truncateText = (text: string, maxLength: number) => {
   if (text.length <= maxLength) return text
   return text.substring(0, maxLength) + '...'
 }
 
-// 标签管理
-const addQuestionTag = () => {
-  const tag = newQuestionTag.value.trim()
-  if (tag && !formData.value.question.tags.includes(tag)) {
-    formData.value.question.tags.push(tag)
-    newQuestionTag.value = ''
-  }
+const formatDate = (date: Date | string | undefined) => {
+  if (!date) return ''
+  return new Date(date).toLocaleString('zh-CN')
 }
 
-const removeQuestionTag = (index: number) => {
-  formData.value.question.tags.splice(index, 1)
+const showMessage = (message: string, type: 'success' | 'error' | 'warning' = 'success') => {
+  // 简单的消息提示实现
+  const messageEl = document.createElement('div')
+  messageEl.className = `message message-${type}`
+  messageEl.textContent = message
+  messageEl.style.cssText = `
+    position: fixed;
+    top: 20px;
+    right: 20px;
+    padding: 12px 20px;
+    border-radius: 4px;
+    color: white;
+    z-index: 10000;
+    background-color: ${type === 'success' ? '#67c23a' : type === 'error' ? '#f56c6c' : '#e6a23c'};
+  `
+  document.body.appendChild(messageEl)
+  setTimeout(() => {
+    // 确保元素仍然存在且有父节点再进行移除
+    if (messageEl && messageEl.parentNode) {
+      messageEl.parentNode.removeChild(messageEl)
+    }
+  }, 3000)
 }
 
-const addAnswerTag = () => {
-  const tag = newAnswerTag.value.trim()
-  if (tag && !formData.value.answer.tags.includes(tag)) {
-    formData.value.answer.tags.push(tag)
-    newAnswerTag.value = ''
+const validateForm = (): boolean => {
+  if (!formData.value.dataset_id) {
+    showMessage('请选择数据集', 'error')
+    return false
   }
+  if (!formData.value.question_text.trim()) {
+    showMessage('请输入标准问题内容', 'error')
+    return false
+  }
+  if (formData.value.question_text.trim().length < 10) {
+    showMessage('问题内容至少需要10个字符', 'error')
+    return false
+  }
+  if (!formData.value.answer_text.trim()) {
+    showMessage('请输入标准回答内容', 'error')
+    return false
+  }
+  if (formData.value.answer_text.trim().length < 20) {
+    showMessage('回答内容至少需要20个字符', 'error')
+    return false
+  }
+  return true
 }
 
-const removeAnswerTag = (index: number) => {
-  formData.value.answer.tags.splice(index, 1)
+const resetForm = () => {
+  formData.value = {
+    dataset_id: 0,
+    question_text: '',
+    difficulty_level: '',
+    knowledge_points: [],
+    tags: [],
+    notes: '',
+    answer_text: '',
+    answer_type: '',
+    scoring_points: [],
+    total_score: undefined,
+    explanation: '',
+    raw_question_relations: [],
+    raw_answer_relations: [],
+    expert_answer_relations: []
+  }
+  rawQuestionRelations.value = []
+  rawAnswerRelations.value = []
+  expertAnswerRelations.value = []
+  knowledgePointInputVisible.value = false
+  knowledgePointInputValue.value = ''
+  tagInputVisible.value = false
+  tagInputValue.value = ''
 }
 
-// 智能生成
-const autoGenerate = () => {
-  // 基于选中的内容智能生成标准问答
-  
-  // 自动生成问题标题（如果为空）
-  if (!formData.value.question.title && props.selectedItems.questions.length > 0) {
-    // 使用第一个问题的标题，或者合并多个问题的关键词
-    const titles = props.selectedItems.questions.map(q => q.title)
-    formData.value.question.title = titles[0] // 简单实现，可以改进为更智能的合并
-  }
-
-  // 自动生成标签
-  const allTags = new Set<string>()
-  
-  // 收集问题标签
-  props.selectedItems.questions.forEach(q => {
-    q.tags?.forEach((tag: string) => allTags.add(tag))
-  })
-  
-  // 将标签添加到问题和回答中
-  const tagsArray = Array.from(allTags).slice(0, 8) // 限制标签数量
-  formData.value.question.tags = [...new Set([...formData.value.question.tags, ...tagsArray])]
-  formData.value.answer.tags = [...new Set([...formData.value.answer.tags, ...tagsArray])]
-
-  // 自动判断难度
-  if (props.selectedItems.expertAnswers.length > 0 || 
-      props.selectedItems.questions.some(q => q.vote_count > 10)) {
-    formData.value.question.difficulty = 'advanced'
-  } else if (props.selectedItems.rawAnswers.length > 2) {
-    formData.value.question.difficulty = 'intermediate'
-  }
-
-  // 自动设置置信度
-  if (props.selectedItems.expertAnswers.length > 0) {
-    formData.value.answer.confidence = 'high'
-  } else if (props.selectedItems.rawAnswers.length > 1) {
-    formData.value.answer.confidence = 'medium'
-  } else {
-    formData.value.answer.confidence = 'low'
-  }
-
-  alert('已自动生成部分内容，请检查并完善！')
+const handleOverlayClick = () => {
+  handleClose()
 }
 
-// 保存处理
+const handleClose = () => {
+  dialogVisible.value = false
+  resetForm()
+}
+
 const handleSave = async () => {
-  // 验证必填字段
-  if (!formData.value.question.title?.trim()) {
-    alert('请输入标准问题标题')
-    return
-  }
-
-  if (!formData.value.answer.content?.trim()) {
-    alert('请输入标准回答内容')
-    return
-  }
-
-  isLoading.value = true
+  if (!validateForm()) return
 
   try {
-    const standardQA = {
-      question: {
-        title: formData.value.question.title.trim(),
-        body: formData.value.question.body?.trim() || '',
-        difficulty: formData.value.question.difficulty,
-        category: formData.value.question.category?.trim() || '',
-        tags: formData.value.question.tags,
-        created_at: new Date()
-      },
-      answer: {
-        content: formData.value.answer.content.trim(),
-        source: formData.value.answer.source?.trim() || '',
-        confidence: formData.value.answer.confidence,
-        tags: formData.value.answer.tags,
-        created_at: new Date()
-      },
-      references: {
-        question_ids: props.selectedItems.questions.map(q => q.id),
-        raw_answer_ids: props.selectedItems.rawAnswers.map(a => a.id),
-        expert_answer_ids: props.selectedItems.expertAnswers.map(a => a.id)
-      }
+    loading.value = true
+
+    // 获取当前用户信息
+    const currentUser = authService.getCurrentUserFromStorage()
+    const created_by = currentUser?.username || 'anonymous'
+
+    // 构建要提交的数据
+    const requestData: CreateStandardQARequest = {
+      ...formData.value,
+      created_by,
+      raw_question_relations: rawQuestionRelations.value.map(rel => ({
+        ...rel,
+        created_by
+      })),
+      raw_answer_relations: rawAnswerRelations.value.map(rel => ({
+        ...rel,
+        created_by
+      })),
+      expert_answer_relations: expertAnswerRelations.value.map(rel => ({
+        ...rel,
+        created_by
+      }))
     }
 
-    // 调用API保存到数据库
-    const result = await standardQAService.createStandardQA(standardQA)
+    // 调用API创建标准问答
+    await standardQAService.createStandardQAWithRelations(requestData)
     
-    emit('save', result)
+    emit('created')
+    showMessage('标准问答创建成功', 'success')
+    handleClose()
   } catch (error) {
-    console.error('保存标准问答失败:', error)
-    alert('保存失败：' + (error as any).message)
+    console.error('创建标准问答失败:', error)
+    showMessage('创建失败，请检查网络连接和输入内容', 'error')
   } finally {
-    isLoading.value = false
+    loading.value = false
   }
 }
+
+// 生命周期
+onMounted(async () => {
+  await loadDatasets()
+})
 </script>
 
 <style scoped>
-.standard-qa-modal {
-  max-width: 900px;
-  max-height: 95vh;
-}
-
-.modal-overlay {
+/* 对话框样式 */
+.dialog-overlay {
   position: fixed;
   top: 0;
   left: 0;
-  right: 0;
-  bottom: 0;
-  background: rgba(0, 0, 0, 0.5);
+  width: 100%;
+  height: 100%;
+  background-color: rgba(0, 0, 0, 0.5);
   display: flex;
-  align-items: center;
   justify-content: center;
+  align-items: center;
   z-index: 1000;
 }
 
-.modal {
+.dialog {
   background: white;
-  border-radius: 10px;
+  border-radius: 8px;
   width: 90%;
-  overflow-y: auto;
+  max-width: 1000px;
+  max-height: 90vh;
+  display: flex;
+  flex-direction: column;
+  box-shadow: 0 4px 20px rgba(0, 0, 0, 0.15);
 }
 
-.modal-header {
+.dialog-header {
   display: flex;
   justify-content: space-between;
   align-items: center;
-  padding: 20px;
-  border-bottom: 1px solid #e0e0e0;
-  position: sticky;
-  top: 0;
-  background: white;
-  z-index: 1;
+  padding: 20px 24px;
+  border-bottom: 1px solid #e4e7ed;
 }
 
-.modal-header h3 {
+.dialog-header h3 {
   margin: 0;
-  color: #333;
+  color: #303133;
+  font-size: 18px;
 }
 
 .close-btn {
   background: none;
   border: none;
   font-size: 24px;
+  color: #909399;
   cursor: pointer;
-  color: #666;
   padding: 0;
-  width: 30px;
-  height: 30px;
+  width: 24px;
+  height: 24px;
   display: flex;
-  align-items: center;
   justify-content: center;
-  border-radius: 50%;
+  align-items: center;
 }
 
 .close-btn:hover {
-  background: #f0f0f0;
+  color: #606266;
 }
 
-.modal-body {
-  padding: 20px;
+.dialog-body {
+  flex: 1;
+  overflow-y: auto;
+  padding: 24px;
 }
 
-.selected-content {
-  background: #f8f9fa;
-  padding: 15px;
-  border-radius: 8px;
-  margin-bottom: 30px;
-}
-
-.selected-content h4 {
-  margin: 0 0 15px 0;
-  color: #333;
-}
-
-.content-summary {
+.dialog-footer {
   display: flex;
-  gap: 20px;
+  justify-content: flex-end;
+  gap: 12px;
+  padding: 16px 24px;
+  border-top: 1px solid #e4e7ed;
 }
 
-.summary-item {
+/* 内容样式 */
+.standard-qa-content {
+  max-height: none;
+}
+
+.selected-summary {
+  background-color: #f8f9fa;
+  padding: 16px;
+  border-radius: 6px;
+  margin-bottom: 20px;
+}
+
+.selected-summary h4 {
+  margin: 0 0 12px 0;
+  color: #303133;
+}
+
+.summary-stats {
   display: flex;
-  flex-direction: column;
-  align-items: center;
+  gap: 12px;
+  flex-wrap: wrap;
 }
 
-.summary-label {
-  font-size: 12px;
-  color: #666;
-  margin-bottom: 5px;
-}
-
-.summary-count {
-  font-size: 1.5em;
-  font-weight: bold;
-  color: #007bff;
-}
-
+/* 表单样式 */
 .form-section {
-  margin-bottom: 30px;
-  padding: 20px;
-  border: 1px solid #e0e0e0;
-  border-radius: 8px;
+  margin-bottom: 24px;
+  padding-bottom: 24px;
+  border-bottom: 1px solid #e4e7ed;
+}
+
+.form-section:last-child {
+  border-bottom: none;
 }
 
 .form-section h4 {
-  margin: 0 0 20px 0;
-  color: #333;
-  border-bottom: 1px solid #e0e0e0;
-  padding-bottom: 10px;
+  margin: 0 0 16px 0;
+  color: #303133;
+  font-size: 16px;
 }
 
-.form-group {
-  margin-bottom: 20px;
+.form-item {
+  margin-bottom: 16px;
+}
+
+.form-label {
+  display: block;
+  margin-bottom: 8px;
+  color: #606266;
+  font-size: 14px;
+  font-weight: 500;
+}
+
+.form-label.required::after {
+  content: ' *';
+  color: #f56c6c;
+}
+
+.form-input,
+.form-select,
+.form-textarea {
+  width: 100%;
+  padding: 8px 12px;
+  border: 1px solid #dcdfe6;
+  border-radius: 4px;
+  font-size: 14px;
+  line-height: 1.5;
+  transition: border-color 0.2s ease;
+}
+
+.form-input:focus,
+.form-select:focus,
+.form-textarea:focus {
+  outline: none;
+  border-color: #409eff;
+}
+
+.form-textarea {
+  resize: vertical;
+  font-family: inherit;
 }
 
 .form-row {
   display: grid;
   grid-template-columns: 1fr 1fr;
-  gap: 15px;
+  gap: 16px;
 }
 
-.form-group label {
-  display: block;
-  margin-bottom: 5px;
-  font-weight: 500;
-  color: #333;
-}
-
-.form-control {
-  width: 100%;
-  padding: 10px 12px;
-  border: 1px solid #ddd;
-  border-radius: 6px;
-  font-size: 14px;
-  transition: border-color 0.3s ease;
-}
-
-.form-control:focus {
-  outline: none;
-  border-color: #007bff;
-  box-shadow: 0 0 0 2px rgba(0, 123, 255, 0.25);
-}
-
-textarea.form-control {
-  resize: vertical;
-  font-family: inherit;
-}
-
-.tags-input {
-  border: 1px solid #ddd;
-  border-radius: 6px;
-  padding: 8px;
-  min-height: 80px;
-}
-
-.tags-display {
-  display: flex;
-  flex-wrap: wrap;
-  gap: 5px;
-  margin-bottom: 8px;
-}
-
-.tag {
-  background: #e9ecef;
-  color: #495057;
-  padding: 4px 8px;
-  border-radius: 12px;
+.char-count {
+  text-align: right;
   font-size: 12px;
-  display: inline-flex;
-  align-items: center;
-  gap: 4px;
+  color: #909399;
+  margin-top: 4px;
 }
 
-.tag-remove {
-  background: none;
-  border: none;
-  color: #6c757d;
+.loading-text {
+  color: #909399;
+  font-size: 12px;
+  margin-top: 4px;
+}
+
+/* 按钮样式 */
+.btn {
+  padding: 8px 16px;
+  border: 1px solid #dcdfe6;
+  border-radius: 4px;
+  font-size: 14px;
   cursor: pointer;
-  font-size: 14px;
-  padding: 0;
-  width: 16px;
-  height: 16px;
-  border-radius: 50%;
-  display: flex;
-  align-items: center;
-  justify-content: center;
-}
-
-.tag-remove:hover {
-  background: #dee2e6;
-  color: #495057;
-}
-
-.tags-input .form-control {
-  border: none;
-  padding: 4px 0;
-  margin: 0;
-}
-
-.tags-input .form-control:focus {
-  box-shadow: none;
-}
-
-.reference-content {
-  max-height: 400px;
-  overflow-y: auto;
-  border: 1px solid #e0e0e0;
-  border-radius: 6px;
-  padding: 15px;
-}
-
-.reference-section {
-  margin-bottom: 20px;
-}
-
-.reference-section h5 {
-  margin: 0 0 10px 0;
-  color: #555;
-  font-size: 1.1em;
-}
-
-.reference-items {
-  display: flex;
-  flex-direction: column;
-  gap: 10px;
-}
-
-.reference-item {
-  background: #f8f9fa;
-  padding: 12px;
-  border-radius: 6px;
-  border-left: 3px solid #007bff;
-}
-
-.reference-item.expert-reference {
-  border-left-color: #28a745;
-}
-
-.reference-item h6 {
-  margin: 0 0 5px 0;
-  color: #333;
-  font-size: 1em;
-}
-
-.reference-item p {
-  margin: 0 0 8px 0;
-  color: #555;
-  line-height: 1.4;
-}
-
-.reference-meta {
-  display: flex;
-  gap: 15px;
-  font-size: 12px;
-  color: #666;
-}
-
-.form-actions {
-  display: flex;
-  justify-content: flex-end;
-  gap: 10px;
-  margin-top: 30px;
-  padding-top: 20px;
-  border-top: 1px solid #e0e0e0;
-  position: sticky;
-  bottom: 0;
+  transition: all 0.2s ease;
   background: white;
 }
 
-.btn {
-  padding: 10px 20px;
-  border: none;
-  border-radius: 6px;
-  cursor: pointer;
-  font-size: 14px;
-  font-weight: 500;
-  transition: all 0.3s ease;
+.btn:hover {
+  opacity: 0.8;
+}
+
+.btn:disabled {
+  opacity: 0.5;
+  cursor: not-allowed;
+}
+
+.btn-small {
+  padding: 4px 8px;
+  font-size: 12px;
 }
 
 .btn-primary {
-  background: #007bff;
+  background-color: #409eff;
+  border-color: #409eff;
   color: white;
 }
 
 .btn-secondary {
-  background: #6c757d;
+  background-color: #f4f4f5;
+  border-color: #dcdfe6;
+  color: #606266;
+}
+
+.btn-danger {
+  background-color: #f56c6c;
+  border-color: #f56c6c;
   color: white;
 }
 
-.btn-info {
-  background: #17a2b8;
-  color: white;
+/* 标签样式 */
+.tag {
+  display: inline-block;
+  padding: 4px 8px;
+  font-size: 12px;
+  border-radius: 4px;
+  margin-right: 8px;
+  margin-bottom: 4px;
 }
 
-.btn:hover {
-  opacity: 0.9;
-  transform: translateY(-1px);
+.tag-info {
+  background-color: #ecf5ff;
+  color: #409eff;
+  border: 1px solid #b3d8ff;
+}
+
+.tag-success {
+  background-color: #f0f9ff;
+  color: #67c23a;
+  border: 1px solid #b3e19d;
+}
+
+.tag-warning {
+  background-color: #fdf6ec;
+  color: #e6a23c;
+  border: 1px solid #f5dab1;
+}
+
+.tag-closable {
+  background-color: #f4f4f5;
+  color: #909399;
+  border: 1px solid #e4e7ed;
+  padding-right: 20px;
+  position: relative;
+}
+
+.tag-close {
+  position: absolute;
+  right: 4px;
+  top: 50%;
+  transform: translateY(-50%);
+  background: none;
+  border: none;
+  color: #909399;
+  cursor: pointer;
+  font-size: 12px;
+  width: 12px;
+  height: 12px;
+  display: flex;
+  justify-content: center;
+  align-items: center;
+}
+
+.tag-close:hover {
+  color: #606266;
+}
+
+.tags-input {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 8px;
+  align-items: center;
+}
+
+.tag-input {
+  width: 120px;
+  padding: 4px 8px;
+  border: 1px solid #dcdfe6;
+  border-radius: 4px;
+  font-size: 12px;
+}
+
+/* 评分点样式 */
+.scoring-points .scoring-point-item {
+  display: flex;
+  gap: 8px;
+  align-items: center;
+  margin-bottom: 8px;
+}
+
+.score-input {
+  width: 100px;
+}
+
+/* 关系配置样式 */
+.relation-group {
+  margin-bottom: 20px;
+}
+
+.relation-group h5 {
+  margin: 0 0 12px 0;
+  color: #606266;
+  font-size: 14px;
+}
+
+.relation-item {
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+  padding: 12px;
+  border: 1px solid #e4e7ed;
+  border-radius: 6px;
+  margin-bottom: 8px;
+  background-color: #fafafa;
+}
+
+.relation-content {
+  flex: 1;
+  min-width: 0;
+}
+
+.relation-content strong {
+  color: #303133;
+  display: block;
+  margin-bottom: 4px;
+}
+
+.relation-content p {
+  margin: 4px 0;
+  color: #606266;
+  line-height: 1.4;
+  word-break: break-word;
+}
+
+.relation-content small {
+  color: #909399;
+  font-size: 12px;
+}
+
+.relation-config {
+  display: flex;
+  gap: 8px;
+  align-items: center;
+  margin-left: 16px;
+  flex-shrink: 0;
+}
+
+.form-select.small,
+.form-input.small {
+  width: 100px;
+  padding: 4px 8px;
+  font-size: 12px;
+}
+
+/* 响应式设计 */
+@media (max-width: 768px) {
+  .dialog {
+    width: 95%;
+    margin: 10px;
+  }
+  
+  .form-row {
+    grid-template-columns: 1fr;
+  }
+  
+  .relation-item {
+    flex-direction: column;
+    align-items: stretch;
+  }
+  
+  .relation-config {
+    margin-left: 0;
+    margin-top: 8px;
+    justify-content: flex-start;
+  }
 }
 </style>
