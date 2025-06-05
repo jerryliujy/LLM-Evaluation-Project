@@ -11,6 +11,7 @@ from app.auth import (
     ACCESS_TOKEN_EXPIRE_MINUTES
 )
 from app.db.database import get_db
+import uuid
 
 router = APIRouter(prefix="/api/auth", tags=["authentication"])
 
@@ -71,3 +72,61 @@ async def get_user(
     if not user:
         raise HTTPException(status_code=404, detail="User not found")
     return user
+
+@router.post("/generate-invite-code")
+async def generate_invite_code(
+    db: Session = Depends(get_db),
+    current_user: User = Depends(get_current_active_user)
+):
+    """为当前用户生成邀请码（仅限admin用户）"""
+    if current_user.role != "admin":
+        raise HTTPException(
+            status_code=status.HTTP_403_FORBIDDEN,
+            detail="Only admin users can generate invite codes"
+        )
+    
+    # 生成新的邀请码
+    invite_code = str(uuid.uuid4())
+    
+    # 更新用户的邀请码
+    current_user.invite_code = invite_code
+    db.commit()
+    db.refresh(current_user)
+    
+    return {"invite_code": invite_code, "message": "Invite code generated successfully"}
+
+@router.get("/invite-code")
+async def get_my_invite_code(
+    current_user: User = Depends(get_current_active_user)
+):
+    """获取当前用户的邀请码"""
+    if current_user.role != "admin":
+        raise HTTPException(
+            status_code=status.HTTP_403_FORBIDDEN,
+            detail="Only admin users can access invite codes"
+        )
+    
+    if not current_user.invite_code:
+        raise HTTPException(
+            status_code=status.HTTP_404_NOT_FOUND,
+            detail="No invite code generated yet"
+        )
+    
+    return {"invite_code": current_user.invite_code}
+
+@router.delete("/invite-code")
+async def revoke_invite_code(
+    db: Session = Depends(get_db),
+    current_user: User = Depends(get_current_active_user)
+):
+    """撤销当前用户的邀请码"""
+    if current_user.role != "admin":
+        raise HTTPException(
+            status_code=status.HTTP_403_FORBIDDEN,
+            detail="Only admin users can revoke invite codes"
+        )
+    
+    current_user.invite_code = None
+    db.commit()
+    
+    return {"message": "Invite code revoked successfully"}

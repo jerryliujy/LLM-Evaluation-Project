@@ -2,6 +2,7 @@ from sqlalchemy import Column, Integer, String, DateTime, Boolean, Enum
 from sqlalchemy.sql import func
 from sqlalchemy.orm import relationship
 from app.db.database import Base
+import uuid
 
 class User(Base):
     __tablename__ = "User"
@@ -12,6 +13,7 @@ class User(Base):
     role = Column(Enum('admin', 'user', 'expert', name='user_role'), nullable=False, default='user')
     is_active = Column(Boolean, nullable=False, default=True)
     created_at = Column(DateTime, nullable=False, default=func.now())
+    invite_code = Column(String(36), unique=True, nullable=True, index=True)  # 邀请码字段
     
     # 关系
     datasets = relationship("Dataset", back_populates="creator")

@@ -6,8 +6,7 @@ class ExpertAnswerBase(BaseModel):
     content: str
 
 class ExpertAnswerCreate(ExpertAnswerBase):
-    question_id: int 
-    author: int
+    question_id: int
 
 class ExpertAnswerUpdate(BaseModel):
     content: Optional[str] = None

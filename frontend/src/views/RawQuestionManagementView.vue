@@ -117,7 +117,7 @@
               <div class="stats-content">
                 <span class="stat-item">👁 {{ question.view_count || 0 }}</span>
                 <span class="stat-item">⭐ {{ question.vote_count || 0 }}</span>
-                <span class="stat-item">💬 {{ (question.raw_answers?.length || 0) + (question.expert_answers?.length || 0) }}</span>
+                <span class="stat-item">💬 回答</span>
               </div>
             </td>
             <td class="tags-col">
@@ -131,16 +131,45 @@
                 </span>
               </div>
             </td>
-            <td class="date-col">{{ formatDate(question.created_at || question.issued_at) }}</td>
-            <td class="actions-col">
+            <td class="date-col">{{ formatDate(question.created_at || question.issued_at) }}</td>            <td class="actions-col">
               <div class="row-actions">
-                <button 
-                  @click="viewQuestion(question)" 
-                  class="action-btn small"
-                  title="查看详情"
-                >
-                  📄
-                </button>
+                <div class="dropdown-wrapper">
+                  <button 
+                    @click="toggleDropdown(question.id)" 
+                    class="action-btn small"
+                    title="查看详情"
+                    :class="{ 'active': activeDropdown === question.id }"
+                  >
+                    📄 
+                  </button>
+                  <div 
+                    v-if="activeDropdown === question.id" 
+                    class="dropdown-menu"
+                    @click.stop
+                  >
+                    <button class="dropdown-item" @click="viewQuestionDetail(question, 'overview')">
+                      <span class="item-icon">📋</span>
+                      <div class="item-content">
+                        <span class="item-title">总览</span>
+                        <span class="item-desc">查看问题完整信息</span>
+                      </div>
+                    </button>
+                    <button class="dropdown-item" @click="viewQuestionDetail(question, 'raw-answers')">
+                      <span class="item-icon">💬</span>
+                      <div class="item-content">
+                        <span class="item-title">原始回答</span>
+                        <span class="item-desc">查看原始回答列表</span>
+                      </div>
+                    </button>
+                    <button class="dropdown-item" @click="viewQuestionDetail(question, 'expert-answers')">
+                      <span class="item-icon">👨‍💼</span>
+                      <div class="item-content">
+                        <span class="item-title">专家回答</span>
+                        <span class="item-desc">查看专家回答列表</span>
+                      </div>
+                    </button>
+                  </div>
+                </div>
                 <button 
                   @click="editQuestion(question)" 
                   class="action-btn small"
@@ -148,13 +177,43 @@
                 >
                   ✏️
                 </button>
-                <button 
-                  @click="deleteQuestion(question)" 
-                  class="action-btn small danger"
-                  title="删除"
-                >
-                  🗑️
-                </button>
+                <div class="dropdown-wrapper">
+                  <button 
+                    @click="toggleDeleteDropdown(question.id)" 
+                    class="action-btn small danger"
+                    title="删除选项"
+                    :class="{ 'active': activeDeleteDropdown === question.id }"
+                  >
+                    🗑️ 
+                  </button>
+                  <div 
+                    v-if="activeDeleteDropdown === question.id" 
+                    class="dropdown-menu"
+                    @click.stop
+                  >
+                    <button class="dropdown-item" @click="softDeleteQuestion(question)" v-if="!question.is_deleted">
+                      <span class="item-icon">🗂️</span>
+                      <div class="item-content">
+                        <span class="item-title">软删除</span>
+                        <span class="item-desc">标记为已删除</span>
+                      </div>
+                    </button>
+                    <button class="dropdown-item" @click="restoreQuestion(question)" v-if="question.is_deleted">
+                      <span class="item-icon">♻️</span>
+                      <div class="item-content">
+                        <span class="item-title">恢复</span>
+                        <span class="item-desc">恢复已删除的问题</span>
+                      </div>
+                    </button>
+                    <button class="dropdown-item" @click="forceDeleteQuestion(question)">
+                      <span class="item-icon">❌</span>
+                      <div class="item-content">
+                        <span class="item-title">强制删除</span>
+                        <span class="item-desc">永久删除</span>
+                      </div>
+                    </button>
+                  </div>
+                </div>
               </div>
             </td>
           </tr>
@@ -236,6 +295,10 @@ const itemsPerPage = ref(20)
 const currentPage = ref(1)
 const selectedItems = ref<number[]>([])
 const allQuestions = ref<RawQuestion[]>([])
+
+// 下拉菜单状态
+const activeDropdown = ref<number | null>(null)
+const activeDeleteDropdown = ref<number | null>(null)
 
 // 对话框状态
 const questionDialogVisible = ref(false)
@@ -426,9 +489,110 @@ const truncateText = (text: string, maxLength: number) => {
   return text.substring(0, maxLength) + '...'
 }
 
+// 下拉菜单控制
+const toggleDropdown = (questionId: number) => {
+  activeDropdown.value = activeDropdown.value === questionId ? null : questionId
+  activeDeleteDropdown.value = null // 关闭删除下拉
+}
+
+const toggleDeleteDropdown = (questionId: number) => {
+  activeDeleteDropdown.value = activeDeleteDropdown.value === questionId ? null : questionId
+  activeDropdown.value = null // 关闭查看下拉
+}
+
+// 查看详情功能
+const viewQuestionDetail = (question: RawQuestion, viewType: 'overview' | 'raw-answers' | 'expert-answers') => {
+  console.log(`查看问题 ${question.id} 的 ${viewType}`)
+  // 这里可以根据viewType打开不同的对话框
+  // 暂时使用编辑对话框
+  currentQuestion.value = question
+  questionDialogVisible.value = true
+  activeDropdown.value = null
+}
+
+// 删除功能
+const softDeleteQuestion = async (question: RawQuestion) => {
+  if (!confirm(`确定要软删除问题 "${question.title}" 吗？`)) return
+  
+  try {
+    // 调用软删除API
+    await rawQuestionService.updateRawQuestion(question.id, { is_deleted: true })
+    
+    // 更新本地状态
+    const index = allQuestions.value.findIndex(q => q.id === question.id)
+    if (index !== -1) {
+      allQuestions.value[index].is_deleted = true
+    }
+    
+    showMessage('问题已软删除', 'success')
+    activeDeleteDropdown.value = null
+  } catch (error) {
+    console.error('软删除失败:', error)
+    showMessage('软删除失败', 'error')
+  }
+}
+
+const restoreQuestion = async (question: RawQuestion) => {
+  try {
+    await rawQuestionService.updateRawQuestion(question.id, { is_deleted: false })
+    
+    // 更新本地状态
+    const index = allQuestions.value.findIndex(q => q.id === question.id)
+    if (index !== -1) {
+      allQuestions.value[index].is_deleted = false
+    }
+    
+    showMessage('问题已恢复', 'success')
+    activeDeleteDropdown.value = null
+  } catch (error) {
+    console.error('恢复失败:', error)
+    showMessage('恢复失败', 'error')
+  }
+}
+
+const forceDeleteQuestion = async (question: RawQuestion) => {
+  if (!confirm(`确定要永久删除问题 "${question.title}" 吗？此操作无法撤销！`)) return
+  
+  try {
+    // 如果问题未被软删除，先软删除
+    if (!question.is_deleted) {
+      await rawQuestionService.deleteRawQuestion(question.id)
+    }
+    
+    // 然后强制删除
+    await rawQuestionService.forceDeleteRawQuestion(question.id)
+    
+    // 从本地数组中移除
+    const index = allQuestions.value.findIndex(q => q.id === question.id)
+    if (index !== -1) {
+      allQuestions.value.splice(index, 1)
+    }
+    
+    // 从选中项中移除
+    selectedItems.value = selectedItems.value.filter(id => id !== question.id)
+    
+    showMessage('问题已永久删除', 'success')
+    activeDeleteDropdown.value = null
+  } catch (error) {
+    console.error('强制删除失败:', error)
+    showMessage('强制删除失败', 'error')
+  }
+}
+
+// 点击外部关闭下拉菜单
+const closeDropdowns = () => {
+  activeDropdown.value = null
+  activeDeleteDropdown.value = null
+}
+
 // 生命周期
 onMounted(() => {
   loadData()
+  document.addEventListener('click', closeDropdowns)
+})
+
+onUnmounted(() => {
+  document.removeEventListener('click', closeDropdowns)
 })
 </script>
 
@@ -892,5 +1056,97 @@ onMounted(() => {
   color: #409eff;
   font-weight: 600;
   font-size: 16px;
+}
+
+/* 下拉菜单样式 */
+.dropdown-wrapper {
+  position: relative;
+  display: inline-block;
+}
+
+.dropdown-icon {
+  font-size: 12px;
+  transition: transform 0.2s ease;
+  display: inline-block;
+  margin-left: 4px;
+}
+
+.dropdown-icon.rotated {
+  transform: rotate(180deg);
+}
+
+.dropdown-menu {
+  position: absolute;
+  top: 100%;
+  left: 0;
+  background: white;
+  border: 1px solid #e4e7ed;
+  border-radius: 8px;
+  box-shadow: 0 4px 12px rgba(0, 0, 0, 0.15);
+  z-index: 1000;
+  overflow: hidden;
+  margin-top: 4px;
+  min-width: 200px;
+}
+
+.dropdown-item {
+  display: flex;
+  align-items: center;
+  gap: 12px;
+  width: 100%;
+  padding: 12px 16px;
+  border: none;
+  background: none;
+  text-align: left;
+  cursor: pointer;
+  transition: background-color 0.2s ease;
+  border-bottom: 1px solid #f5f7fa;
+}
+
+.dropdown-item:last-child {
+  border-bottom: none;
+}
+
+.dropdown-item:hover {
+  background-color: #f5f7fa;
+}
+
+.dropdown-item:active {
+  background-color: #e4e7ed;
+}
+
+.item-icon {
+  font-size: 16px;
+  width: 20px;
+  text-align: center;
+}
+
+.item-content {
+  display: flex;
+  flex-direction: column;
+  gap: 2px;
+}
+
+.item-title {
+  font-weight: 500;
+  color: #303133;
+  font-size: 14px;
+}
+
+.item-desc {
+  font-size: 12px;
+  color: #909399;
+}
+
+.action-btn.small {
+  padding: 4px 8px;
+  font-size: 12px;
+  min-width: auto;
+}
+
+.action-btn.active {
+  background-color: #e6f7ff;
+  border-color: #91d5ff;
+  color: #1890ff;
 }
 </style>

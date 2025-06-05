@@ -36,6 +36,11 @@ export const rawQuestionService = {
     return response.data;
   },
 
+  async forceDeleteRawQuestion(questionId: number): Promise<ApiMessage> {
+    const response = await apiClient.delete(`/raw_questions/${questionId}/force-delete/`);
+    return response.data;
+  },
+
   async restoreRawQuestion(questionId: number): Promise<RawQuestion> {
     const response = await apiClient.post(`/raw_questions/${questionId}/restore/`);
     return response.data;

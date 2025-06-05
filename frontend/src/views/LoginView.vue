@@ -169,13 +169,14 @@ const handleSubmit = async () => {
       }
       
       const response = await authService.register(registerData)
-      
-      // 保存认证信息
+        // 保存认证信息
       authService.saveToken(response.access_token, response.user)
       
       // 跳转到相应页面
       if (response.user.role === 'admin') {
         router.push({ name: 'Home' })
+      } else if (response.user.role === 'expert') {
+        router.push({ name: 'ExpertDashboard' })
       } else {
         router.push({ name: 'DatasetMarketplace' })
       }
@@ -197,10 +198,11 @@ const handleSubmit = async () => {
       
       // 保存认证信息
       authService.saveToken(response.access_token, response.user)
-      
-      // 跳转到相应页面
+        // 跳转到相应页面
       if (response.user.role === 'admin') {
         router.push({ name: 'Home' })
+      } else if (response.user.role === 'expert') {
+        router.push({ name: 'ExpertDashboard' })
       } else {
         router.push({ name: 'DatasetMarketplace' })
       }
@@ -222,10 +224,11 @@ onMounted(async () => {
   if (authService.isAuthenticated()) {
     try {
       const user = await authService.getCurrentUser()
-      if (user.role === currentRole.value) {
-        // 已登录且角色匹配，直接跳转
+      if (user.role === currentRole.value) {        // 已登录且角色匹配，直接跳转
         if (user.role === 'admin') {
           router.push({ name: 'Home' })
+        } else if (user.role === 'expert') {
+          router.push({ name: 'ExpertDashboard' })
         } else {
           router.push({ name: 'DatasetMarketplace' })
         }

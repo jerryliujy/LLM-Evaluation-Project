@@ -33,10 +33,12 @@ from .routers import (
     overview, 
     auth,
     relationship_records,
-    std_qa_management
+    std_qa_management,
+    expert
 )
 
 app.include_router(auth.router)
+app.include_router(expert.router)
 app.include_router(raw_questions.router)
 app.include_router(raw_answers.router)
 app.include_router(expert_answers.router)

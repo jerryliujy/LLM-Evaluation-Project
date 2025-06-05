@@ -52,7 +52,21 @@
           <p>查看数据库使用统计，了解数据集的访问情况</p>
           <button @click="goToMarketplace" class="feature-link">查看统计 →</button>
         </div>
+
+        <div class="feature-card">
+          <div class="feature-icon">🎫</div>
+          <h3>专家邀请</h3>
+          <p>生成邀请码邀请专家加入系统，管理专家团队</p>
+          <button @click="showInviteManager = !showInviteManager" class="feature-link">
+            {{ showInviteManager ? '隐藏管理器' : '管理邀请码' }} →
+          </button>
+        </div>
       </div>
+    </div>
+
+    <!-- 邀请码管理器 -->
+    <div v-if="showInviteManager" class="invite-manager-section">
+      <InviteCodeManager />
     </div>
 
     <div class="quick-start">
@@ -87,11 +101,14 @@
 <script setup lang="ts">
 import { ref, computed, onMounted } from 'vue'
 import { useRouter } from 'vue-router'
+import InviteCodeManager from '@/components/InviteCodeManager.vue'
 
 const router = useRouter()
 
 // 用户信息
 const userInfo = ref<any>(null)
+// 邀请码管理器显示状态
+const showInviteManager = ref(false)
 
 // 获取用户信息
 onMounted(() => {
@@ -277,6 +294,14 @@ const logout = () => {
   background: #f8f9fa;
   padding: 40px;
   border-radius: 12px;
+}
+
+.invite-manager-section {
+  margin-bottom: 40px;
+  padding: 30px;
+  background: white;
+  border-radius: 12px;
+  box-shadow: 0 2px 8px rgba(0, 0, 0, 0.1);
 }
 
 .quick-start h2 {

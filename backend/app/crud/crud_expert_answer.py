@@ -8,12 +8,21 @@ def get_expert_answer(db: Session, answer_id: int, include_deleted: bool = False
         query = query.filter(models.ExpertAnswer.is_deleted == False)
     return query.first()
 
-def create_expert_answer(db: Session, answer: schemas.ExpertAnswerCreate) -> models.ExpertAnswer:
+def get_expert_answers_by_author(db: Session, author_id: int, skip: int = 0, limit: int = 100, include_deleted: bool = False) -> List[models.ExpertAnswer]:
+    """获取指定作者的专家回答列表"""
+    query = db.query(models.ExpertAnswer).filter(
+        models.ExpertAnswer.author == author_id
+    )
+    if not include_deleted:
+        query = query.filter(models.ExpertAnswer.is_deleted == False)
+    return query.order_by(models.ExpertAnswer.created_at.desc()).offset(skip).limit(limit).all()
+
+def create_expert_answer(db: Session, answer: schemas.ExpertAnswerCreate, author_id: int) -> models.ExpertAnswer:
     """创建专家回答"""
     db_answer = models.ExpertAnswer(
         question_id=answer.question_id,
         content=answer.content,
-        author=answer.author
+        author=author_id
     )
     db.add(db_answer)
     db.commit()

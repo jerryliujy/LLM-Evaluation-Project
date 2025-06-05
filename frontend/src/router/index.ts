@@ -40,6 +40,18 @@ const routes: Array<RouteRecordRaw> = [
     component: RawQuestionManagementView,
     meta: { requiresAuth: true, role: 'admin' }
   },
+  {
+    path: "/expert-dashboard",
+    name: "ExpertDashboard",
+    component: () => import("../views/ExpertDashboardView.vue"),
+    meta: { requiresAuth: true, role: 'expert' }
+  },
+  {
+    path: "/join-expert",
+    name: "JoinExpert",
+    component: () => import("../components/InviteCodeJoin.vue"),
+    meta: { requiresAuth: true }
+  },
 ];
 
 const router = createRouter({
@@ -62,12 +74,6 @@ router.beforeEach((to, from, next) => {
   
   // 检查是否需要认证
   if (to.meta.requiresAuth) {
-    if (!user) {
-      // 没有用户信息，跳转到角色选择页
-      next({ name: 'RoleSelection' })
-      return
-    }
-    
     // 检查角色权限
     if (to.meta.role && user.role !== to.meta.role) {
       // 权限不足，根据用户角色跳转到合适的页面

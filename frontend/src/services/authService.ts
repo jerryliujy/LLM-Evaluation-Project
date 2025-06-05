@@ -24,6 +24,22 @@ export interface AuthResponse {
   user: User;
 }
 
+// 新增邀请码相关接口
+export interface InviteCode {
+  id: number;
+  code: string;
+  created_by: number;
+  created_at: string;
+  expires_at: string;
+  is_used: boolean;
+  used_by?: number;
+  used_at?: string;
+}
+
+export interface InviteCodeCreateRequest {
+  expires_in_hours?: number;
+}
+
 class AuthService {
   private baseUrl = 'http://localhost:8000';  async register(data: RegisterRequest): Promise<AuthResponse> {
     try {
@@ -109,6 +125,46 @@ class AuthService {
 
   async logout(): Promise<void> {
     this.clearToken();
+  }
+
+  // 邀请码管理方法
+  async generateInviteCode(expiresInHours = 24): Promise<InviteCode> {
+    try {
+      const response = await apiClient.post('/auth/invite-codes', {
+        expires_in_hours: expiresInHours
+      });
+      return response.data;
+    } catch (error: any) {
+      throw new Error(error.response?.data?.detail || '生成邀请码失败');
+    }
+  }
+
+  async getMyInviteCodes(): Promise<InviteCode[]> {
+    try {
+      const response = await apiClient.get('/auth/invite-codes');
+      return response.data;
+    } catch (error: any) {
+      throw new Error(error.response?.data?.detail || '获取邀请码列表失败');
+    }
+  }
+
+  async revokeInviteCode(codeId: number): Promise<void> {
+    try {
+      await apiClient.delete(`/auth/invite-codes/${codeId}`);
+    } catch (error: any) {
+      throw new Error(error.response?.data?.detail || '撤销邀请码失败');
+    }
+  }
+
+  async joinWithInviteCode(inviteCode: string): Promise<{ message: string }> {
+    try {
+      const response = await apiClient.post('/auth/join-with-invite', {
+        invite_code: inviteCode
+      });
+      return response.data;
+    } catch (error: any) {
+      throw new Error(error.response?.data?.detail || '使用邀请码加入失败');
+    }
   }
 }
 

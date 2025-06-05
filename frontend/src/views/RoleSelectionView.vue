@@ -27,18 +27,15 @@
             <span class="feature">• 查看数据</span>
             <span class="feature">• 只读权限</span>
           </div>
-        </div>
-
-        <div class="role-card disabled" @click="selectRole('expert')">
+        </div>        <div class="role-card" @click="selectRole('expert')">
           <div class="role-icon">👨‍🏫</div>
           <h3>专家用户</h3>
           <p>提供专业答案和评审内容</p>
           <div class="role-features">
             <span class="feature">• 专家答案</span>
             <span class="feature">• 内容评审</span>
-            <span class="feature">• 即将推出</span>
+            <span class="feature">• 需要邀请码</span>
           </div>
-          <div class="coming-soon">即将推出</div>
         </div>
       </div>
     </div>
@@ -46,16 +43,17 @@
 </template>
 
 <script setup lang="ts">
+import { ref } from 'vue'
 import { useRouter } from 'vue-router'
+import { authService } from '@/services/authService'
 
 const router = useRouter()
 
+// 响应式数据
+const showInviteJoin = ref(false)
+const errorMessage = ref('')
+
 const selectRole = (role: 'admin' | 'user' | 'expert') => {
-  if (role === 'expert') {
-    // 专家角色暂未实现
-    return
-  }
-  
   // 将角色信息存储到 localStorage
   localStorage.setItem('userRole', role)
   
@@ -65,6 +63,7 @@ const selectRole = (role: 'admin' | 'user' | 'expert') => {
     query: { role } 
   })
 }
+
 </script>
 
 <style scoped>
