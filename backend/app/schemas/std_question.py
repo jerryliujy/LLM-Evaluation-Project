@@ -1,9 +1,6 @@
 from pydantic import BaseModel
-from typing import Optional, List, TYPE_CHECKING, ForwardRef
+from typing import Optional, List, Any
 from datetime import datetime
-
-if TYPE_CHECKING:
-    from .tag import TagResponse
 
 class StdQuestionBase(BaseModel):
     dataset_id: int
@@ -13,12 +10,15 @@ class StdQuestionBase(BaseModel):
     created_by: Optional[str] = None
 
 class StdQuestionCreate(StdQuestionBase):
-    pass
+    version: Optional[int] = None
+    previous_version_id: Optional[int] = None
 
 class StdQuestionUpdate(BaseModel):
     text: Optional[str] = None
     question_type: Optional[str] = None
     created_by: Optional[str] = None
+    version: Optional[int] = None
+    previous_version_id: Optional[int] = None
 
 class StdQuestion(StdQuestionBase):
     id: int
@@ -30,14 +30,9 @@ class StdQuestion(StdQuestionBase):
     class Config:
         from_attributes = True
 
-class StdQuestionWithDetails(StdQuestion):
+class StdQuestionResponse(StdQuestion):
     dataset: Optional[dict] = None
     raw_question: Optional[dict] = None
-    std_answers: List[dict] = []
-    # 移除tags字段避免循环导入
-
-    class Config:
+    std_answer: Optional[Any] = None  
+    class Config:        
         from_attributes = True
-
-# 添加response模型的别名
-StdQuestionResponse = StdQuestionWithDetails

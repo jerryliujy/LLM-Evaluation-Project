@@ -26,5 +26,4 @@ class DatasetResponse(DatasetBase):
 class DatasetWithStats(DatasetResponse):
     std_questions_count: int = 0
     std_answers_count: int = 0
-    raw_questions_count: int = 0
     creator_username: Optional[str] = None  # 创建者用户名，用于显示

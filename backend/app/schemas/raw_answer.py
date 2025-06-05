@@ -1,11 +1,11 @@
-from pydantic import BaseModel
+from pydantic import BaseModel, Field
 from typing import Optional
 from datetime import datetime
 
 class RawAnswerBase(BaseModel):
-    content: str
-    vote_count: Optional[int] = 0
-    author: Optional[str] = None
+    answer: str  
+    upvotes: Optional[str] = "0"  
+    answered_by: Optional[str] = None  
     answered_at: Optional[datetime] = None
 
 class RawAnswerCreate(RawAnswerBase):
@@ -17,4 +17,4 @@ class RawAnswer(RawAnswerBase):
     is_deleted: bool
 
     class Config:
-        orm_mode = True # Pydantic V1, or from_attributes = True for V2
+        from_attributes = True  

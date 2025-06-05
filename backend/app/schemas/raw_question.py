@@ -1,5 +1,5 @@
-from pydantic import BaseModel
-from typing import Optional, List, TYPE_CHECKING, ForwardRef
+from pydantic import BaseModel, Field, model_validator
+from typing import Optional, List, TYPE_CHECKING, ForwardRef, Any
 from datetime import datetime
 from .raw_answer import RawAnswer as RawAnswerSchema
 from .expert_answer import ExpertAnswer as ExpertAnswerSchema
@@ -26,7 +26,31 @@ class RawQuestion(RawQuestionBase):
     created_at: datetime
     raw_answers: List[RawAnswerSchema] = []
     expert_answers: List[ExpertAnswerSchema] = []
-    # 移除tags字段避免循环导入
+    tags: List[str] = Field(default_factory=list)  # 输出为字符串列表
+
+    @model_validator(mode='before')
+    @classmethod
+    def extract_tags(cls, data: Any) -> Any:
+        """将Tag对象转换为标签名字符串列表"""
+        if isinstance(data, dict):
+            return data
+            
+        # 处理SQLAlchemy模型对象
+        result = {}
+        for field_name, field_value in data.__dict__.items():
+            if field_name.startswith('_'):
+                continue
+            result[field_name] = field_value
+            
+        # 处理tags关系
+        if hasattr(data, 'tags') and data.tags:
+            result['tags'] = [tag.label for tag in data.tags]
+        elif hasattr(data, 'tags_json') and data.tags_json:
+            result['tags'] = data.tags_json
+        else:
+            result['tags'] = []
+            
+        return result
 
     class Config:
         from_attributes = True

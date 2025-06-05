@@ -16,10 +16,13 @@ class StdAnswer(Base):
     previous_version_id = Column(Integer, ForeignKey("StdAnswer.id"), nullable=True)
 
     # Relationships
-    std_question = relationship("StdQuestion", back_populates="std_answers")
+    std_question = relationship("StdQuestion", back_populates="std_answer")
     previous_version = relationship("StdAnswer", remote_side=[id])
     scoring_points = relationship("StdAnswerScoringPoint", back_populates="std_answer", cascade="all, delete-orphan")
-
+    
+    # 引用的原始回答和专家回答 (一对多关系)
+    referenced_raw_answers = relationship("RawAnswer", back_populates="referenced_by_std_answer")
+    referenced_expert_answers = relationship("ExpertAnswer", back_populates="referenced_by_std_answer")
 
 class StdAnswerScoringPoint(Base):
     __tablename__ = "StdAnswerScoringPoint"

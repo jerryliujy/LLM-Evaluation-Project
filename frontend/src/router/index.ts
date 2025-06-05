@@ -57,16 +57,30 @@ const router = createRouter({
 // 路由守卫
 router.beforeEach((to, from, next) => {
   const userInfo = localStorage.getItem('userInfo')
-  const user = userInfo ? JSON.parse(userInfo) : null
+  let user = null
+  
+  try {
+    user = userInfo ? JSON.parse(userInfo) : null
+  } catch (error) {
+    console.error('Error parsing userInfo from localStorage:', error)
+    localStorage.removeItem('userInfo') // 清除损坏的数据
+    user = null
+  }
   
   // 检查是否需要认证
   if (to.meta.requiresAuth) {
+    if (!user) {
+      // 没有用户信息，跳转到角色选择页
+      next({ name: 'RoleSelection' })
+      return
+    }
+    
     // 检查角色权限
     if (to.meta.role && user.role !== to.meta.role) {
       // 权限不足，根据用户角色跳转到合适的页面
       if (user.role === 'admin') {
         next({ name: 'Home' })
-      } else if (user.role === 'user') {
+      } else if (user.role === 'user' || user.role === 'expert') {
         next({ name: 'DatasetMarketplace' })
       } else {
         next({ name: 'RoleSelection' })

@@ -15,9 +15,9 @@ class StdQuestion(Base):
     is_valid = Column(Boolean, default=True, nullable=False, index=True)
     created_by = Column(String(100), nullable=True)
     version = Column(Integer, default=1, nullable=False, index=True)
-    previous_version_id = Column(Integer, ForeignKey("StdQuestion.id"), nullable=True)    # Relationships
+    previous_version_id = Column(Integer, ForeignKey("StdQuestion.id"), nullable=True)    
     dataset = relationship("Dataset")
     raw_question = relationship("RawQuestion")
     previous_version = relationship("StdQuestion", remote_side=[id])
-    std_answers = relationship("StdAnswer", back_populates="std_question", cascade="all, delete-orphan")
+    std_answer = relationship("StdAnswer", back_populates="std_question", uselist=False, cascade="all, delete-orphan")
     tags = relationship("Tag", secondary="QuestionTagRecords", back_populates="std_questions")

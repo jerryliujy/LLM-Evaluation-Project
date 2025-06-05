@@ -63,16 +63,12 @@
           批量恢复 ({{ selectedItems.length }})
         </button>
       </div>
-      
-      <div class="view-options">
-        <label>
-          <input 
-            type="checkbox" 
-            v-model="showDeleted" 
-            @change="loadTableData"
-          />
-          显示已删除项目
-        </label>
+        <div class="view-options">
+        <select v-model="viewMode" @change="handleViewModeChange" class="view-mode-select">
+          <option value="active_only">仅显示未删除</option>
+          <option value="deleted_only">仅显示已删除</option>
+          <option value="all">显示全部</option>
+        </select>
         
         <select v-model="itemsPerPage" @change="loadTableData" class="per-page-select">
           <option value="20">20条/页</option>
@@ -151,8 +147,7 @@
                   {{ item[column.key] }}
                 </span>
               </div>            </td>
-            <td class="actions-col" v-if="!isOverviewTable">
-              <div class="row-actions">
+            <td class="actions-col" v-if="!isOverviewTable">              <div class="row-actions">
                 <button 
                   @click="viewItem(item)" 
                   class="action-btn small"
@@ -161,6 +156,7 @@
                   📄
                 </button>
                 <button 
+                  v-if="!item.is_deleted"
                   @click="editItem(item)" 
                   class="action-btn small"
                   title="编辑"
@@ -171,17 +167,25 @@
                   v-if="!item.is_deleted"
                   @click="deleteItem(item.id)" 
                   class="action-btn small danger"
-                  title="删除"
+                  title="软删除"
                 >
                   🗑️
                 </button>
                 <button 
-                  v-else
+                  v-if="item.is_deleted"
                   @click="restoreItem(item.id)" 
                   class="action-btn small success"
                   title="恢复"
                 >
                   ♻️
+                </button>
+                <button 
+                  v-if="item.is_deleted"
+                  @click="forceDeleteItem(item.id)" 
+                  class="action-btn small danger"
+                  title="永久删除"
+                >
+                  ❌
                 </button>
               </div>
             </td>
@@ -339,6 +343,7 @@ const currentData = ref<DatabaseItem[]>([]);
 const selectedItems = ref<number[]>([]);
 const loading = ref(false);
 const showDeleted = ref(false);
+const viewMode = ref<"all" | "deleted_only" | "active_only">("active_only"); // 新增视图模式
 const itemsPerPage = ref(20);
 const currentPage = ref(1);
 const totalItems = ref(0);
@@ -356,14 +361,13 @@ const message = ref("");
 const messageType = ref<"success" | "error">("success");
 
 // 表格配置
-const tableConfigs: Record<TableName, TableConfig> = {
-  raw_questions: {
+const tableConfigs: Record<TableName, TableConfig> = {  raw_questions: {
     columns: [
       { key: "id", label: "ID", type: "number", className: "id-col" },
       { key: "title", label: "标题", type: "text", className: "title-col", multiline: true },
       { key: "author", label: "作者", type: "text", className: "author-col" },
-      { key: "votes", label: "投票", type: "number", className: "votes-col" },
-      { key: "views", label: "浏览", type: "number", className: "views-col" },
+      { key: "votes", label: "投票", type: "text", className: "votes-col" },
+      { key: "views", label: "浏览", type: "text", className: "views-col" },
       { key: "tags", label: "标签", type: "tags", className: "tags-col" },
       { key: "issued_at", label: "发布时间", type: "date", className: "date-col" },
     ],
@@ -390,8 +394,7 @@ const tableConfigs: Record<TableName, TableConfig> = {
       { key: "author", label: "专家ID", type: "number", className: "author-col" },
     ],
     editable: ["content", "source", "vote_count"]
-  },
-  std_questions: {
+  },  std_questions: {
     columns: [
       { key: "id", label: "ID", type: "number", className: "id-col" },
       { key: "dataset_id", label: "数据集ID", type: "number", className: "dataset-col" },
@@ -400,19 +403,19 @@ const tableConfigs: Record<TableName, TableConfig> = {
       { key: "question_type", label: "问题类型", type: "text", className: "type-col" },
       { key: "version", label: "版本", type: "number", className: "version-col" },
       { key: "created_by", label: "创建者", type: "text", className: "author-col" },
+      { key: "is_valid", label: "有效", type: "boolean", className: "valid-col" },
     ],
     editable: ["text", "question_type", "created_by"]
-  },  std_answers: {
+  },std_answers: {
     columns: [
       { key: "id", label: "ID", type: "number", className: "id-col" },
       { key: "std_question_id", label: "标准问题ID", type: "number", className: "question-id-col" },
-      { key: "answer_text", label: "答案文本", type: "text", className: "answer-col", multiline: true },
-      { key: "answer_type", label: "答案类型", type: "text", className: "type-col" },
-      { key: "is_correct", label: "正确答案", type: "boolean", className: "correct-col" },
+      { key: "answer", label: "答案文本", type: "text", className: "answer-col", multiline: true },
       { key: "version", label: "版本", type: "number", className: "version-col" },
       { key: "created_by", label: "创建者", type: "text", className: "author-col" },
+      { key: "is_valid", label: "有效", type: "boolean", className: "valid-col" },
     ],
-    editable: ["answer_text", "answer_type", "is_correct", "created_by"]
+    editable: ["answer", "created_by"]
   },
   overview_std: {
     columns: [
@@ -473,6 +476,17 @@ const loadTableData = async () => {
     const skip = (currentPage.value - 1) * itemsPerPage.value;
     const limit = itemsPerPage.value;
     
+    // 根据视图模式确定参数
+    let includeDeleted = false;
+    let deletedOnly = false;
+    
+    if (viewMode.value === 'all') {
+      includeDeleted = true;
+    } else if (viewMode.value === 'deleted_only') {
+      includeDeleted = true;
+      deletedOnly = true;
+    }
+    
     let result;
     if (selectedTable.value === 'overview_std') {
       result = await databaseService.getStdQuestionsOverview(
@@ -485,8 +499,9 @@ const loadTableData = async () => {
         selectedTable.value,
         skip,
         limit,
-        showDeleted.value,
-        currentDatasetId.value
+        includeDeleted,
+        currentDatasetId.value,
+        deletedOnly
       );
     }
     
@@ -561,6 +576,24 @@ const restoreItem = async (id: number) => {
   } catch (error) {
     showMessage("恢复失败", "error");
   }
+};
+
+const forceDeleteItem = async (id: number) => {
+  if (!confirm("确定要永久删除这个项目吗？此操作不可恢复！")) return;
+  
+  try {
+    await databaseService.forceDeleteItem(selectedTable.value, id);
+    showMessage("永久删除成功", "success");
+    loadTableData();
+  } catch (error) {
+    showMessage("永久删除失败", "error");
+  }
+};
+
+const handleViewModeChange = () => {
+  currentPage.value = 1;
+  selectedItems.value = [];
+  loadTableData();
 };
 
 const viewItem = (item: any) => {

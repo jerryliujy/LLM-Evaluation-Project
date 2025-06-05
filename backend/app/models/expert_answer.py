@@ -9,11 +9,13 @@ class ExpertAnswer(Base):
     id = Column(Integer, primary_key=True, index=True)
     question_id = Column(Integer, ForeignKey("RawQuestion.id"), nullable=False, index=True)
     content = Column(Text, nullable=False)
-    source = Column(String(255), nullable=False, index=True)
-    vote_count = Column(Integer, default=0, nullable=True)
-    author = Column(Integer, ForeignKey("User.id"), nullable=False, index=True)  # 改为引用User表
+    author = Column(Integer, ForeignKey("User.id"), nullable=False, index=True)
     created_at = Column(DateTime(timezone=True), server_default=func.now())   
     is_deleted = Column(Boolean, default=False, nullable=False, index=True)
+    referenced_by_std_answer_id = Column(Integer, ForeignKey("StdAnswer.id"), nullable=True, index=True)
 
+    # 关系
     question = relationship("RawQuestion", back_populates="expert_answers")
-    author_user = relationship("User")  # 添加与User的关系
+    author_user = relationship("User")
+    # 被哪个标准回答引用
+    referenced_by_std_answer = relationship("StdAnswer", back_populates="referenced_expert_answers")

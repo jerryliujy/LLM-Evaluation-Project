@@ -1,4 +1,4 @@
-import axios from "axios";
+import { apiClient } from './api'
 import { API_BASE_URL } from "./apiConstants";
 
 const DATA_IMPORT_ENDPOINT = `${API_BASE_URL}/data-import`;
@@ -32,29 +32,17 @@ export const dataImportService = {
     formData.append("description", description);
     formData.append("is_public", isPublic.toString());
 
-    const response = await axios.post(
-      `${DATA_IMPORT_ENDPOINT}/dataset`,
-      formData,
-      {
-        headers: {
-          "Content-Type": "multipart/form-data",
-          "Authorization": `Bearer ${localStorage.getItem('access_token')}`,
-        },
-      }
-    );
+    const response = await apiClient.post('/data-import/dataset', formData, {
+      headers: {
+        'Content-Type': 'multipart/form-data',
+      },
+    });
     return response.data;
   },
 
   // 获取数据集列表
   async getDatasets(): Promise<Dataset[]> {
-    const response = await axios.get<Dataset[]>(
-      `${DATA_IMPORT_ENDPOINT}/datasets`,
-      {
-        headers: {
-          "Authorization": `Bearer ${localStorage.getItem('access_token')}`,
-        },
-      }
-    );
+    const response = await apiClient.get('/data-import/datasets');
     return response.data;
   },
 
@@ -63,15 +51,7 @@ export const dataImportService = {
     datasetId: number,
     data: any[]
   ): Promise<DataImportResult> {
-    const response = await axios.post<DataImportResult>(
-      `${DATA_IMPORT_ENDPOINT}/raw-qa/${datasetId}`,
-      { data },
-      {
-        headers: {
-          "Content-Type": "application/json",
-        },
-      }
-    );
+    const response = await apiClient.post(`/data-import/raw-qa/${datasetId}`, { data });
     return response.data;
   },
 
@@ -80,15 +60,7 @@ export const dataImportService = {
     datasetId: number,
     data: any[]
   ): Promise<DataImportResult> {
-    const response = await axios.post<DataImportResult>(
-      `${DATA_IMPORT_ENDPOINT}/expert-answers/${datasetId}`,
-      { data },
-      {
-        headers: {
-          "Content-Type": "application/json",
-        },
-      }
-    );
+    const response = await apiClient.post(`/data-import/expert-answers/${datasetId}`, { data });
     return response.data;
   },
 
@@ -97,15 +69,7 @@ export const dataImportService = {
     datasetId: number, 
     data: any[]
   ): Promise<DataImportResult> {
-    const response = await axios.post<DataImportResult>(
-      `${DATA_IMPORT_ENDPOINT}/std-qa/${datasetId}`,
-      { data },
-      {
-        headers: {
-          "Content-Type": "application/json",
-        },
-      }
-    );
+    const response = await apiClient.post(`/data-import/std-qa/${datasetId}`, { data });
     return response.data;
   },
 

@@ -1,3 +1,4 @@
+import { apiClient } from './api'
 import { API_BASE_URL } from "./apiConstants";
 
 interface TableDataResult {
@@ -16,55 +17,52 @@ interface OverviewStatistics {
   avg_expert_answers_per_question: number;
 }
 
-export const databaseService = {
-  // 获取表格数据
+export const databaseService = {  // 获取表格数据
   async getTableData(
     tableName: string,
     skip = 0,
     limit = 20,
     includeDeleted = false,
-    datasetId?: number
+    datasetId?: number,
+    deletedOnly = false
   ): Promise<TableDataResult> {
     const endpoint = this.getTableEndpoint(tableName);
-    const params = new URLSearchParams({
+    const params: any = {
       skip: skip.toString(),
       limit: limit.toString(),
-    });
+    };
 
     if (includeDeleted) {
-      params.append("include_deleted", "true");
+      params.include_deleted = "true";
+    }
+
+    if (deletedOnly) {
+      params.deleted_only = "true";
     }
 
     if (datasetId) {
-      params.append("dataset_id", datasetId.toString());
+      params.dataset_id = datasetId.toString();
     }
 
-    const response = await fetch(`${endpoint}?${params}`);
-    if (!response.ok) {
+    try {
+      const response = await apiClient.get(endpoint, { params });
+      const result = response.data;
+      
+      return {
+        data: result.data,
+        total: result.total,
+        deletedCount: result.data.filter((item: any) => item.is_deleted).length,
+      };
+    } catch (error) {
       throw new Error(`Failed to fetch ${tableName} data`);
     }
-
-    const data = await response.json();
-    
-    // 计算统计信息
-    const total = data.length; // 简化处理，实际应该从后端获取总数
-    const deletedCount = data.filter((item: any) => item.is_deleted).length;
-
-    return {
-      data,
-      total,
-      deletedCount,
-    };
   },
-
   // 删除单个项目
   async deleteItem(tableName: string, id: number): Promise<void> {
     const endpoint = this.getTableEndpoint(tableName);
-    const response = await fetch(`${endpoint}/${id}/`, {
-      method: "DELETE",
-    });
-
-    if (!response.ok) {
+    try {
+      await apiClient.delete(`${endpoint}/${id}/`);
+    } catch (error) {
       throw new Error(`Failed to delete ${tableName} item`);
     }
   },
@@ -72,27 +70,28 @@ export const databaseService = {
   // 恢复单个项目
   async restoreItem(tableName: string, id: number): Promise<void> {
     const endpoint = this.getTableEndpoint(tableName);
-    const response = await fetch(`${endpoint}/${id}/restore/`, {
-      method: "POST",
-    });
-
-    if (!response.ok) {
+    try {
+      await apiClient.post(`${endpoint}/${id}/restore/`);
+    } catch (error) {
       throw new Error(`Failed to restore ${tableName} item`);
     }
   },
 
+  // 永久删除单个项目
+  async forceDeleteItem(tableName: string, id: number): Promise<void> {
+    const endpoint = this.getTableEndpoint(tableName);
+    try {
+      await apiClient.delete(`${endpoint}/${id}/force-delete/`);
+    } catch (error) {
+      throw new Error(`Failed to force delete ${tableName} item`);
+    }
+  },
   // 批量删除
   async bulkDelete(tableName: string, ids: number[]): Promise<void> {
     const endpoint = this.getTableEndpoint(tableName);
-    const response = await fetch(`${endpoint}/delete-multiple/`, {
-      method: "POST",
-      headers: {
-        "Content-Type": "application/json",
-      },
-      body: JSON.stringify(ids),
-    });
-
-    if (!response.ok) {
+    try {
+      await apiClient.post(`${endpoint}/delete-multiple/`, ids);
+    } catch (error) {
       throw new Error(`Failed to bulk delete ${tableName} items`);
     }
   },
@@ -100,31 +99,18 @@ export const databaseService = {
   // 批量恢复
   async bulkRestore(tableName: string, ids: number[]): Promise<void> {
     const endpoint = this.getTableEndpoint(tableName);
-    const response = await fetch(`${endpoint}/restore-multiple/`, {
-      method: "POST",
-      headers: {
-        "Content-Type": "application/json",
-      },
-      body: JSON.stringify(ids),
-    });
-
-    if (!response.ok) {
+    try {
+      await apiClient.post(`${endpoint}/restore-multiple/`, ids);
+    } catch (error) {
       throw new Error(`Failed to bulk restore ${tableName} items`);
     }
   },
-
   // 更新项目
   async updateItem(tableName: string, id: number, data: any): Promise<void> {
     const endpoint = this.getTableEndpoint(tableName);
-    const response = await fetch(`${endpoint}/${id}`, {
-      method: "PUT",
-      headers: {
-        "Content-Type": "application/json",
-      },
-      body: JSON.stringify(data),
-    });
-
-    if (!response.ok) {
+    try {
+      await apiClient.put(`${endpoint}/${id}`, data);
+    } catch (error) {
       throw new Error(`Failed to update ${tableName} item`);
     }
   },
@@ -132,31 +118,23 @@ export const databaseService = {
   // 创建新项目
   async createItem(tableName: string, data: any): Promise<any> {
     const endpoint = this.getTableEndpoint(tableName);
-    const response = await fetch(endpoint, {
-      method: "POST",
-      headers: {
-        "Content-Type": "application/json",
-      },
-      body: JSON.stringify(data),
-    });
-
-    if (!response.ok) {
+    try {
+      const response = await apiClient.post(endpoint, data);
+      return response.data;
+    } catch (error) {
       throw new Error(`Failed to create ${tableName} item`);
     }
-
-    return response.json();
   },
 
   // 获取单个项目详情
   async getItem(tableName: string, id: number): Promise<any> {
     const endpoint = this.getTableEndpoint(tableName);
-    const response = await fetch(`${endpoint}/${id}`);
-
-    if (!response.ok) {
+    try {
+      const response = await apiClient.get(`${endpoint}/${id}`);
+      return response.data;
+    } catch (error) {
       throw new Error(`Failed to get ${tableName} item`);
     }
-
-    return response.json();
   },
   // 获取表格对应的API端点
   getTableEndpoint(tableName: string): string {
@@ -176,33 +154,32 @@ export const databaseService = {
     }
 
     return endpoint;
-  },
-  // 获取原始问题总览
+  },  // 获取原始问题总览
   async getRawQuestionsOverview(
     skip = 0,
     limit = 20,
     datasetId?: number
   ): Promise<TableDataResult> {
-    const params = new URLSearchParams({
+    const params: any = {
       skip: skip.toString(),
       limit: limit.toString(),
-    });
+    };
 
     if (datasetId) {
-      params.append("dataset_id", datasetId.toString());
+      params.dataset_id = datasetId.toString();
     }
 
-    const response = await fetch(`${API_BASE_URL}/overview/raw-questions?${params}`);
-    if (!response.ok) {
+    try {
+      const response = await apiClient.get('/overview/raw-questions', { params });
+      const data = response.data;
+      return {
+        data: data.data || data,
+        total: data.total || data.length,
+        deletedCount: 0,
+      };
+    } catch (error) {
       throw new Error("Failed to fetch raw questions overview");
     }
-
-    const data = await response.json();
-    return {
-      data: data.data || data,
-      total: data.total || data.length,
-      deletedCount: 0,
-    };
   },
 
   // 获取标准问题总览
@@ -211,36 +188,36 @@ export const databaseService = {
     limit = 20,
     datasetId?: number
   ): Promise<TableDataResult> {
-    const params = new URLSearchParams({
+    const params: any = {
       skip: skip.toString(),
       limit: limit.toString(),
-    });
+    };
 
     if (datasetId) {
-      params.append("dataset_id", datasetId.toString());
+      params.dataset_id = datasetId.toString();
     }
 
-    const response = await fetch(`${API_BASE_URL}/overview/std-questions?${params}`);
-    if (!response.ok) {
+    try {
+      const response = await apiClient.get('/overview/std-questions', { params });
+      const data = response.data;
+      return {
+        data: data.data || data,
+        total: data.total || data.length,
+        deletedCount: 0,
+      };
+    } catch (error) {
       throw new Error("Failed to fetch std questions overview");
     }
-
-    const data = await response.json();
-    return {
-      data: data.data || data,
-      total: data.total || data.length,
-      deletedCount: 0,
-    };
   },
 
   // 获取总览统计信息
   async getOverviewStatistics(): Promise<OverviewStatistics> {
-    const response = await fetch(`${API_BASE_URL}/overview/statistics`);
-    if (!response.ok) {
+    try {
+      const response = await apiClient.get('/overview/statistics');
+      return response.data;
+    } catch (error) {
       throw new Error("Failed to fetch overview statistics");
     }
-
-    return response.json();
   },
 
   // 获取数据库统计信息
@@ -279,7 +256,6 @@ export const databaseService = {
       };
     }
   },
-
   // 搜索功能
   async searchItems(
     tableName: string,
@@ -288,22 +264,22 @@ export const databaseService = {
     limit = 20
   ): Promise<TableDataResult> {
     const endpoint = this.getTableEndpoint(tableName);
-    const params = new URLSearchParams({
+    const params: any = {
       q: query,
       skip: skip.toString(),
       limit: limit.toString(),
-    });
+    };
 
-    const response = await fetch(`${endpoint}/search?${params}`);
-    if (!response.ok) {
+    try {
+      const response = await apiClient.get(`${endpoint}/search`, { params });
+      const data = response.data;
+      return {
+        data: data.results || data,
+        total: data.total || data.length,
+        deletedCount: 0,
+      };
+    } catch (error) {
       throw new Error(`Failed to search ${tableName}`);
     }
-
-    const data = await response.json();
-    return {
-      data: data.results || data,
-      total: data.total || data.length,
-      deletedCount: 0,
-    };
   },
 };

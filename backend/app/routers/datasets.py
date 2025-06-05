@@ -86,14 +86,6 @@ def get_datasets_marketplace(
     # 为每个数据集添加统计信息
     result = []
     for dataset in datasets:
-        # 计算各种统计数据
-        raw_questions_count = db.query(func.count(RawQuestion.id.distinct())).join(
-            StdQuestion, RawQuestion.id == StdQuestion.raw_question_id
-        ).filter(
-            StdQuestion.dataset_id == dataset.id,
-            StdQuestion.is_valid == True
-        ).scalar() or 0
-        
         std_questions_count = db.query(func.count(StdQuestion.id)).filter(
             StdQuestion.dataset_id == dataset.id,
             StdQuestion.is_valid == True
@@ -113,7 +105,51 @@ def get_datasets_marketplace(
             created_by=dataset.created_by,
             is_public=dataset.is_public,
             create_time=dataset.create_time,
-            raw_questions_count=raw_questions_count,
+            std_questions_count=std_questions_count,
+            std_answers_count=std_answers_count,
+            creator_username=dataset.creator.username if dataset.creator else None
+        )
+        result.append(dataset_with_stats)
+    return result
+
+@router.get("/my", response_model=List[DatasetWithStats])
+def get_my_datasets(
+    skip: int = Query(0, ge=0),
+    limit: int = Query(100, ge=1, le=1000),
+    current_user: User = Depends(get_current_active_user),
+    db: Session = Depends(get_db)
+):
+    """获取自建数据库列表（包含统计信息）"""
+    from ..models.raw_question import RawQuestion
+    from ..models.std_question import StdQuestion
+    from ..models.std_answer import StdAnswer
+    
+    query = db.query(Dataset).options(joinedload(Dataset.creator)).filter(Dataset.created_by == current_user.id)
+    
+    datasets = query.order_by(Dataset.create_time.desc()).offset(skip).limit(limit).all()
+    
+    # 为每个数据集添加统计信息
+    result = []
+    for dataset in datasets:
+        std_questions_count = db.query(func.count(StdQuestion.id)).filter(
+            StdQuestion.dataset_id == dataset.id,
+            StdQuestion.is_valid == True
+        ).scalar() or 0
+        
+        std_answers_count = db.query(func.count(StdAnswer.id)).join(StdQuestion).filter(
+            StdQuestion.dataset_id == dataset.id,
+            StdQuestion.is_valid == True,
+            StdAnswer.is_valid == True
+        ).scalar() or 0
+        
+        # 创建带统计信息的数据集对象
+        dataset_with_stats = DatasetWithStats(
+            id=dataset.id,
+            name=dataset.name,
+            description=dataset.description,
+            created_by=dataset.created_by,
+            is_public=dataset.is_public,
+            create_time=dataset.create_time,
             std_questions_count=std_questions_count,
             std_answers_count=std_answers_count,
             creator_username=dataset.creator.username if dataset.creator else None
@@ -130,6 +166,40 @@ def get_dataset(dataset_id: int, db: Session = Depends(get_db)):
         raise HTTPException(status_code=404, detail="Dataset not found")
     
     return dataset
+
+@router.get("/{dataset_id}/stats")
+def get_dataset_stats(dataset_id: int, db: Session = Depends(get_db)):
+    """获取数据集统计信息"""
+    dataset = db.query(Dataset).filter(Dataset.id == dataset_id).first()
+    if not dataset:
+        raise HTTPException(status_code=404, detail="Dataset not found")
+    
+    from ..models.std_question import StdQuestion
+    from ..models.std_answer import StdAnswer
+    from sqlalchemy import func
+    
+    # 统计标准问题数量
+    std_questions_count = db.query(func.count(StdQuestion.id)).filter(
+        StdQuestion.dataset_id == dataset_id,
+        StdQuestion.is_valid == True
+    ).scalar()
+    
+    # 统计标准答案数量
+    std_answers_count = db.query(func.count(StdAnswer.id)).join(
+        StdQuestion, StdAnswer.std_question_id == StdQuestion.id
+    ).filter(
+        StdQuestion.dataset_id == dataset_id,
+        StdQuestion.is_valid == True,
+        StdAnswer.is_valid == True
+    ).scalar()
+    
+    return {
+        "dataset_id": dataset_id,
+        "description": dataset.description,
+        "create_time": dataset.create_time,
+        "std_questions_count": std_questions_count,
+        "std_answers_count": std_answers_count
+    }
 
 @router.put("/{dataset_id}", response_model=DatasetResponse)
 def update_dataset(
@@ -175,49 +245,3 @@ def delete_dataset(dataset_id: int, db: Session = Depends(get_db)):
     db.commit()
     
     return {"message": "Dataset deleted successfully"}
-
-@router.get("/{dataset_id}/stats")
-def get_dataset_stats(dataset_id: int, db: Session = Depends(get_db)):
-    """获取数据集统计信息"""
-    dataset = db.query(Dataset).filter(Dataset.id == dataset_id).first()
-    if not dataset:
-        raise HTTPException(status_code=404, detail="Dataset not found")
-    
-    from ..models.std_question import StdQuestion
-    from ..models.std_answer import StdAnswer
-    from sqlalchemy import func
-    
-    # 统计标准问题数量
-    std_questions_count = db.query(func.count(StdQuestion.id)).filter(
-        StdQuestion.dataset_id == dataset_id,
-        StdQuestion.is_valid == True
-    ).scalar()
-    
-    # 统计标准答案数量
-    std_answers_count = db.query(func.count(StdAnswer.id)).join(
-        StdQuestion, StdAnswer.std_question_id == StdQuestion.id
-    ).filter(
-        StdQuestion.dataset_id == dataset_id,
-        StdQuestion.is_valid == True,
-        StdAnswer.is_valid == True
-    ).scalar()
-    
-    return {
-        "dataset_id": dataset_id,
-        "description": dataset.description,
-        "create_time": dataset.create_time,
-        "std_questions_count": std_questions_count,
-        "std_answers_count": std_answers_count
-    }
-
-@router.get("/my", response_model=List[DatasetResponse])
-def get_my_datasets(
-    skip: int = Query(0, ge=0),
-    limit: int = Query(100, ge=1, le=1000),
-    current_user: User = Depends(get_current_active_user),
-    db: Session = Depends(get_db)
-):
-    """获取当前用户的数据集列表"""
-    query = db.query(Dataset).filter(Dataset.created_by == current_user.id)
-    datasets = query.order_by(Dataset.create_time.desc()).offset(skip).limit(limit).all()
-    return datasets

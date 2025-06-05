@@ -1,13 +1,16 @@
 from typing import List, Optional
-from fastapi import APIRouter, Depends, HTTPException, Query
+from fastapi import APIRouter, Depends, HTTPException, Query, Body
 from sqlalchemy.orm import Session, joinedload
 
 from ..db.database import get_db
+from ..crud import crud_std_question
 from ..models.std_question import StdQuestion
 from ..models.dataset import Dataset
 from ..models.raw_question import RawQuestion
 from ..models.tag import Tag
 from ..schemas.std_question import StdQuestionCreate, StdQuestionUpdate, StdQuestionResponse
+from ..schemas.common import PaginatedResponse
+from ..schemas import Msg
 
 router = APIRouter(prefix="/api/std-questions", tags=["Standard Questions"])
 
@@ -24,53 +27,22 @@ def create_std_question(
     if not db.query(RawQuestion).filter(RawQuestion.id == std_question.raw_question_id).first():
         raise HTTPException(status_code=404, detail="Raw question not found")
     
-    # 创建新的标准问题
-    db_std_question = StdQuestion(**std_question.dict())
-    db.add(db_std_question)
-    db.commit()
-    db.refresh(db_std_question)
-    
-    return db_std_question
+    # 使用CRUD函数创建标准问题
+    return crud_std_question.create_std_question(db, std_question)
 
-@router.get("/", response_model=List[StdQuestionResponse])
-def list_std_questions(
-    dataset_id: Optional[int] = Query(None, description="Filter by dataset ID"),
-    is_valid: Optional[bool] = Query(True, description="Filter by validity"),
-    skip: int = Query(0, ge=0),
-    limit: int = Query(100, ge=1, le=1000),
+@router.get("/", response_model=PaginatedResponse[StdQuestionResponse])
+def read_std_questions_api(
+    skip: int = Query(0, ge=0), 
+    limit: int = Query(20, ge=1, le=100), 
+    include_deleted: bool = Query(False),
+    deleted_only: bool = Query(False),
     db: Session = Depends(get_db)
 ):
-    """获取标准问题列表"""
-    query = db.query(StdQuestion).options(
-        joinedload(StdQuestion.dataset),
-        joinedload(StdQuestion.raw_question)
+    """获取分页的标准问题列表"""
+    result = crud_std_question.get_std_questions_paginated(
+        db, skip=skip, limit=limit, include_deleted=include_deleted, deleted_only=deleted_only
     )
-    
-    if dataset_id is not None:
-        query = query.filter(StdQuestion.dataset_id == dataset_id)
-    
-    if is_valid is not None:
-        query = query.filter(StdQuestion.is_valid == is_valid)
-    
-    # 只显示当前有效版本（最新版本）
-    if is_valid is True:
-        # 通过子查询找到每个问题的最新版本
-        from sqlalchemy import func
-        subquery = db.query(
-            StdQuestion.raw_question_id,
-            StdQuestion.dataset_id,
-            func.max(StdQuestion.version).label('max_version')
-        ).filter(StdQuestion.is_valid == True).group_by(
-            StdQuestion.raw_question_id, StdQuestion.dataset_id
-        ).subquery()
-        
-        query = query.join(subquery, 
-            (StdQuestion.raw_question_id == subquery.c.raw_question_id) &
-            (StdQuestion.dataset_id == subquery.c.dataset_id) &
-            (StdQuestion.version == subquery.c.max_version)
-        )
-    
-    return query.offset(skip).limit(limit).all()
+    return result
 
 @router.get("/{std_question_id}", response_model=StdQuestionResponse)
 def get_std_question(std_question_id: int, db: Session = Depends(get_db)):
@@ -91,59 +63,61 @@ def update_std_question(
     std_question_update: StdQuestionUpdate,
     db: Session = Depends(get_db)
 ):
-    """更新标准问题（版本控制）"""
-    # 获取当前问题
-    current_question = db.query(StdQuestion).filter(StdQuestion.id == std_question_id).first()
-    if not current_question:
+    """更新标准问题"""
+    updated_question = crud_std_question.update_std_question(db, std_question_id, std_question_update)
+    if not updated_question:
         raise HTTPException(status_code=404, detail="Standard question not found")
+    return updated_question
     
-    # 检查是否有实际修改
-    update_data = std_question_update.dict(exclude_unset=True)
-    has_changes = False
-    for field, value in update_data.items():
-        if hasattr(current_question, field) and getattr(current_question, field) != value:
-            has_changes = True
-            break
-    
-    if not has_changes:
-        return current_question
-    
-    # 标记当前版本为无效
-    current_question.is_valid = False
-    
-    # 创建新版本
-    new_version_data = {
-        'dataset_id': current_question.dataset_id,
-        'raw_question_id': current_question.raw_question_id,
-        'text': current_question.text,
-        'question_type': current_question.question_type,
-        'created_by': current_question.created_by,
-        'version': current_question.version + 1,
-        'previous_version_id': current_question.id,
-        'is_valid': True
-    }
-    
-    # 应用更新
-    new_version_data.update(update_data)
-    
-    new_question = StdQuestion(**new_version_data)
-    db.add(new_question)
-    db.commit()
-    db.refresh(new_question)
-    
-    return new_question
+@router.delete("/{std_question_id}/", response_model=Msg)
+def delete_std_question_api(std_question_id: int, db: Session = Depends(get_db)):
+    db_question = crud_std_question.set_std_question_deleted_status(db, question_id=std_question_id, deleted_status=True)
+    if db_question is None:
+        raise HTTPException(status_code=404, detail="StdQuestion not found")
+    return Msg(message=f"Standard question {std_question_id} marked as deleted")
 
-@router.delete("/{std_question_id}")
-def delete_std_question(std_question_id: int, db: Session = Depends(get_db)):
-    """软删除标准问题"""
-    std_question = db.query(StdQuestion).filter(StdQuestion.id == std_question_id).first()
-    if not std_question:
-        raise HTTPException(status_code=404, detail="Standard question not found")
+@router.post("/{std_question_id}/restore/", response_model=StdQuestionResponse)
+def restore_std_question_api(std_question_id: int, db: Session = Depends(get_db)):
+    initial_check = crud_std_question.get_std_question(db, question_id=std_question_id, include_deleted=True)
+    if not initial_check:
+        raise HTTPException(status_code=404, detail="StdQuestion not found")
+    if initial_check.is_valid:
+        raise HTTPException(status_code=400, detail="StdQuestion is not marked as deleted")
     
-    std_question.is_valid = False
-    db.commit()
+    db_question = crud_std_question.set_std_question_deleted_status(db, question_id=std_question_id, deleted_status=False)
+    if db_question is None:
+        raise HTTPException(status_code=404, detail="Error restoring StdQuestion")
+    return db_question
+
+@router.delete("/{std_question_id}/force-delete/", response_model=Msg)
+def force_delete_std_question_api(std_question_id: int, db: Session = Depends(get_db)):
+    """永久删除标准问题"""
+    initial_check = crud_std_question.get_std_question(db, question_id=std_question_id, include_deleted=True)
+    if not initial_check:
+        raise HTTPException(status_code=404, detail="StdQuestion not found")
     
-    return {"message": "Standard question marked as invalid"}
+    if initial_check.is_valid:
+        raise HTTPException(status_code=400, detail="StdQuestion must be soft deleted before force deletion")
+    
+    success = crud_std_question.force_delete_std_question(db, question_id=std_question_id)
+    if not success:
+        raise HTTPException(status_code=500, detail="Failed to permanently delete StdQuestion")
+    
+    return Msg(message=f"Standard question {std_question_id} permanently deleted")
+
+@router.post("/delete-multiple/", response_model=Msg)
+def delete_multiple_std_questions_api(question_ids: List[int] = Body(...), db: Session = Depends(get_db)):
+    if not question_ids:
+        raise HTTPException(status_code=400, detail="No question IDs provided")
+    num_deleted = crud_std_question.set_multiple_std_questions_deleted_status(db, question_ids=question_ids, deleted_status=True)
+    return Msg(message=f"Successfully marked {num_deleted} standard questions as deleted")
+
+@router.post("/restore-multiple/", response_model=Msg)
+def restore_multiple_std_questions_api(question_ids: List[int] = Body(...), db: Session = Depends(get_db)):
+    if not question_ids:
+        raise HTTPException(status_code=400, detail="No question IDs provided")
+    num_restored = crud_std_question.set_multiple_std_questions_deleted_status(db, question_ids=question_ids, deleted_status=False)
+    return Msg(message=f"Successfully marked {num_restored} standard questions as not deleted")
 
 @router.get("/{std_question_id}/versions", response_model=List[StdQuestionResponse])
 def get_std_question_versions(std_question_id: int, db: Session = Depends(get_db)):

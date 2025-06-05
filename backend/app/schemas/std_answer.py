@@ -22,20 +22,29 @@ class StdAnswerScoringPoint(StdAnswerScoringPointBase):
         from_attributes = True
 
 class StdAnswerBase(BaseModel):
-    std_question_id: int
     answer: str
     created_by: Optional[str] = None
 
 class StdAnswerCreate(StdAnswerBase):
+    std_question_id: Optional[int] = None  # 在嵌套创建时不需要，在独立创建时需要
+    version: Optional[int] = None
+    previous_version_id: Optional[int] = None
     scoring_points: List[StdAnswerScoringPointCreate] = []
+    referenced_raw_answer_ids: List[int] = []
+    referenced_expert_answer_ids: List[int] = []
 
 class StdAnswerUpdate(BaseModel):
     answer: Optional[str] = None
     created_by: Optional[str] = None
+    version: Optional[int] = None
+    previous_version_id: Optional[int] = None
     scoring_points: Optional[List[StdAnswerScoringPointCreate]] = None
+    referenced_raw_answer_ids: Optional[List[int]] = None
+    referenced_expert_answer_ids: Optional[List[int]] = None
 
 class StdAnswer(StdAnswerBase):
     id: int
+    std_question_id: int
     is_valid: bool
     create_time: datetime
     version: int
@@ -44,11 +53,12 @@ class StdAnswer(StdAnswerBase):
     class Config:
         from_attributes = True
 
-class StdAnswerWithDetails(StdAnswer):
+class StdAnswerWithScoringPoints(StdAnswer):
     scoring_points: List[StdAnswerScoringPoint] = []
 
     class Config:
         from_attributes = True
+
 
 # 添加缺失的响应类
 class StdAnswerScoringPointResponse(StdAnswerScoringPoint):
@@ -56,7 +66,7 @@ class StdAnswerScoringPointResponse(StdAnswerScoringPoint):
     class Config:
         from_attributes = True
 
-class StdAnswerResponse(StdAnswerWithDetails):
+class StdAnswerResponse(StdAnswerWithScoringPoints):
     """标准答案响应模型"""
     class Config:
         from_attributes = True

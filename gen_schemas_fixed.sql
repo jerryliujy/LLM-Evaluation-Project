@@ -47,53 +47,6 @@ CREATE TABLE `RawQuestion` (
   UNIQUE INDEX `idx_rawquestion_url` (`url`)
 ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4;
 
--- 原始回答
-CREATE TABLE `RawAnswer` (
-  `id` INT NOT NULL AUTO_INCREMENT,
-  `question_id` INT NOT NULL,
-  `answer` TEXT NOT NULL,
-  `upvotes` VARCHAR(20) DEFAULT NULL,
-  `answered_by` VARCHAR(255) DEFAULT NULL,
-  `answered_at` DATETIME DEFAULT NULL,
-  `is_deleted` TINYINT(1) NOT NULL DEFAULT 0,
-  `referenced_by_std_answer_id` INT DEFAULT NULL, -- 被哪个标准回答引用
-  PRIMARY KEY (`id`),
-  INDEX `idx_rawanswer_question` (`question_id`),
-  INDEX `idx_rawanswer_is_deleted` (`is_deleted`),
-  INDEX `idx_rawanswer_referenced_by` (`referenced_by_std_answer_id`),
-  CONSTRAINT `fk_rawanswer_rawquestion`
-    FOREIGN KEY (`question_id`) REFERENCES `RawQuestion` (`id`)
-    ON DELETE CASCADE ON UPDATE CASCADE,
-  CONSTRAINT `fk_rawanswer_referenced_by`
-    FOREIGN KEY (`referenced_by_std_answer_id`) REFERENCES `StdAnswer` (`id`)
-    ON DELETE SET NULL ON UPDATE CASCADE
-) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4;
-
--- 专家回答 
-CREATE TABLE `ExpertAnswer` (
-  `id` INT NOT NULL AUTO_INCREMENT,
-  `question_id` INT NOT NULL,
-  `content` TEXT NOT NULL,
-  `author` INT NOT NULL,
-  `created_at` DATETIME NOT NULL DEFAULT CURRENT_TIMESTAMP,
-  `is_deleted` TINYINT(1) NOT NULL DEFAULT 0,
-  `referenced_by_std_answer_id` INT DEFAULT NULL, -- 被哪个标准回答引用
-  PRIMARY KEY (`id`),
-  INDEX `idx_expertanswer_question` (`question_id`),
-  INDEX `idx_expertanswer_author` (`author`),
-  INDEX `idx_expertanswer_is_deleted` (`is_deleted`),
-  INDEX `idx_expertanswer_referenced_by` (`referenced_by_std_answer_id`),
-  CONSTRAINT `fk_expertanswer_rawquestion`
-    FOREIGN KEY (`question_id`) REFERENCES `RawQuestion` (`id`)
-    ON DELETE CASCADE ON UPDATE CASCADE,
-  CONSTRAINT `fk_expertanswer_expert`
-    FOREIGN KEY (`author`) REFERENCES `User` (`id`)
-    ON DELETE CASCADE ON UPDATE CASCADE,
-  CONSTRAINT `fk_expertanswer_referenced_by`
-    FOREIGN KEY (`referenced_by_std_answer_id`) REFERENCES `StdAnswer` (`id`)
-    ON DELETE SET NULL ON UPDATE CASCADE
-) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4;
-
 -- 标准问题 (每个dataset独立存储，增加版本控制)
 CREATE TABLE `StdQuestion` (
   `id` INT NOT NULL AUTO_INCREMENT,
@@ -141,6 +94,53 @@ CREATE TABLE `StdAnswer` (
     ON DELETE CASCADE ON UPDATE CASCADE,
   CONSTRAINT `fk_stdanswer_previous`
     FOREIGN KEY (`previous_version_id`) REFERENCES `StdAnswer` (`id`)
+    ON DELETE SET NULL ON UPDATE CASCADE
+) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4;
+
+-- 原始回答 (添加对标准回答的反向引用)
+CREATE TABLE `RawAnswer` (
+  `id` INT NOT NULL AUTO_INCREMENT,
+  `question_id` INT NOT NULL,
+  `answer` TEXT NOT NULL,
+  `upvotes` VARCHAR(20) DEFAULT NULL,
+  `answered_by` VARCHAR(255) DEFAULT NULL,
+  `answered_at` DATETIME DEFAULT NULL,
+  `is_deleted` TINYINT(1) NOT NULL DEFAULT 0,
+  `referenced_by_std_answer_id` INT DEFAULT NULL, -- 被哪个标准回答引用
+  PRIMARY KEY (`id`),
+  INDEX `idx_rawanswer_question` (`question_id`),
+  INDEX `idx_rawanswer_is_deleted` (`is_deleted`),
+  INDEX `idx_rawanswer_referenced_by` (`referenced_by_std_answer_id`),
+  CONSTRAINT `fk_rawanswer_rawquestion`
+    FOREIGN KEY (`question_id`) REFERENCES `RawQuestion` (`id`)
+    ON DELETE CASCADE ON UPDATE CASCADE,
+  CONSTRAINT `fk_rawanswer_referenced_by`
+    FOREIGN KEY (`referenced_by_std_answer_id`) REFERENCES `StdAnswer` (`id`)
+    ON DELETE SET NULL ON UPDATE CASCADE
+) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4;
+
+-- 专家回答 (添加对标准回答的反向引用)
+CREATE TABLE `ExpertAnswer` (
+  `id` INT NOT NULL AUTO_INCREMENT,
+  `question_id` INT NOT NULL,
+  `content` TEXT NOT NULL,
+  `author` INT NOT NULL,
+  `created_at` DATETIME NOT NULL DEFAULT CURRENT_TIMESTAMP,
+  `is_deleted` TINYINT(1) NOT NULL DEFAULT 0,
+  `referenced_by_std_answer_id` INT DEFAULT NULL, -- 被哪个标准回答引用
+  PRIMARY KEY (`id`),
+  INDEX `idx_expertanswer_question` (`question_id`),
+  INDEX `idx_expertanswer_author` (`author`),
+  INDEX `idx_expertanswer_is_deleted` (`is_deleted`),
+  INDEX `idx_expertanswer_referenced_by` (`referenced_by_std_answer_id`),
+  CONSTRAINT `fk_expertanswer_rawquestion`
+    FOREIGN KEY (`question_id`) REFERENCES `RawQuestion` (`id`)
+    ON DELETE CASCADE ON UPDATE CASCADE,
+  CONSTRAINT `fk_expertanswer_expert`
+    FOREIGN KEY (`author`) REFERENCES `User` (`id`)
+    ON DELETE CASCADE ON UPDATE CASCADE,
+  CONSTRAINT `fk_expertanswer_referenced_by`
+    FOREIGN KEY (`referenced_by_std_answer_id`) REFERENCES `StdAnswer` (`id`)
     ON DELETE SET NULL ON UPDATE CASCADE
 ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4;
 

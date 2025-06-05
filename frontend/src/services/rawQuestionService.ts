@@ -1,19 +1,15 @@
-import axios from "axios";
+import { apiClient } from './api'
 import { RawQuestion } from "@/types/questions";
 import { RawAnswer, ExpertAnswer } from "@/types/answers";
 import { ApiMessage } from "@/types/api";
 import { API_BASE_URL } from "./apiConstants";
-
-const RQ_ENDPOINT = `${API_BASE_URL}/raw_questions`;
-const RA_ENDPOINT = `${API_BASE_URL}/raw_answers`;
-const EX_ENDPOINT = `${API_BASE_URL}/expert_answers`;
 
 // Raw Questions
 export const fetchRawQuestions = async (
   skip: number,
   limit: number
 ): Promise<RawQuestion[]> => {
-  const response = await axios.get<RawQuestion[]>(`${RQ_ENDPOINT}/`, {
+  const response = await apiClient.get('/raw_questions/', {
     params: { skip, limit },
   });
   return response.data;
@@ -22,38 +18,28 @@ export const fetchRawQuestions = async (
 export const deleteRawQuestion = async (
   questionId: number
 ): Promise<ApiMessage> => {
-  const response = await axios.delete<ApiMessage>(
-    `${RQ_ENDPOINT}/${questionId}/`
-  );
+  const response = await apiClient.delete(`/raw_questions/${questionId}/`);
   return response.data;
 };
 
 export const restoreRawQuestion = async (
   questionId: number
 ): Promise<RawQuestion> => {
-  const response = await axios.post<RawQuestion>(
-    `${RQ_ENDPOINT}/${questionId}/restore/`
-  );
+  const response = await apiClient.post(`/raw_questions/${questionId}/restore/`);
   return response.data;
 };
 
 export const deleteMultipleRawQuestions = async (
   questionIds: number[]
 ): Promise<ApiMessage> => {
-  const response = await axios.post<ApiMessage>(
-    `${RQ_ENDPOINT}/delete-multiple/`,
-    questionIds
-  );
+  const response = await apiClient.post('/raw_questions/delete-multiple/', questionIds);
   return response.data;
 };
 
 export const restoreMultipleRawQuestions = async (
   questionIds: number[]
 ): Promise<ApiMessage> => {
-  const response = await axios.post<ApiMessage>(
-    `${RQ_ENDPOINT}/restore-multiple/`,
-    questionIds
-  );
+  const response = await apiClient.post('/raw_questions/restore-multiple/', questionIds);
   return response.data;
 };
 
@@ -61,28 +47,21 @@ export const restoreMultipleRawQuestions = async (
 export const deleteRawAnswer = async (
   answerId: number
 ): Promise<ApiMessage> => {
-  const response = await axios.delete<ApiMessage>(
-    `${RA_ENDPOINT}/${answerId}/`
-  );
+  const response = await apiClient.delete(`/raw_answers/${answerId}/`);
   return response.data;
 };
 
 export const restoreRawAnswer = async (
   answerId: number
 ): Promise<RawAnswer> => {
-  const response = await axios.post<RawAnswer>(
-    `${RA_ENDPOINT}/${answerId}/restore/`
-  );
+  const response = await apiClient.post(`/raw_answers/${answerId}/restore/`);
   return response.data;
 };
 
 export const deleteMultipleRawAnswers = async (
   answerIds: number[]
 ): Promise<ApiMessage> => {
-  const response = await axios.post<ApiMessage>(
-    `${RA_ENDPOINT}/delete-multiple/`,
-    answerIds
-  );
+  const response = await apiClient.post('/raw_answers/delete-multiple/', answerIds);
   return response.data;
 };
 
@@ -90,27 +69,20 @@ export const deleteMultipleRawAnswers = async (
 export const deleteExpertAnswer = async (
   answerId: number
 ): Promise<ApiMessage> => {
-  const response = await axios.delete<ApiMessage>(
-    `${EX_ENDPOINT}/${answerId}/`
-  );
+  const response = await apiClient.delete(`/expert_answers/${answerId}/`);
   return response.data;
 };
 
 export const restoreExpertAnswer = async (
   answerId: number
 ): Promise<ExpertAnswer> => {
-  const response = await axios.post<ExpertAnswer>(
-    `${EX_ENDPOINT}/${answerId}/restore/`
-  );
+  const response = await apiClient.post(`/expert_answers/${answerId}/restore/`);
   return response.data;
 };
 
 export const deleteMultipleExpertAnswers = async (
   answerIds: number[]
 ): Promise<ApiMessage> => {
-  const response = await axios.post<ApiMessage>(
-    `${EX_ENDPOINT}/delete-multiple/`,
-    answerIds
-  );
+  const response = await apiClient.post('/expert_answers/delete-multiple/', answerIds);
   return response.data;
 };

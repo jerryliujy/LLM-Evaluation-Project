@@ -1,5 +1,5 @@
 from sqlalchemy.orm import Session
-from .. import models, schemas
+from app import models, schemas
 from typing import List, Optional
 
 def get_raw_answer(db: Session, answer_id: int, include_deleted: bool = False) -> Optional[models.RawAnswer]:
@@ -7,6 +7,39 @@ def get_raw_answer(db: Session, answer_id: int, include_deleted: bool = False) -
     if not include_deleted:
         query = query.filter(models.RawAnswer.is_deleted == False)
     return query.first()
+
+def get_raw_answers_count(db: Session, include_deleted: bool = False, deleted_only: bool = False) -> int:
+    """获取原始答案总数"""
+    query = db.query(models.RawAnswer)
+    
+    if deleted_only:
+        query = query.filter(models.RawAnswer.is_deleted == True)
+    elif not include_deleted:
+        query = query.filter(models.RawAnswer.is_deleted == False)
+    
+    return query.count()
+
+def get_raw_answers_paginated(db: Session, skip: int = 0, limit: int = 10, include_deleted: bool = False, deleted_only: bool = False):
+    """获取分页的原始答案数据和元数据"""
+    query = db.query(models.RawAnswer)
+    
+    if deleted_only:
+        query = query.filter(models.RawAnswer.is_deleted == True)
+    elif not include_deleted:
+        query = query.filter(models.RawAnswer.is_deleted == False)
+    
+    answers = query.order_by(models.RawAnswer.id.asc()).offset(skip).limit(limit).all()
+    total = get_raw_answers_count(db, include_deleted, deleted_only)
+    
+    return {
+        "data": answers,
+        "total": total,
+        "page": (skip // limit) + 1,
+        "per_page": limit,
+        "total_pages": (total + limit - 1) // limit,
+        "has_next": skip + limit < total,
+        "has_prev": skip > 0
+    }
 
 # create_raw_answer (deferred)
 
@@ -24,3 +57,15 @@ def set_multiple_raw_answers_deleted_status(db: Session, answer_ids: List[int], 
     num_updated = db.query(models.RawAnswer).filter(models.RawAnswer.id.in_(answer_ids)).update({"is_deleted": deleted_status}, synchronize_session=False)
     db.commit()
     return num_updated
+
+def force_delete_raw_answer(db: Session, answer_id: int) -> bool:
+    """永久删除原始答案（物理删除）"""
+    try:
+        # 删除答案（原始答案通常没有其他依赖关系）
+        num_deleted = db.query(models.RawAnswer).filter(models.RawAnswer.id == answer_id).delete(synchronize_session=False)
+        db.commit()
+        return num_deleted > 0
+    except Exception as e:
+        db.rollback()
+        print(f"Error in force_delete_raw_answer: {e}")
+        return False

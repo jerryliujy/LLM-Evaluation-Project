@@ -71,10 +71,6 @@
           
           <div class="dataset-stats">
             <div class="stat-item">
-              <span class="stat-label">原始问题:</span>
-              <span class="stat-value">{{ dataset.raw_questions_count || 0 }}</span>
-            </div>
-            <div class="stat-item">
               <span class="stat-label">标准问题:</span>
               <span class="stat-value">{{ dataset.std_questions_count || 0 }}</span>
             </div>
@@ -287,18 +283,11 @@ const messageType = ref<"success" | "error">("success");
 // 方法
 const refreshDatasets = async () => {
   loading.value = true;
-  try {
-    if (activeTab.value === 'marketplace') {
+  try {    if (activeTab.value === 'marketplace') {
       datasets.value = await datasetService.getMarketplace(0, 50);
     } else if (activeTab.value === 'my-datasets') {
-      const userDatasets = await datasetService.getUserDatasets();
-      // 转换为DatasetWithStats格式
-      datasets.value = userDatasets.map(ds => ({
-        ...ds,
-        std_questions_count: 0,
-        std_answers_count: 0,
-        raw_questions_count: 0,
-      }));
+      // 获取当前用户的数据集
+      datasets.value = await datasetService.getUserDatasets(0, 50);
     }
   } catch (error) {
     showMessage("加载数据库列表失败", "error");

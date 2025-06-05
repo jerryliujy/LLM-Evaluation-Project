@@ -1,14 +1,17 @@
 from typing import List, Optional
-from fastapi import APIRouter, Depends, HTTPException, Query
+from fastapi import APIRouter, Depends, HTTPException, Query, Body
 from sqlalchemy.orm import Session, joinedload
 
 from ..db.database import get_db
+from ..crud import crud_std_answer
 from ..models.std_answer import StdAnswer, StdAnswerScoringPoint
 from ..models.std_question import StdQuestion
 from ..schemas.std_answer import (
     StdAnswerCreate, StdAnswerUpdate, StdAnswerResponse,
     StdAnswerScoringPointCreate, StdAnswerScoringPointResponse
 )
+from ..schemas.common import PaginatedResponse
+from ..schemas import Msg
 
 router = APIRouter(prefix="/api/std-answers", tags=["Standard Answers"])
 
@@ -30,42 +33,19 @@ def create_std_answer(
     
     return db_std_answer
 
-@router.get("/", response_model=List[StdAnswerResponse])
-def list_std_answers(
-    std_question_id: Optional[int] = Query(None, description="Filter by standard question ID"),
-    is_valid: Optional[bool] = Query(True, description="Filter by validity"),
-    skip: int = Query(0, ge=0),
-    limit: int = Query(100, ge=1, le=1000),
+@router.get("/", response_model=PaginatedResponse[StdAnswerResponse])
+def read_std_answers_api(
+    skip: int = Query(0, ge=0), 
+    limit: int = Query(20, ge=1, le=100), 
+    include_deleted: bool = Query(False),
+    deleted_only: bool = Query(False),
     db: Session = Depends(get_db)
 ):
-    """获取标准答案列表"""
-    query = db.query(StdAnswer).options(
-        joinedload(StdAnswer.std_question),
-        joinedload(StdAnswer.scoring_points)
+    """获取分页的标准答案列表"""
+    result = crud_std_answer.get_std_answers_paginated(
+        db, skip=skip, limit=limit, include_deleted=include_deleted, deleted_only=deleted_only
     )
-    
-    if std_question_id is not None:
-        query = query.filter(StdAnswer.std_question_id == std_question_id)
-    
-    if is_valid is not None:
-        query = query.filter(StdAnswer.is_valid == is_valid)
-    
-    # 只显示当前有效版本（最新版本）
-    if is_valid is True:
-        from sqlalchemy import func
-        subquery = db.query(
-            StdAnswer.std_question_id,
-            func.max(StdAnswer.version).label('max_version')
-        ).filter(StdAnswer.is_valid == True).group_by(
-            StdAnswer.std_question_id
-        ).subquery()
-        
-        query = query.join(subquery, 
-            (StdAnswer.std_question_id == subquery.c.std_question_id) &
-            (StdAnswer.version == subquery.c.max_version)
-        )
-    
-    return query.offset(skip).limit(limit).all()
+    return result
 
 @router.get("/{std_answer_id}", response_model=StdAnswerResponse)
 def get_std_answer(std_answer_id: int, db: Session = Depends(get_db)):
@@ -148,26 +128,55 @@ def update_std_answer(
     
     return new_answer
 
-@router.delete("/{std_answer_id}")
-def delete_std_answer(std_answer_id: int, db: Session = Depends(get_db)):
-    """软删除标准答案"""
-    std_answer = db.query(StdAnswer).filter(StdAnswer.id == std_answer_id).first()
-    if not std_answer:
-        raise HTTPException(status_code=404, detail="Standard answer not found")
+@router.delete("/{std_answer_id}/", response_model=Msg)
+def delete_std_answer_api(std_answer_id: int, db: Session = Depends(get_db)):
+    db_answer = crud_std_answer.set_std_answer_deleted_status(db, answer_id=std_answer_id, deleted_status=True)
+    if db_answer is None:
+        raise HTTPException(status_code=404, detail="StdAnswer not found")
+    return Msg(message=f"Standard answer {std_answer_id} marked as deleted")
+
+@router.post("/{std_answer_id}/restore/", response_model=StdAnswerResponse)
+def restore_std_answer_api(std_answer_id: int, db: Session = Depends(get_db)):
+    initial_check = crud_std_answer.get_std_answer(db, answer_id=std_answer_id, include_deleted=True)
+    if not initial_check:
+        raise HTTPException(status_code=404, detail="StdAnswer not found")
+    if initial_check.is_valid:
+        raise HTTPException(status_code=400, detail="StdAnswer is not marked as deleted")
     
-    std_answer.is_valid = False
+    db_answer = crud_std_answer.set_std_answer_deleted_status(db, answer_id=std_answer_id, deleted_status=False)
+    if db_answer is None:
+        raise HTTPException(status_code=404, detail="Error restoring StdAnswer")
+    return db_answer
+
+@router.delete("/{std_answer_id}/force-delete/", response_model=Msg)
+def force_delete_std_answer_api(std_answer_id: int, db: Session = Depends(get_db)):
+    """永久删除标准答案"""
+    initial_check = crud_std_answer.get_std_answer(db, answer_id=std_answer_id, include_deleted=True)
+    if not initial_check:
+        raise HTTPException(status_code=404, detail="StdAnswer not found")
     
-    # 同时标记相关的评分点为无效
-    scoring_points = db.query(StdAnswerScoringPoint).filter(
-        StdAnswerScoringPoint.std_answer_id == std_answer_id
-    ).all()
+    if initial_check.is_valid:
+        raise HTTPException(status_code=400, detail="StdAnswer must be soft deleted before force deletion")
     
-    for point in scoring_points:
-        point.is_valid = False
+    success = crud_std_answer.force_delete_std_answer(db, answer_id=std_answer_id)
+    if not success:
+        raise HTTPException(status_code=500, detail="Failed to permanently delete StdAnswer")
     
-    db.commit()
-    
-    return {"message": "Standard answer and its scoring points marked as invalid"}
+    return Msg(message=f"Standard answer {std_answer_id} permanently deleted")
+
+@router.post("/delete-multiple/", response_model=Msg)
+def delete_multiple_std_answers_api(answer_ids: List[int] = Body(...), db: Session = Depends(get_db)):
+    if not answer_ids:
+        raise HTTPException(status_code=400, detail="No answer IDs provided")
+    num_deleted = crud_std_answer.set_multiple_std_answers_deleted_status(db, answer_ids=answer_ids, deleted_status=True)
+    return Msg(message=f"Successfully marked {num_deleted} standard answers as deleted")
+
+@router.post("/restore-multiple/", response_model=Msg)
+def restore_multiple_std_answers_api(answer_ids: List[int] = Body(...), db: Session = Depends(get_db)):
+    if not answer_ids:
+        raise HTTPException(status_code=400, detail="No answer IDs provided")
+    num_restored = crud_std_answer.set_multiple_std_answers_deleted_status(db, answer_ids=answer_ids, deleted_status=False)
+    return Msg(message=f"Successfully marked {num_restored} standard answers as not deleted")
 
 @router.get("/{std_answer_id}/versions", response_model=List[StdAnswerResponse])
 def get_std_answer_versions(std_answer_id: int, db: Session = Depends(get_db)):
