@@ -60,8 +60,20 @@
         >
           创建标准问答
         </button>
-      </div>
-      <div class="view-options">
+      </div>      <div class="view-options">
+        <select v-model="viewMode" @change="handleViewModeChange" class="view-mode-select">
+          <option value="overview">概览模式</option>
+          <option value="questions">原始问题</option>
+          <option value="raw-answers">原始回答</option>
+          <option value="expert-answers">专家回答</option>
+        </select>
+        
+        <select v-model="showMode" @change="handleShowModeChange" class="show-mode-select">
+          <option value="active_only">仅显示未删除</option>
+          <option value="deleted_only">仅显示已删除</option>
+          <option value="all">显示全部</option>
+        </select>
+        
         <input
           v-model="searchQuery"
           type="text"
@@ -78,142 +90,173 @@
 
     <!-- 数据表格 -->
     <div class="table-container">
-      <table class="data-table" v-if="filteredQuestions.length > 0">
-        <thead>
+      <table class="data-table" v-if="filteredQuestions.length > 0">        <thead>
           <tr>
-            <th class="checkbox-col">
+            <!-- 概览模式下不显示复选框 -->
+            <th v-if="viewMode !== 'overview'" class="checkbox-col">
               <input 
                 type="checkbox" 
                 :checked="selectedItems.length === filteredQuestions.length && filteredQuestions.length > 0"
                 @change="selectAll"
               />
             </th>
-            <th class="id-col">ID</th>
-            <th class="title-col">标题</th>
-            <th class="author-col">作者</th>
-            <th class="stats-col">统计</th>
-            <th class="tags-col">标签</th>
-            <th class="date-col">创建时间</th>
-            <th class="actions-col">操作</th>
+            
+            <!-- 概览模式简化表头 -->
+            <template v-if="viewMode === 'overview'">
+              <th class="id-col">ID</th>
+              <th class="title-col">原始问题</th>
+              <th class="answers-col">原始回答</th>
+              <th class="expert-answers-col">专家回答</th>
+            </template>
+            
+            <!-- 其他模式的表头 -->
+            <template v-else>
+              <th class="id-col">ID</th>
+              <th class="title-col">
+                <span v-if="viewMode === 'questions'">标题</span>
+                <span v-else-if="viewMode === 'raw-answers'">原始回答内容</span>
+                <span v-else-if="viewMode === 'expert-answers'">专家回答内容</span>
+              </th>
+              <th class="author-col">作者</th>
+              <th v-if="viewMode === 'raw-answers' || viewMode === 'expert-answers'" class="question-col">关联问题</th>
+              <th class="stats-col">统计</th>
+              <th class="tags-col">标签</th>
+              <th class="date-col">创建时间</th>
+              <th class="actions-col">操作</th>
+            </template>
           </tr>
         </thead>
-        <tbody>
+        <tbody>          
           <tr v-for="question in paginatedQuestions" :key="question.id" class="data-row">
-            <td class="checkbox-col">
-              <input 
-                type="checkbox" 
-                :value="question.id"
-                v-model="selectedItems"
-              />
-            </td>
-            <td class="id-col">{{ question.id }}</td>
-            <td class="title-col">
+            <!-- 概览模式的简化行 -->
+            <template v-if="viewMode === 'overview'">
+              <td class="id-col">{{ question.id }}</td>
+              <td class="title-col">
+                <div class="cell-content">
+                  <div class="title-text" @click="viewQuestion(question)" :title="question.title">
+                    {{ question.title }}
+                  </div>
+                  <div v-if="question.body" class="body-preview" :title="question.body">
+                    {{ truncateText(question.body, 50) }}
+                  </div>
+                </div>
+              </td>
+              <td class="answers-col">
+                <div class="answers-content">
+                  <div v-if="question.raw_answers && question.raw_answers.length > 0" class="answer-group">
+                    <div class="answer-count">{{ question.raw_answers.length }}个回答</div>
+                    <div class="answer-preview">{{ truncateText(question.raw_answers[0].content, 60) }}</div>
+                    <div v-if="question.raw_answers.length > 1" class="more-answers">+{{ question.raw_answers.length - 1 }}个</div>
+                  </div>
+                  <div v-else class="no-answers">暂无原始回答</div>
+                </div>
+              </td>
+              <td class="expert-answers-col">
+                <div class="answers-content">
+                  <div v-if="question.expert_answers && question.expert_answers.length > 0" class="answer-group">
+                    <div class="answer-count">{{ question.expert_answers.length }}个专家回答</div>
+                    <div class="answer-preview">{{ truncateText(question.expert_answers[0].content, 60) }}</div>
+                    <div v-if="question.expert_answers.length > 1" class="more-answers">+{{ question.expert_answers.length - 1 }}个</div>
+                  </div>
+                  <div v-else class="no-answers">暂无专家回答</div>
+                </div>
+              </td>
+            </template>
+            
+            <!-- 其他模式的完整行 -->
+            <template v-else>
+                <div>
+                  <span class="answer-type">原始({{ question.raw_answers.length }})</span>
+                  <span class="answer-text">{{ truncateText(question.raw_answers[0].content, 30) }}</span>
+                  <span v-if="question.raw_answers.length > 1" class="more-answers">+{{ question.raw_answers.length - 1 }}</span>
+                </div>
+                
+                <div v-if="question.expert_answers && question.expert_answers.length > 0" class="answer-group">
+                  <span class="answer-type">专家({{ question.expert_answers.length }})</span>
+                  <span class="answer-text">{{ truncateText(question.expert_answers[0].content, 30) }}</span>
+                  <span v-if="question.expert_answers.length > 1" class="more-answers">+{{ question.expert_answers.length - 1 }}</span>
+                </div>
+                
+                <div v-if="(!question.raw_answers || question.raw_answers.length === 0) && (!question.expert_answers || question.expert_answers.length === 0)" class="no-answers">
+                  暂无回答
+                </div>
+            </template>
+            <td v-if="viewMode === 'raw-answers' || viewMode === 'expert-answers'" class="question-col">
               <div class="cell-content">
-                <span class="title-text" @click="viewQuestion(question)">{{ question.title }}</span>
-                <p v-if="question.body" class="body-preview">{{ truncateText(question.body, 100) }}</p>
+                <div class="question-info" v-if="question.original_data && question.original_data.question">
+                  <div class="question-title" :title="question.original_data.question.title">
+                    {{ truncateText(question.original_data.question.title, 40) }}
+                  </div>
+                  <div class="question-meta">
+                    <span>ID: {{ question.original_data.question.id }}</span>
+                  </div>
+                </div>
+                <div v-else class="no-question">
+                  无关联问题信息
+                </div>
               </div>
-            </td>
-            <td class="author-col">{{ question.author || '匿名' }}</td>            <td class="stats-col">
+            </td>            
+            <td class="stats-col">
               <div class="stats-content">
-                <span class="stat-item">👁 {{ question.view_count || 0 }}</span>
-                <span class="stat-item">⭐ {{ question.vote_count || 0 }}</span>
-                <span class="stat-item">💬 回答</span>
+                <div class="stats-info">
+                  <!-- 原始问题和概览模式显示浏览和点赞 -->
+                  <template v-if="viewMode === 'overview' || viewMode === 'questions'">
+                    <span v-if="question.view_count !== undefined && question.view_count !== null" class="stats-item">👁 {{ question.view_count }}</span>
+                    <span v-if="question.vote_count !== undefined && question.vote_count !== null" class="stats-item">⭐ {{ question.vote_count }}</span>
+                  </template>
+                  <!-- 原始回答模式不显示浏览和点赞 -->
+                  <template v-else-if="viewMode === 'raw-answers'">
+                    <span class="stats-item">原始回答</span>
+                  </template>
+                  <!-- 专家回答模式不显示浏览和点赞 -->
+                  <template v-else-if="viewMode === 'expert-answers'">
+                    <span class="stats-item">专家回答</span>
+                  </template>
+                </div>
               </div>
             </td>
             <td class="tags-col">
               <div class="tags-content">
                 <span 
-                  v-for="tag in question.tags" 
+                  v-for="tag in question.tags?.slice(0, 2)" 
                   :key="tag" 
                   class="tag"
+                  :title="question.tags?.join(', ')"
                 >
                   {{ tag }}
                 </span>
+                <span v-if="question.tags && question.tags.length > 2" class="tag">
+                  +{{ question.tags.length - 2 }}
+                </span>
               </div>
             </td>
-            <td class="date-col">{{ formatDate(question.created_at || question.issued_at) }}</td>            <td class="actions-col">
+            <td class="date-col">
+              <span class="truncate-text" :title="formatDate(question.created_at || question.issued_at)">
+                {{ formatDate(question.created_at || question.issued_at) }}
+              </span>
+            </td>            <td class="actions-col">
               <div class="row-actions">
-                <div class="dropdown-wrapper">
-                  <button 
-                    @click="toggleDropdown(question.id)" 
-                    class="action-btn small"
-                    title="查看详情"
-                    :class="{ 'active': activeDropdown === question.id }"
-                  >
-                    📄 
-                  </button>
-                  <div 
-                    v-if="activeDropdown === question.id" 
-                    class="dropdown-menu"
-                    @click.stop
-                  >
-                    <button class="dropdown-item" @click="viewQuestionDetail(question, 'overview')">
-                      <span class="item-icon">📋</span>
-                      <div class="item-content">
-                        <span class="item-title">总览</span>
-                        <span class="item-desc">查看问题完整信息</span>
-                      </div>
-                    </button>
-                    <button class="dropdown-item" @click="viewQuestionDetail(question, 'raw-answers')">
-                      <span class="item-icon">💬</span>
-                      <div class="item-content">
-                        <span class="item-title">原始回答</span>
-                        <span class="item-desc">查看原始回答列表</span>
-                      </div>
-                    </button>
-                    <button class="dropdown-item" @click="viewQuestionDetail(question, 'expert-answers')">
-                      <span class="item-icon">👨‍💼</span>
-                      <div class="item-content">
-                        <span class="item-title">专家回答</span>
-                        <span class="item-desc">查看专家回答列表</span>
-                      </div>
-                    </button>
-                  </div>
-                </div>
                 <button 
-                  @click="editQuestion(question)" 
+                  @click.stop="viewQuestion(question)" 
+                  class="action-btn small"
+                  title="查看详情"
+                >
+                  👁️
+                </button>
+                <button 
+                  @click.stop="editQuestion(question)" 
                   class="action-btn small"
                   title="编辑"
                 >
                   ✏️
                 </button>
-                <div class="dropdown-wrapper">
-                  <button 
-                    @click="toggleDeleteDropdown(question.id)" 
-                    class="action-btn small danger"
-                    title="删除选项"
-                    :class="{ 'active': activeDeleteDropdown === question.id }"
-                  >
-                    🗑️ 
-                  </button>
-                  <div 
-                    v-if="activeDeleteDropdown === question.id" 
-                    class="dropdown-menu"
-                    @click.stop
-                  >
-                    <button class="dropdown-item" @click="softDeleteQuestion(question)" v-if="!question.is_deleted">
-                      <span class="item-icon">🗂️</span>
-                      <div class="item-content">
-                        <span class="item-title">软删除</span>
-                        <span class="item-desc">标记为已删除</span>
-                      </div>
-                    </button>
-                    <button class="dropdown-item" @click="restoreQuestion(question)" v-if="question.is_deleted">
-                      <span class="item-icon">♻️</span>
-                      <div class="item-content">
-                        <span class="item-title">恢复</span>
-                        <span class="item-desc">恢复已删除的问题</span>
-                      </div>
-                    </button>
-                    <button class="dropdown-item" @click="forceDeleteQuestion(question)">
-                      <span class="item-icon">❌</span>
-                      <div class="item-content">
-                        <span class="item-title">强制删除</span>
-                        <span class="item-desc">永久删除</span>
-                      </div>
-                    </button>
-                  </div>
-                </div>
+                <button 
+                  @click.stop="showDeleteConfirm(question)" 
+                  class="action-btn small danger"
+                  title="删除"
+                >
+                  🗑️
+                </button>
               </div>
             </td>
           </tr>
@@ -269,11 +312,18 @@
       :selected-items="selectedQuestionData"
       :questions="filteredQuestions"
       @created="handleStandardQACreated"
-    />
-
+    />   
+    
     <RawQAImportDialog
       v-model:visible="importDialogVisible"
       @imported="handleDataImported"
+    />
+    
+    <QuestionDetailDialog
+      v-model:visible="detailDialogVisible"
+      :question="currentQuestion"
+      :view-mode="viewMode"
+      @edit="handleDetailEdit"
     />
   </div>
 </template>
@@ -286,6 +336,7 @@ import QuestionEditDialog from '@/components/QuestionEditDialog.vue'
 import AnswerEditDialog from '@/components/AnswerEditDialog.vue'
 import StandardQADialog from '@/components/StandardQADialog.vue'
 import RawQAImportDialog from '@/components/RawQAImportDialog.vue'
+import QuestionDetailDialog from '@/components/QuestionDetailDialog.vue'
 import { rawQuestionService } from "@/services/rawQuestionService"
 
 // 响应式状态
@@ -296,15 +347,16 @@ const currentPage = ref(1)
 const selectedItems = ref<number[]>([])
 const allQuestions = ref<RawQuestion[]>([])
 
-// 下拉菜单状态
-const activeDropdown = ref<number | null>(null)
-const activeDeleteDropdown = ref<number | null>(null)
+// 视图模式状态
+const viewMode = ref<'overview' | 'questions' | 'raw-answers' | 'expert-answers'>('overview')
+const showMode = ref<'active_only' | 'deleted_only' | 'all'>('active_only')
 
 // 对话框状态
 const questionDialogVisible = ref(false)
 const answerDialogVisible = ref(false)
 const standardQADialogVisible = ref(false)
 const importDialogVisible = ref(false)
+const detailDialogVisible = ref(false)
 const currentQuestion = ref<RawQuestion | null>(null)
 const currentAnswer = ref<RawAnswer | ExpertAnswer | null>(null)
 const currentAnswerType = ref<'raw' | 'expert'>('raw')
@@ -313,9 +365,20 @@ const currentAnswerType = ref<'raw' | 'expert'>('raw')
 const totalQuestions = computed(() => allQuestions.value.length)
 
 const filteredQuestions = computed(() => {
-  if (!searchQuery.value) return allQuestions.value
+  let questions = allQuestions.value
+  
+  // 根据显示模式过滤
+  if (showMode.value === 'active_only') {
+    questions = questions.filter(q => !q.is_deleted)
+  } else if (showMode.value === 'deleted_only') {
+    questions = questions.filter(q => q.is_deleted)
+  }
+  // 'all' 模式不需要过滤
+  
+  // 根据搜索查询过滤
+  if (!searchQuery.value) return questions
   const query = searchQuery.value.toLowerCase()
-  return allQuestions.value.filter(q => 
+  return questions.filter(q => 
     q.title.toLowerCase().includes(query) ||
     q.body?.toLowerCase().includes(query) ||
     q.tags?.some(tag => tag.toLowerCase().includes(query))
@@ -344,14 +407,77 @@ const showMessage = (message: string, type: 'success' | 'error' | 'warning' | 'i
   alert(`${type.toUpperCase()}: ${message}`)
 }
 
+const formatDate = (date: string | Date | undefined) => {
+  if (!date) return ''
+  const d = new Date(date)
+  return d.toLocaleDateString('zh-CN')
+}
+
+const truncateText = (text: string | undefined | null, maxLength: number) => {
+  if (!text || text.length <= maxLength) return text || ''
+  return text.substring(0, maxLength) + '...'
+}
+
 const loadData = async () => {
   try {
     loading.value = true
-    const response = await rawQuestionService.getRawQuestions(0, 100) // 暂时加载所有数据
-    allQuestions.value = response || []
-    console.log('加载的问题数据:', allQuestions.value) // 添加调试日志
+    
+    // 根据显示模式确定参数
+    let include_deleted = false
+    let deleted_only = false
+    
+    if (showMode.value === 'all') {
+      include_deleted = true
+    } else if (showMode.value === 'deleted_only') {
+      include_deleted = true
+      deleted_only = true
+    }
+      // 根据视图模式调用不同的接口
+    let response
+    if (viewMode.value === 'overview' || viewMode.value === 'questions') {
+      response = await rawQuestionService.getRawQuestionsOverview(0, 100, include_deleted, deleted_only)
+      allQuestions.value = response.data || []    } else if (viewMode.value === 'raw-answers') {
+      response = await rawQuestionService.getRawAnswersView(0, 100, include_deleted, deleted_only)
+      // 将原始回答数据转换为问题格式以便在表格中显示
+      allQuestions.value = (response.data || []).map((answer: any) => ({
+        id: answer.id,
+        title: answer.answer_text ? `${truncateText(answer.answer_text, 60)}` : '原始回答',
+        body: answer.answer_text,
+        author: answer.author || '匿名',
+        view_count: 0,
+        vote_count: answer.vote_count || 0,
+        issued_at: answer.issued_at,
+        created_at: answer.created_at,
+        is_deleted: answer.is_deleted,
+        tags: answer.question?.tags || [],
+        type: 'raw-answer',
+        original_data: answer,
+        raw_answers: [], // 确保有这些数组字段
+        expert_answers: []
+      }))
+    } else if (viewMode.value === 'expert-answers') {
+      response = await rawQuestionService.getExpertAnswersView(0, 100, include_deleted, deleted_only)
+      // 将专家回答数据转换为问题格式以便在表格中显示
+      allQuestions.value = (response.data || []).map((answer: any) => ({
+        id: answer.id,
+        title: answer.answer_text ? `${truncateText(answer.answer_text, 60)}` : '专家回答',
+        body: answer.answer_text,
+        author: answer.expert_name || `专家 ${answer.expert_id}`,
+        view_count: 0,
+        vote_count: 0,
+        issued_at: answer.issued_at,
+        created_at: answer.created_at,
+        is_deleted: answer.is_deleted,
+        tags: answer.question?.tags || [],        type: 'expert-answer',
+        raw_answers: [], // 确保有这些数组字段
+        expert_answers: [],
+        original_data: answer
+      }))
+    }
+    
+    console.log('加载的数据:', allQuestions.value) // 添加调试日志
   } catch (error) {
-    console.error('加载原始问题失败:', error)
+    console.error('加载数据失败:', error)
     showMessage('加载数据失败', 'error')
   } finally {
     loading.value = false
@@ -378,18 +504,21 @@ const goToPage = (page: number) => {
 }
 
 const addNewQuestion = () => {
+  console.log('添加新问题') // 添加调试日志
   currentQuestion.value = null
   questionDialogVisible.value = true
 }
 
 const editQuestion = (question: RawQuestion) => {
+  console.log('编辑问题:', question.title) // 添加调试日志
   currentQuestion.value = question
   questionDialogVisible.value = true
 }
 
 const viewQuestion = (question: RawQuestion) => {
-  // 可以在这里实现查看详情功能
-  editQuestion(question)
+  console.log('查看问题详情:', question.title) // 添加调试日志
+  currentQuestion.value = question
+  detailDialogVisible.value = true
 }
 
 const deleteQuestion = async (question: RawQuestion) => {
@@ -411,8 +540,27 @@ const deleteQuestion = async (question: RawQuestion) => {
   }
 }
 
+// 视图模式处理
+const handleViewModeChange = () => {
+  console.log('视图模式切换到:', viewMode.value)
+  // 重置到第一页并重新加载数据
+  currentPage.value = 1
+  selectedItems.value = []
+  loadData()
+}
+
+const handleShowModeChange = () => {
+  console.log('显示模式切换到:', showMode.value)
+  // 这里会自动触发 filteredQuestions 的重新计算
+  // 重置到第一页
+  currentPage.value = 1
+  selectedItems.value = []
+}
+
 const deleteSelectedQuestions = async () => {
   if (selectedItems.value.length === 0) return
+  
+  if (!confirm(`确定要删除选中的 ${selectedItems.value.length} 个问题吗？`)) return
   
   try {
     // 使用批量删除API
@@ -478,44 +626,37 @@ const handleStandardQACreated = () => {
   selectedItems.value = []
 }
 
-const formatDate = (date: string | Date | undefined) => {
-  if (!date) return ''
-  const d = new Date(date)
-  return d.toLocaleDateString('zh-CN')
+const handleDetailEdit = (question: RawQuestion) => {
+  detailDialogVisible.value = false
+  editQuestion(question)
 }
 
-const truncateText = (text: string, maxLength: number) => {
-  if (text.length <= maxLength) return text
-  return text.substring(0, maxLength) + '...'
-}
-
-// 下拉菜单控制
-const toggleDropdown = (questionId: number) => {
-  activeDropdown.value = activeDropdown.value === questionId ? null : questionId
-  activeDeleteDropdown.value = null // 关闭删除下拉
-}
-
-const toggleDeleteDropdown = (questionId: number) => {
-  activeDeleteDropdown.value = activeDeleteDropdown.value === questionId ? null : questionId
-  activeDropdown.value = null // 关闭查看下拉
-}
-
-// 查看详情功能
-const viewQuestionDetail = (question: RawQuestion, viewType: 'overview' | 'raw-answers' | 'expert-answers') => {
-  console.log(`查看问题 ${question.id} 的 ${viewType}`)
-  // 这里可以根据viewType打开不同的对话框
-  // 暂时使用编辑对话框
-  currentQuestion.value = question
-  questionDialogVisible.value = true
-  activeDropdown.value = null
+// 删除确认和处理
+const showDeleteConfirm = (question: RawQuestion) => {
+  const message = question.is_deleted 
+    ? `问题 "${question.title}" 已被软删除。\n\n请选择操作：\n- 确定：恢复问题\n- 取消：永久删除问题`
+    : `确定要删除问题 "${question.title}" 吗？`
+  
+  if (question.is_deleted) {
+    // 已删除的问题，询问是恢复还是永久删除
+    if (confirm(message)) {
+      restoreQuestion(question)
+    } else {
+      if (confirm(`确定要永久删除问题 "${question.title}" 吗？此操作无法撤销！`)) {
+        forceDeleteQuestion(question)
+      }
+    }
+  } else {
+    // 未删除的问题，直接软删除
+    if (confirm(message)) {
+      softDeleteQuestion(question)
+    }
+  }
 }
 
 // 删除功能
 const softDeleteQuestion = async (question: RawQuestion) => {
-  if (!confirm(`确定要软删除问题 "${question.title}" 吗？`)) return
-  
   try {
-    // 调用软删除API
     await rawQuestionService.updateRawQuestion(question.id, { is_deleted: true })
     
     // 更新本地状态
@@ -525,7 +666,6 @@ const softDeleteQuestion = async (question: RawQuestion) => {
     }
     
     showMessage('问题已软删除', 'success')
-    activeDeleteDropdown.value = null
   } catch (error) {
     console.error('软删除失败:', error)
     showMessage('软删除失败', 'error')
@@ -543,7 +683,6 @@ const restoreQuestion = async (question: RawQuestion) => {
     }
     
     showMessage('问题已恢复', 'success')
-    activeDeleteDropdown.value = null
   } catch (error) {
     console.error('恢复失败:', error)
     showMessage('恢复失败', 'error')
@@ -551,8 +690,6 @@ const restoreQuestion = async (question: RawQuestion) => {
 }
 
 const forceDeleteQuestion = async (question: RawQuestion) => {
-  if (!confirm(`确定要永久删除问题 "${question.title}" 吗？此操作无法撤销！`)) return
-  
   try {
     // 如果问题未被软删除，先软删除
     if (!question.is_deleted) {
@@ -572,27 +709,15 @@ const forceDeleteQuestion = async (question: RawQuestion) => {
     selectedItems.value = selectedItems.value.filter(id => id !== question.id)
     
     showMessage('问题已永久删除', 'success')
-    activeDeleteDropdown.value = null
   } catch (error) {
     console.error('强制删除失败:', error)
     showMessage('强制删除失败', 'error')
   }
 }
 
-// 点击外部关闭下拉菜单
-const closeDropdowns = () => {
-  activeDropdown.value = null
-  activeDeleteDropdown.value = null
-}
-
 // 生命周期
 onMounted(() => {
   loadData()
-  document.addEventListener('click', closeDropdowns)
-})
-
-onUnmounted(() => {
-  document.removeEventListener('click', closeDropdowns)
 })
 </script>
 
@@ -678,81 +803,261 @@ onUnmounted(() => {
   overflow: hidden;
   box-shadow: 0 2px 8px rgba(0, 0, 0, 0.08);
   margin-bottom: 24px;
+  overflow-x: auto; /* 添加水平滚动 */
 }
 
 .data-table {
   width: 100%;
   border-collapse: collapse;
+  table-layout: fixed; /* 固定表格布局 */
+  min-width: 1400px; /* 增加最小宽度给内容更多空间 */
 }
 
 .data-table th {
   background: #f8f9fb;
-  padding: 16px 12px;
+  padding: 16px 12px; /* 增加内边距 */
   text-align: left;
   font-weight: 600;
   color: #303133;
   border-bottom: 1px solid #e4e7ed;
-  font-size: 14px;
+  font-size: 14px; /* 稍微增大字体 */
+  white-space: nowrap; /* 防止标题换行 */
+  overflow: hidden;
+  text-overflow: ellipsis;
 }
 
 .data-table td {
-  padding: 16px 12px;
+  padding: 16px 12px; /* 增加内边距 */
   border-bottom: 1px solid #f0f2f5;
-  vertical-align: top;
+  vertical-align: middle; /* 改为中间对齐 */
+  height: 70px; /* 稍微增加行高 */
+  overflow: hidden;
 }
 
 .data-table tr:hover {
   background: #f8f9fb;
 }
 
-/* 列宽控制 */
+/* 优化的列宽控制 - 重新分配宽度给内容更多空间 */
 .checkbox-col {
-  width: 50px;
+  width: 4%;
+  min-width: 50px;
   text-align: center;
 }
 
 .id-col {
-  width: 80px;
+  width: 6%;
+  min-width: 60px;
   text-align: center;
 }
 
 .title-col {
+  width: 28%; /* 给标题更多空间 */
   min-width: 250px;
-  max-width: 350px;
+  white-space: normal; /* 标题可以换行 */
+  max-height: 70px;
+  overflow: hidden;
+  position: relative;
 }
 
 .author-col {
-  width: 120px;
+  width: 10%;
+  min-width: 120px;
 }
 
 .stats-col {
-  width: 140px;
+  width: 10%;
+  min-width: 100px;
 }
 
 .tags-col {
-  width: 150px;
+  width: 12%;
+  min-width: 140px;
 }
 
 .date-col {
-  width: 120px;
+  width: 10%;
+  min-width: 100px;
 }
 
 .actions-col {
-  width: 120px;
+  width: 10%;
+  min-width: 120px;
   text-align: center;
 }
 
-/* 单元格内容样式 */
-.cell-content {
-  max-height: 80px;
+/* 回答信息列样式 - 给更多空间 */
+.answers-col {
+  width: 30%; /* 增加回答列宽度 */
+  min-width: 280px;
+  white-space: normal;
+}
+
+/* 关联问题列样式 */
+.question-col {
+  width: 25%;
+  min-width: 250px;
+  white-space: normal;
+}
+
+.question-info {
+  display: flex;
+  flex-direction: column;
+  gap: 4px;
+  padding: 2px 0;
+}
+
+.question-title {
+  font-weight: 500;
+  color: #409eff;
+  font-size: 13px;
   overflow: hidden;
+  text-overflow: ellipsis;
+  display: -webkit-box;
+  -webkit-line-clamp: 2;
+  line-clamp: 2;
+  -webkit-box-orient: vertical;
+  line-height: 1.3;
+}
+
+.question-meta {
+  font-size: 11px;
+  color: #909399;
+}
+
+.no-question {
+  font-size: 12px;
+  color: #c0c4cc;
+  text-align: center;
+  padding: 8px 4px;
+}
+
+.answers-content {
+  display: flex;
+  flex-direction: column;
+  gap: 6px; /* 增加间距 */
+  max-height: 66px; /* 调整高度以匹配新的行高 */
+  overflow: hidden;
+  padding: 2px 0; /* 添加垂直内边距 */
+}
+
+.answer-group {
+  border: 1px solid #e4e7ed;
+  border-radius: 4px; /* 稍微增大圆角 */
+  padding: 4px 8px; /* 增加内边距 */
+  background-color: #f9f9f9;
+  margin-bottom: 3px; /* 增加底部间距 */
+  display: flex;
+  align-items: center;
+  gap: 8px; /* 添加元素间距 */
+}
+
+.answer-type {
+  font-weight: bold;
+  font-size: 12px; /* 稍微增大字体 */
+  color: #409eff;
+  flex-shrink: 0; /* 防止压缩 */
+  min-width: 40px; /* 设置最小宽度 */
+}
+
+.answer-preview {
+  font-size: 12px; /* 增大字体 */
+  line-height: 1.3;
+  flex: 1; /* 占据剩余空间 */
+  display: flex;
+  align-items: center;
+  gap: 6px;
+}
+
+.answer-author {
+  font-weight: 500;
+  color: #303133;
+  font-size: 12px; /* 增大字体 */
+  flex-shrink: 0;
+  max-width: 80px;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.answer-text {
+  color: #606266;
+  font-size: 12px; /* 增大字体 */
+  flex: 1;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.more-answers {
+  font-size: 11px; /* 稍微增大 */
+  color: #909399;
+  font-style: italic;
+  text-align: center;
+  padding: 2px 4px;
+}
+
+.no-answers {
+  font-size: 12px; /* 增大字体 */
+  color: #c0c4cc;
+  text-align: center;
+  padding: 8px 4px; /* 增加内边距 */
+}
+
+/* 添加作者列样式 */
+.author-content {
+  display: flex;
+  flex-direction: column;
+  gap: 2px;
+  padding: 2px 0;
+}
+
+.author-name {
+  font-weight: 500;
+  color: #303133;
+  font-size: 13px;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.author-role {
+  font-size: 11px;
+  color: #909399;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+.truncate-text {
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+  max-width: 100%;
+}
+
+/* 标题列内容样式 */
+.cell-content {
+  display: flex;
+  flex-direction: column;
+  gap: 4px; /* 增加间距 */
+  height: 100%;
+  justify-content: center;
+  padding: 2px 0; /* 添加垂直内边距 */
 }
 
 .title-text {
+  font-weight: 500;
   color: #409eff;
   cursor: pointer;
-  font-weight: 500;
-  font-size: 14px;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  display: -webkit-box;
+  -webkit-line-clamp: 2; /* 允许显示两行 */
+  line-clamp: 2;
+  -webkit-box-orient: vertical;
+  line-height: 1.4;
+  font-size: 14px; /* 增大字体 */
+  margin-bottom: 2px;
 }
 
 .title-text:hover {
@@ -760,36 +1065,85 @@ onUnmounted(() => {
 }
 
 .body-preview {
-  margin: 8px 0 0 0;
+  font-size: 12px; /* 稍微增大字体 */
   color: #909399;
-  font-size: 12px;
-  line-height: 1.4;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+  margin: 0;
+  line-height: 1.3;
 }
 
-.stats-content {
-  display: flex;
-  gap: 8px;
-  font-size: 12px;
-}
-
+/* 标签样式优化 - 单行显示 */
 .tags-content {
   display: flex;
-  flex-wrap: wrap;
-  gap: 4px;
+  flex-wrap: nowrap; /* 不换行 */
+  gap: 2px; /* 减小标签间距 */
+  align-items: center;
+  padding: 2px 0;
+  overflow: hidden; /* 隐藏溢出 */
 }
 
 .tag {
+  display: inline-block;
+  padding: 1px 4px; /* 减小内边距 */
+  margin: 0;
   background: #f0f2f5;
+  border-radius: 2px; /* 减小圆角 */
+  font-size: 10px; /* 减小字体 */
   color: #606266;
-  padding: 2px 6px;
-  border-radius: 3px;
-  font-size: 11px;
+  max-width: 60px; /* 减小最大宽度 */
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+  flex-shrink: 0;
 }
 
+/* 统计信息样式优化 - 单行显示 */
+.stats-content {
+  display: flex;
+  flex-direction: row; /* 改为横向排列 */
+  gap: 8px; /* 增加间距 */
+  align-items: center;
+  padding: 2px 0;
+  justify-content: flex-start;
+}
+
+.stats-info {
+  font-size: 11px; /* 稍微减小字体 */
+  line-height: 1.2;
+  display: flex;
+  gap: 8px;
+}
+
+.stats-item {
+  display: inline-block; /* 改为行内块元素 */
+  margin: 0;
+  white-space: nowrap;
+  color: #606266;
+  font-size: 11px; /* 减小字体 */
+}
+
+.stats-item strong {
+  color: #303133;
+  font-weight: 600;
+}
+
+/* 操作按钮优化 - 单行显示 */
 .row-actions {
   display: flex;
-  gap: 6px;
+  gap: 3px; /* 减小按钮间距 */
   justify-content: center;
+  align-items: center;
+  flex-wrap: nowrap; /* 不允许换行 */
+}
+
+.action-btn.small {
+  padding: 4px 6px; /* 减小内边距 */
+  font-size: 11px; /* 减小字体 */
+  min-width: auto;
+  line-height: 1.1;
+  white-space: nowrap; /* 防止按钮文字换行 */
 }
 
 /* 通用按钮样式 */
@@ -1148,5 +1502,23 @@ onUnmounted(() => {
   background-color: #e6f7ff;
   border-color: #91d5ff;
   color: #1890ff;
+}
+
+/* 新添加的视图选择器样式 */
+.view-mode-select,
+.show-mode-select {
+  padding: 6px 12px;
+  border: 1px solid #dcdfe6;
+  border-radius: 4px;
+  font-size: 14px;
+  background-color: white;
+  cursor: pointer;
+}
+
+.view-mode-select:focus,
+.show-mode-select:focus {
+  outline: none;
+  border-color: #409eff;
+  box-shadow: 0 0 0 2px rgba(64, 158, 255, 0.2);
 }
 </style>

@@ -14,6 +14,9 @@ export interface RawQuestion {
   is_deleted: boolean;
   raw_answers: RawAnswer[];
   expert_answers: ExpertAnswer[];
+  // 扩展字段，用于视图模式支持
+  type?: 'question' | 'raw-answer' | 'expert-answer';
+  original_data?: any;
 }
 
 export interface StdQuestion {

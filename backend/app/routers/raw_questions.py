@@ -1,5 +1,5 @@
 from fastapi import APIRouter, Depends, HTTPException, Body, Query
-from sqlalchemy.orm import Session
+from sqlalchemy.orm import Session, joinedload, selectinload
 from typing import List, Optional
 from ..crud import crud_raw_question
 from ..schemas import RawQuestion, Msg
@@ -7,6 +7,9 @@ from ..schemas.common import PaginatedResponse
 from ..db.database import get_db
 from ..auth import require_admin_or_expert, get_current_active_user
 from ..models.user import User
+from ..models.raw_question import RawQuestion as RawQuestionModel
+from ..models.raw_answer import RawAnswer
+from ..models.expert_answer import ExpertAnswer
 
 router = APIRouter(
     prefix="/api/raw_questions",
@@ -98,3 +101,207 @@ def restore_multiple_raw_questions_api(
         raise HTTPException(status_code=400, detail="No question IDs provided")
     num_restored = crud_raw_question.set_multiple_raw_questions_deleted_status(db, question_ids=question_ids, deleted_status=False)
     return Msg(message=f"Successfully marked {num_restored} raw questions as not deleted")
+
+@router.get("/overview", response_model=dict)
+def get_raw_questions_overview_api(
+    skip: int = Query(0, ge=0), 
+    limit: int = Query(20, ge=1, le=100), 
+    include_deleted: bool = Query(False),
+    deleted_only: bool = Query(False),
+    current_user: User = Depends(get_current_active_user),
+    db: Session = Depends(get_db)
+):
+    """获取原始问题概览，包含所有相关的原始回答和专家回答"""
+    
+    # 构建查询，预加载相关数据
+    query = db.query(RawQuestionModel).options(
+        selectinload(RawQuestionModel.raw_answers.and_(
+            RawAnswer.is_deleted == False
+        )),
+        selectinload(RawQuestionModel.expert_answers.and_(
+            ExpertAnswer.is_deleted == False
+        )),
+        selectinload(RawQuestionModel.tags)
+    )
+    
+    # 过滤条件
+    if not include_deleted and not deleted_only:
+        query = query.filter(RawQuestionModel.is_deleted == False)
+    elif deleted_only:
+        query = query.filter(RawQuestionModel.is_deleted == True)
+    
+    # 添加用户过滤
+    query = query.filter(RawQuestionModel.created_by == current_user.id)
+    
+    # 获取总数
+    total = query.count()
+    
+    # 分页
+    questions = query.order_by(RawQuestionModel.id.desc()).offset(skip).limit(limit).all()
+    
+    # 格式化返回数据
+    result_data = []
+    for question in questions:
+        question_data = {
+            "id": question.id,
+            "title": question.title,
+            "body": question.body,
+            "author": question.author,
+            "url": question.url,
+            "view_count": question.views or 0,
+            "vote_count": question.votes or 0,
+            "issued_at": question.issued_at.isoformat() if question.issued_at else None,
+            "created_at": question.created_at.isoformat() if question.created_at else None,
+            "is_deleted": question.is_deleted,
+            "tags": [tag.label for tag in question.tags] if question.tags else [],
+            
+            # 原始回答
+            "raw_answers": [
+                {
+                    "id": answer.id,
+                    "answer_text": answer.answer,
+                    "author": answer.answered_by,
+                    "vote_count": answer.upvotes or 0,
+                    "created_at": answer.answered_at.isoformat() if answer.answered_at else None,
+                    "is_deleted": answer.is_deleted
+                }
+                for answer in question.raw_answers if not answer.is_deleted
+            ],
+            
+            # 专家回答
+            "expert_answers": [
+                {
+                    "id": answer.id,
+                    "answer_text": answer.content,
+                    "expert_id": answer.author,
+                    "created_at": answer.created_at.isoformat() if answer.created_at else None,
+                    "is_deleted": answer.is_deleted
+                }
+                for answer in question.expert_answers if not answer.is_deleted
+            ]
+        }
+        result_data.append(question_data)
+    
+    return {
+        "data": result_data,
+        "total": total,
+        "skip": skip,
+        "limit": limit
+    }
+
+@router.get("/raw-answers-view", response_model=dict)
+def get_raw_answers_view_api(
+    skip: int = Query(0, ge=0), 
+    limit: int = Query(20, ge=1, le=100), 
+    include_deleted: bool = Query(False),
+    deleted_only: bool = Query(False),
+    current_user: User = Depends(get_current_active_user),
+    db: Session = Depends(get_db)
+):
+    """获取原始回答视图，主要显示原始回答信息"""
+      # 构建查询
+    query = db.query(RawAnswer).options(
+        joinedload(RawAnswer.question).selectinload(RawQuestionModel.tags)
+    )
+    
+    # 过滤条件
+    if not include_deleted and not deleted_only:
+        query = query.filter(RawAnswer.is_deleted == False)
+    elif deleted_only:
+        query = query.filter(RawAnswer.is_deleted == True)
+    
+    # 只显示用户创建的问题的回答
+    query = query.join(RawQuestionModel).filter(RawQuestionModel.created_by == current_user.id)
+    
+    # 获取总数
+    total = query.count()
+    
+    # 分页
+    answers = query.order_by(RawAnswer.id.desc()).offset(skip).limit(limit).all()
+      # 格式化返回数据
+    result_data = []
+    for answer in answers:
+        answer_data = {
+            "id": answer.id,
+            "answer_text": answer.answer,  # 使用正确的字段名
+            "author": answer.answered_by,  # 使用正确的字段名
+            "vote_count": answer.upvotes or 0,  # 使用正确的字段名
+            "created_at": answer.answered_at.isoformat() if answer.answered_at else None,  # 使用正确的字段名
+            "is_deleted": answer.is_deleted,
+            "raw_question_id": answer.question_id,  # 使用正确的字段名
+            
+            # 关联的问题信息
+            "question": {
+                "id": answer.question.id,  # 使用关系字段
+                "title": answer.question.title,
+                "author": answer.question.author,
+                "tags": [tag.label for tag in answer.question.tags] if answer.question.tags else [],
+                "is_deleted": answer.question.is_deleted
+            } if answer.question else None
+        }
+        result_data.append(answer_data)
+    
+    return {
+        "data": result_data,
+        "total": total,
+        "skip": skip,
+        "limit": limit
+    }
+
+@router.get("/expert-answers-view", response_model=dict)
+def get_expert_answers_view_api(
+    skip: int = Query(0, ge=0), 
+    limit: int = Query(20, ge=1, le=100), 
+    include_deleted: bool = Query(False),
+    deleted_only: bool = Query(False),
+    current_user: User = Depends(get_current_active_user),
+    db: Session = Depends(get_db)
+):
+    """获取专家回答视图，主要显示专家回答信息"""
+      # 构建查询
+    query = db.query(ExpertAnswer).options(
+        joinedload(ExpertAnswer.question).selectinload(RawQuestionModel.tags)
+    )
+    
+    # 过滤条件
+    if not include_deleted and not deleted_only:
+        query = query.filter(ExpertAnswer.is_deleted == False)
+    elif deleted_only:
+        query = query.filter(ExpertAnswer.is_deleted == True)
+    
+    # 只显示用户创建的问题的回答
+    query = query.join(RawQuestionModel).filter(RawQuestionModel.created_by == current_user.id)
+    
+    # 获取总数
+    total = query.count()
+    
+    # 分页
+    answers = query.order_by(ExpertAnswer.id.desc()).offset(skip).limit(limit).all()
+      # 格式化返回数据
+    result_data = []
+    for answer in answers:
+        answer_data = {
+            "id": answer.id,
+            "answer_text": answer.content,  # 使用正确的字段名
+            "expert_id": answer.author,     # 使用正确的字段名
+            "created_at": answer.created_at.isoformat() if answer.created_at else None,
+            "is_deleted": answer.is_deleted,
+            "raw_question_id": answer.question_id,  # 使用正确的字段名
+            
+            # 关联的问题信息
+            "question": {
+                "id": answer.question.id,    # 使用关系字段
+                "title": answer.question.title,
+                "author": answer.question.author,
+                "tags": [tag.label for tag in answer.question.tags] if answer.question.tags else [],
+                "is_deleted": answer.question.is_deleted
+            } if answer.question else None
+        }
+        result_data.append(answer_data)
+    
+    return {
+        "data": result_data,
+        "total": total,
+        "skip": skip,
+        "limit": limit
+    }

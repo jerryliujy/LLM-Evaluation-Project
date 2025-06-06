@@ -86,5 +86,29 @@ export const rawQuestionService = {
   async deleteMultipleExpertAnswers (answerIds: number[]): Promise<ApiMessage> {
     const response = await apiClient.post('/expert_answers/delete-multiple/', answerIds);
     return response.data;
-  }
+  },
+
+  // 获取原始问题概览（包含所有回答）
+  async getRawQuestionsOverview(skip = 0, limit = 20, include_deleted = false, deleted_only = false): Promise<any> {
+    const response = await apiClient.get(`/raw_questions/overview`, {
+      params: { skip, limit, include_deleted, deleted_only },
+    });
+    return response.data;
+  },
+
+  // 获取原始回答视图
+  async getRawAnswersView(skip = 0, limit = 20, include_deleted = false, deleted_only = false): Promise<any> {
+    const response = await apiClient.get(`/raw_questions/raw-answers-view`, {
+      params: { skip, limit, include_deleted, deleted_only },
+    });
+    return response.data;
+  },
+
+  // 获取专家回答视图
+  async getExpertAnswersView(skip = 0, limit = 20, include_deleted = false, deleted_only = false): Promise<any> {
+    const response = await apiClient.get(`/raw_questions/expert-answers-view`, {
+      params: { skip, limit, include_deleted, deleted_only },
+    });
+    return response.data;
+  },
 }

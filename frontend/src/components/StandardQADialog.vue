@@ -431,25 +431,33 @@ const selectedQuestions = computed(() =>
 
 const selectedRawAnswers = computed(() => {
   const answers: RawAnswer[] = []
-  props.questions.forEach(q => {
-    q.raw_answers.forEach(a => {
-      if (props.selectedItems.rawAnswers.has(a.id)) {
-        answers.push(a)
+  if (props.questions && Array.isArray(props.questions)) {
+    props.questions.forEach(q => {
+      if (q.raw_answers && Array.isArray(q.raw_answers)) {
+        q.raw_answers.forEach(a => {
+          if (props.selectedItems.rawAnswers.has(a.id)) {
+            answers.push(a)
+          }
+        })
       }
     })
-  })
+  }
   return answers
 })
 
 const selectedExpertAnswers = computed(() => {
   const answers: ExpertAnswer[] = []
-  props.questions.forEach(q => {
-    q.expert_answers.forEach(a => {
-      if (props.selectedItems.expertAnswers.has(a.id)) {
-        answers.push(a)
+  if (props.questions && Array.isArray(props.questions)) {
+    props.questions.forEach(q => {
+      if (q.expert_answers && Array.isArray(q.expert_answers)) {
+        q.expert_answers.forEach(a => {
+          if (props.selectedItems.expertAnswers.has(a.id)) {
+            answers.push(a)
+          }
+        })
       }
     })
-  })
+  }
   return answers
 })
 
