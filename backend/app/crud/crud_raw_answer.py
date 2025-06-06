@@ -41,7 +41,14 @@ def get_raw_answers_paginated(db: Session, skip: int = 0, limit: int = 10, inclu
         "has_prev": skip > 0
     }
 
-# create_raw_answer (deferred)
+# create_raw_answer
+def create_raw_answer(db: Session, answer: schemas.RawAnswerCreate) -> models.RawAnswer:
+    """创建新的原始回答"""
+    db_answer = models.RawAnswer(**answer.dict())
+    db.add(db_answer)
+    db.commit()
+    db.refresh(db_answer)
+    return db_answer
 
 def set_raw_answer_deleted_status(db: Session, answer_id: int, deleted_status: bool) -> Optional[models.RawAnswer]:
     db_answer = db.query(models.RawAnswer).filter(models.RawAnswer.id == answer_id).first()

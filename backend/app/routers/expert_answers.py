@@ -15,7 +15,7 @@ router = APIRouter(
 @router.get("/", response_model=PaginatedResponse[ExpertAnswer])
 def read_expert_answers_api(
     skip: int = Query(0, ge=0), 
-    limit: int = Query(20, ge=1, le=100), 
+    limit: int = Query(100, ge=1, le=1000), 
     include_deleted: bool = Query(False),
     deleted_only: bool = Query(False),
     db: Session = Depends(get_db)

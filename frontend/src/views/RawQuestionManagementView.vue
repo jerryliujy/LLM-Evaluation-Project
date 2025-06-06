@@ -34,11 +34,9 @@
         <span class="stat-label">选中:</span>
         <span class="stat-value">{{ selectedItems.length }}</span>
       </div>
-    </div>
-
-    <!-- 操作栏 -->
+    </div>    <!-- 操作栏 -->
     <div class="actions-bar">
-      <div class="bulk-actions">
+      <div class="bulk-actions" v-if="viewMode !== 'overview'">
         <button 
           @click="selectAll" 
           class="action-btn"
@@ -60,7 +58,12 @@
         >
           创建标准问答
         </button>
-      </div>      <div class="view-options">
+      </div>
+      
+      <!-- 概览模式下的提示信息 -->
+      <div class="overview-info" v-if="viewMode === 'overview'">
+        <span class="info-text">概览模式 - 仅供浏览</span>
+      </div><div class="view-options">
         <select v-model="viewMode" @change="handleViewModeChange" class="view-mode-select">
           <option value="overview">概览模式</option>
           <option value="questions">原始问题</option>
@@ -100,16 +103,15 @@
                 @change="selectAll"
               />
             </th>
-            
-            <!-- 概览模式简化表头 -->
+              <!-- 概览模式简化表头 -->
             <template v-if="viewMode === 'overview'">
               <th class="id-col">ID</th>
               <th class="title-col">原始问题</th>
               <th class="answers-col">原始回答</th>
               <th class="expert-answers-col">专家回答</th>
+              <th class="actions-col">操作</th>
             </template>
-            
-            <!-- 其他模式的表头 -->
+              <!-- 其他模式的表头 -->
             <template v-else>
               <th class="id-col">ID</th>
               <th class="title-col">
@@ -119,14 +121,13 @@
               </th>
               <th class="author-col">作者</th>
               <th v-if="viewMode === 'raw-answers' || viewMode === 'expert-answers'" class="question-col">关联问题</th>
-              <th class="stats-col">统计</th>
+              <th v-if="viewMode !== 'expert-answers'" class="stats-col">统计</th>
               <th class="tags-col">标签</th>
               <th class="date-col">创建时间</th>
               <th class="actions-col">操作</th>
             </template>
           </tr>
-        </thead>
-        <tbody>          
+        </thead>        <tbody>          
           <tr v-for="question in paginatedQuestions" :key="question.id" class="data-row">
             <!-- 概览模式的简化行 -->
             <template v-if="viewMode === 'overview'">
@@ -150,8 +151,7 @@
                   </div>
                   <div v-else class="no-answers">暂无原始回答</div>
                 </div>
-              </td>
-              <td class="expert-answers-col">
+              </td>              <td class="expert-answers-col">
                 <div class="answers-content">
                   <div v-if="question.expert_answers && question.expert_answers.length > 0" class="answer-group">
                     <div class="answer-count">{{ question.expert_answers.length }}个专家回答</div>
@@ -161,104 +161,127 @@
                   <div v-else class="no-answers">暂无专家回答</div>
                 </div>
               </td>
+              <td class="actions-col">
+                <div class="row-actions">
+                  <button 
+                    @click.stop="viewQuestion(question)" 
+                    class="action-btn small"
+                    title="查看详情"
+                  >
+                    👁️
+                  </button>
+                </div>
+              </td>
             </template>
             
             <!-- 其他模式的完整行 -->
             <template v-else>
-                <div>
-                  <span class="answer-type">原始({{ question.raw_answers.length }})</span>
-                  <span class="answer-text">{{ truncateText(question.raw_answers[0].content, 30) }}</span>
-                  <span v-if="question.raw_answers.length > 1" class="more-answers">+{{ question.raw_answers.length - 1 }}</span>
+              <td class="checkbox-col">
+                <input 
+                  type="checkbox" 
+                  :value="question.id"
+                  v-model="selectedItems"
+                />
+              </td>
+              <td class="id-col">{{ question.id }}</td>
+              <td class="title-col">
+                <div class="cell-content">
+                  <div class="title-text" @click="viewQuestion(question)" :title="question.title">
+                    {{ question.title }}
+                  </div>
+                  <div v-if="question.body" class="body-preview" :title="question.body">
+                    {{ truncateText(question.body, 50) }}
+                  </div>
                 </div>
-                
-                <div v-if="question.expert_answers && question.expert_answers.length > 0" class="answer-group">
-                  <span class="answer-type">专家({{ question.expert_answers.length }})</span>
-                  <span class="answer-text">{{ truncateText(question.expert_answers[0].content, 30) }}</span>
-                  <span v-if="question.expert_answers.length > 1" class="more-answers">+{{ question.expert_answers.length - 1 }}</span>
+              </td>
+              <td class="author-col">
+                <span class="truncate-text" :title="question.author || '匿名'">
+                  {{ question.author || '匿名' }}
+                </span>              </td>
+              
+              <!-- 非概览模式下显示关联问题信息 -->
+              <td v-if="viewMode === 'raw-answers' || viewMode === 'expert-answers'" class="question-col">
+                <div class="cell-content">
+                  <div class="question-info" v-if="question.original_data && question.original_data.question">
+                    <div class="question-title" :title="question.original_data.question.title">
+                      {{ truncateText(question.original_data.question.title, 40) }}
+                    </div>
+                    <div class="question-meta">
+                      <span>ID: {{ question.original_data.question.id }}</span>
+                    </div>
+                  </div>
+                  <div v-else class="no-question">
+                    无关联问题信息
+                  </div>
                 </div>
-                
-                <div v-if="(!question.raw_answers || question.raw_answers.length === 0) && (!question.expert_answers || question.expert_answers.length === 0)" class="no-answers">
-                  暂无回答
+              </td>
+              
+              <!-- 只在非专家回答模式下显示统计列 -->
+              <td v-if="viewMode !== 'expert-answers'" class="stats-col">
+                <div class="stats-content">
+                  <div class="stats-info">
+                    <!-- 原始问题模式显示浏览和点赞 -->
+                    <template v-if="viewMode === 'questions'">
+                      <span v-if="question.view_count !== undefined && question.view_count !== null" class="stats-item">👁 {{ question.view_count }}</span>
+                      <span v-if="question.vote_count !== undefined && question.vote_count !== null" class="stats-item">⭐ {{ question.vote_count }}</span>
+                    </template>
+                    <!-- 原始回答模式不显示浏览和点赞 -->
+                    <template v-else-if="viewMode === 'raw-answers'">
+                      <span class="stats-item">原始回答</span>
+                    </template>
+                    <!-- 专家回答模式不显示浏览和点赞 -->
+                    <template v-else-if="viewMode === 'expert-answers'">
+                      <span class="stats-item">专家回答</span>
+                    </template>
+                  </div>
                 </div>
+              </td>
+              <td class="tags-col">
+                <div class="tags-content">
+                  <span 
+                    v-for="tag in question.tags?.slice(0, 2)" 
+                    :key="tag" 
+                    class="tag"
+                    :title="question.tags?.join(', ')"
+                  >
+                    {{ tag }}
+                  </span>
+                  <span v-if="question.tags && question.tags.length > 2" class="tag">
+                    +{{ question.tags.length - 2 }}
+                  </span>
+                </div>
+              </td>
+              <td class="date-col">
+                <span class="truncate-text" :title="formatDate(question.created_at || question.issued_at)">
+                  {{ formatDate(question.created_at || question.issued_at) }}
+                </span>
+              </td>
+              <td class="actions-col">
+                <div class="row-actions">
+                  <button 
+                    @click.stop="viewQuestion(question)" 
+                    class="action-btn small"
+                    title="查看详情"
+                  >
+                    👁️
+                  </button>
+                  <button 
+                    @click.stop="editQuestion(question)" 
+                    class="action-btn small"
+                    title="编辑"
+                  >
+                    ✏️
+                  </button>
+                  <button 
+                    @click.stop="showDeleteConfirm(question)" 
+                    class="action-btn small danger"
+                    title="删除"
+                  >
+                    🗑️
+                  </button>
+                </div>
+              </td>
             </template>
-            <td v-if="viewMode === 'raw-answers' || viewMode === 'expert-answers'" class="question-col">
-              <div class="cell-content">
-                <div class="question-info" v-if="question.original_data && question.original_data.question">
-                  <div class="question-title" :title="question.original_data.question.title">
-                    {{ truncateText(question.original_data.question.title, 40) }}
-                  </div>
-                  <div class="question-meta">
-                    <span>ID: {{ question.original_data.question.id }}</span>
-                  </div>
-                </div>
-                <div v-else class="no-question">
-                  无关联问题信息
-                </div>
-              </div>
-            </td>            
-            <td class="stats-col">
-              <div class="stats-content">
-                <div class="stats-info">
-                  <!-- 原始问题和概览模式显示浏览和点赞 -->
-                  <template v-if="viewMode === 'overview' || viewMode === 'questions'">
-                    <span v-if="question.view_count !== undefined && question.view_count !== null" class="stats-item">👁 {{ question.view_count }}</span>
-                    <span v-if="question.vote_count !== undefined && question.vote_count !== null" class="stats-item">⭐ {{ question.vote_count }}</span>
-                  </template>
-                  <!-- 原始回答模式不显示浏览和点赞 -->
-                  <template v-else-if="viewMode === 'raw-answers'">
-                    <span class="stats-item">原始回答</span>
-                  </template>
-                  <!-- 专家回答模式不显示浏览和点赞 -->
-                  <template v-else-if="viewMode === 'expert-answers'">
-                    <span class="stats-item">专家回答</span>
-                  </template>
-                </div>
-              </div>
-            </td>
-            <td class="tags-col">
-              <div class="tags-content">
-                <span 
-                  v-for="tag in question.tags?.slice(0, 2)" 
-                  :key="tag" 
-                  class="tag"
-                  :title="question.tags?.join(', ')"
-                >
-                  {{ tag }}
-                </span>
-                <span v-if="question.tags && question.tags.length > 2" class="tag">
-                  +{{ question.tags.length - 2 }}
-                </span>
-              </div>
-            </td>
-            <td class="date-col">
-              <span class="truncate-text" :title="formatDate(question.created_at || question.issued_at)">
-                {{ formatDate(question.created_at || question.issued_at) }}
-              </span>
-            </td>            <td class="actions-col">
-              <div class="row-actions">
-                <button 
-                  @click.stop="viewQuestion(question)" 
-                  class="action-btn small"
-                  title="查看详情"
-                >
-                  👁️
-                </button>
-                <button 
-                  @click.stop="editQuestion(question)" 
-                  class="action-btn small"
-                  title="编辑"
-                >
-                  ✏️
-                </button>
-                <button 
-                  @click.stop="showDeleteConfirm(question)" 
-                  class="action-btn small danger"
-                  title="删除"
-                >
-                  🗑️
-                </button>
-              </div>
-            </td>
           </tr>
         </tbody>
       </table>      <div v-if="loading" class="loading-state">
@@ -270,9 +293,7 @@
         <p v-if="searchQuery">尝试调整搜索条件，或者<button @click="searchQuery = ''" class="link-btn">清除搜索</button></p>
         <p v-else>您还没有添加任何问题，<button @click="addNewQuestion" class="link-btn">开始添加</button>或<button @click="showImportDialog" class="link-btn">导入数据</button></p>
       </div>
-    </div>
-
-    <!-- 分页 -->
+    </div>    <!-- 分页 -->
     <div class="pagination" v-if="totalPages > 1">
       <button 
         @click="goToPage(currentPage - 1)"
@@ -293,11 +314,35 @@
       </button>
     </div>
 
-    <!-- 对话框组件 -->
-    <QuestionEditDialog 
+    <!-- 数据加载状态和加载更多 -->
+    <div class="load-more-section" v-if="allQuestions.length > 0">
+      <div class="data-info">
+        <span class="info-text">
+          已加载 {{ allQuestions.length }} / {{ totalItems }} 条记录
+        </span>
+        <span v-if="hasMore" class="more-info">还有更多数据可加载</span>
+        <span v-else class="complete-info">已加载全部数据</span>
+      </div>
+      
+      <button 
+        v-if="hasMore"
+        @click="loadMoreData"
+        :disabled="loadingMore"
+        class="load-more-btn"
+      >
+        {{ loadingMore ? '加载中...' : `加载更多 (剩余约 ${totalItems - allQuestions.length} 条)` }}
+      </button>
+    </div><!-- 对话框组件 -->
+    <SimpleQuestionEditDialog 
       v-model:visible="questionDialogVisible"
       :question="currentQuestion"
       @save="handleQuestionSave"
+    />
+    
+    <!-- 问题和回答添加对话框 -->
+    <QuestionAnswerDialog 
+      v-model:visible="addDialogVisible"
+      @save="handleQuestionAnswerSave"
     />
     
     <AnswerEditDialog
@@ -318,13 +363,11 @@
       v-model:visible="importDialogVisible"
       @imported="handleDataImported"
     />
-    
-    <QuestionDetailDialog
+      <QuestionDetailDialog
       v-model:visible="detailDialogVisible"
       :question="currentQuestion"
       :view-mode="viewMode"
-      @edit="handleDetailEdit"
-    />
+      @edit="handleDetailEdit"    />
   </div>
 </template>
 
@@ -332,7 +375,8 @@
 import { ref, computed, onMounted, onUnmounted } from 'vue'
 import { RawQuestion } from '@/types/questions'
 import { RawAnswer, ExpertAnswer } from '@/types/answers'
-import QuestionEditDialog from '@/components/QuestionEditDialog.vue'
+import SimpleQuestionEditDialog from '@/components/SimpleQuestionEditDialog.vue'
+import QuestionAnswerDialog from '@/components/QuestionAnswerDialog.vue'
 import AnswerEditDialog from '@/components/AnswerEditDialog.vue'
 import StandardQADialog from '@/components/StandardQADialog.vue'
 import RawQAImportDialog from '@/components/RawQAImportDialog.vue'
@@ -341,11 +385,18 @@ import { rawQuestionService } from "@/services/rawQuestionService"
 
 // 响应式状态
 const loading = ref(false)
+const loadingMore = ref(false) // 新增：加载更多状态
 const searchQuery = ref('')
 const itemsPerPage = ref(20)
 const currentPage = ref(1)
 const selectedItems = ref<number[]>([])
 const allQuestions = ref<RawQuestion[]>([])
+
+// 分页和加载更多状态
+const currentSkip = ref(0) // 新增：当前跳过的记录数
+const totalItems = ref(0) // 新增：总记录数
+const hasMore = ref(true) // 新增：是否还有更多数据
+const loadSize = ref(1000) // 新增：每次加载的数量
 
 // 视图模式状态
 const viewMode = ref<'overview' | 'questions' | 'raw-answers' | 'expert-answers'>('overview')
@@ -353,6 +404,7 @@ const showMode = ref<'active_only' | 'deleted_only' | 'all'>('active_only')
 
 // 对话框状态
 const questionDialogVisible = ref(false)
+const addDialogVisible = ref(false)
 const answerDialogVisible = ref(false)
 const standardQADialogVisible = ref(false)
 const importDialogVisible = ref(false)
@@ -418,9 +470,17 @@ const truncateText = (text: string | undefined | null, maxLength: number) => {
   return text.substring(0, maxLength) + '...'
 }
 
-const loadData = async () => {
+const loadData = async (loadMore = false) => {
   try {
-    loading.value = true
+    if (loadMore) {
+      loadingMore.value = true
+    } else {
+      loading.value = true
+      // 重置状态
+      allQuestions.value = []
+      currentSkip.value = 0
+      hasMore.value = true
+    }
     
     // 根据显示模式确定参数
     let include_deleted = false
@@ -434,12 +494,21 @@ const loadData = async () => {
     }
       // 根据视图模式调用不同的接口
     let response
+    const skip = loadMore ? currentSkip.value : 0
+    const limit = loadSize.value
+    
     if (viewMode.value === 'overview' || viewMode.value === 'questions') {
-      response = await rawQuestionService.getRawQuestionsOverview(0, 100, include_deleted, deleted_only)
-      allQuestions.value = response.data || []    } else if (viewMode.value === 'raw-answers') {
-      response = await rawQuestionService.getRawAnswersView(0, 100, include_deleted, deleted_only)
+      response = await rawQuestionService.getRawQuestionsOverview(skip, limit, include_deleted, deleted_only)
+      const newData = response.data || []
+      if (loadMore) {
+        allQuestions.value.push(...newData)
+      } else {
+        allQuestions.value = newData
+      }
+    } else if (viewMode.value === 'raw-answers') {
+      response = await rawQuestionService.getRawAnswersView(skip, limit, include_deleted, deleted_only)
       // 将原始回答数据转换为问题格式以便在表格中显示
-      allQuestions.value = (response.data || []).map((answer: any) => ({
+      const newData = (response.data || []).map((answer: any) => ({
         id: answer.id,
         title: answer.answer_text ? `${truncateText(answer.answer_text, 60)}` : '原始回答',
         body: answer.answer_text,
@@ -455,16 +524,21 @@ const loadData = async () => {
         raw_answers: [], // 确保有这些数组字段
         expert_answers: []
       }))
+      if (loadMore) {
+        allQuestions.value.push(...newData)
+      } else {
+        allQuestions.value = newData
+      }
     } else if (viewMode.value === 'expert-answers') {
-      response = await rawQuestionService.getExpertAnswersView(0, 100, include_deleted, deleted_only)
+      response = await rawQuestionService.getExpertAnswersView(skip, limit, include_deleted, deleted_only)
       // 将专家回答数据转换为问题格式以便在表格中显示
-      allQuestions.value = (response.data || []).map((answer: any) => ({
+      const newData = (response.data || []).map((answer: any) => ({
         id: answer.id,
         title: answer.answer_text ? `${truncateText(answer.answer_text, 60)}` : '专家回答',
-        body: answer.answer_text,
-        author: answer.expert_name || `专家 ${answer.expert_id}`,
-        view_count: 0,
-        vote_count: 0,
+        body: answer.answer_text,        
+        author: answer.expert_name || answer.author || '匿名专家',
+        view_count: undefined,
+        vote_count: undefined,
         issued_at: answer.issued_at,
         created_at: answer.created_at,
         is_deleted: answer.is_deleted,
@@ -473,19 +547,44 @@ const loadData = async () => {
         expert_answers: [],
         original_data: answer
       }))
+      if (loadMore) {
+        allQuestions.value.push(...newData)
+      } else {
+        allQuestions.value = newData
+      }
     }
     
-    console.log('加载的数据:', allQuestions.value) // 添加调试日志
+    // 更新分页状态
+    if (response) {
+      totalItems.value = response.total || 0
+      currentSkip.value += (response.data || []).length
+      hasMore.value = currentSkip.value < totalItems.value
+    }
+    
+    console.log('加载的数据:', { 
+      currentCount: allQuestions.value.length, 
+      total: totalItems.value,
+      hasMore: hasMore.value,
+      skip: currentSkip.value 
+    })
   } catch (error) {
     console.error('加载数据失败:', error)
     showMessage('加载数据失败', 'error')
   } finally {
     loading.value = false
+    loadingMore.value = false
   }
 }
 
 const refreshData = () => {
   loadData()
+}
+
+// 新增：加载更多数据
+const loadMoreData = () => {
+  if (!loadingMore.value && hasMore.value) {
+    loadData(true)
+  }
 }
 
 const selectAll = () => {
@@ -504,9 +603,8 @@ const goToPage = (page: number) => {
 }
 
 const addNewQuestion = () => {
-  console.log('添加新问题') // 添加调试日志
-  currentQuestion.value = null
-  questionDialogVisible.value = true
+  console.log('添加新问题和回答') // 添加调试日志
+  addDialogVisible.value = true
 }
 
 const editQuestion = (question: RawQuestion) => {
@@ -611,6 +709,40 @@ const handleQuestionSave = async (questionData: Partial<RawQuestion>) => {
   } catch (error) {
     console.error('保存问题失败:', error)
     showMessage('保存问题失败', 'error')
+  }
+}
+
+const handleQuestionAnswerSave = async (data: { question: Partial<RawQuestion>, answers: any[] }) => {
+  try {
+    // 首先创建问题
+    const questionResponse = await rawQuestionService.createRawQuestion(data.question)
+    const questionId = questionResponse.data?.id || questionResponse.id
+    
+    if (!questionId) {
+      throw new Error('创建问题失败，未获取到问题ID')
+    }
+    
+    // 然后为每个回答创建原始回答记录
+    for (const answer of data.answers) {
+      const answerData = {
+        question_id: questionId,
+        answer: answer.body, // 后端数据库字段名
+        answered_by: answer.author || '匿名',
+        upvotes: answer.score?.toString() || '0',
+        answered_at: new Date().toISOString(),
+        is_deleted: false
+      }
+      
+      // 调用创建原始回答的API
+      await rawQuestionService.createRawAnswer(answerData)
+    }
+    
+    showMessage(`问题和 ${data.answers.length} 个回答已创建`, 'success')
+    addDialogVisible.value = false
+    loadData() // 重新加载数据
+  } catch (error) {
+    console.error('保存问题和回答失败:', error)
+    showMessage('保存问题和回答失败', 'error')
   }
 }
 
@@ -749,6 +881,98 @@ onMounted(() => {
   margin: 0;
 }
 
+.header-actions {
+  display: flex;
+  gap: 12px;
+  align-items: center;
+}
+
+.action-btn {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  padding: 10px 16px;
+  border: 1px solid #dcdfe6;
+  border-radius: 8px;
+  background: white;
+  color: #303133;
+  text-decoration: none;
+  cursor: pointer;
+  font-size: 14px;
+  font-weight: 500;
+  transition: all 0.3s ease;
+  box-shadow: 0 2px 4px rgba(0, 0, 0, 0.05);
+}
+
+.action-btn:hover:not(:disabled) {
+  background: #f5f7fa;
+  border-color: #c6e2ff;
+  box-shadow: 0 4px 8px rgba(0, 0, 0, 0.1);
+  transform: translateY(-1px);
+}
+
+.action-btn.primary {
+  background: linear-gradient(135deg, #409eff 0%, #337ecc 100%);
+  border-color: #409eff;
+  color: white;
+}
+
+.action-btn.primary:hover:not(:disabled) {
+  background: linear-gradient(135deg, #337ecc 0%, #2b6cb0 100%);
+  border-color: #337ecc;
+}
+
+.action-btn.secondary {
+  background: #f8f9fb;
+  border-color: #e4e7ed;
+  color: #606266;
+}
+
+.action-btn.secondary:hover:not(:disabled) {
+  background: #ecf5ff;
+  border-color: #b3d8ff;
+  color: #409eff;
+}
+
+.action-btn:disabled {
+  opacity: 0.6;
+  cursor: not-allowed;
+  transform: none;
+}
+
+.btn-icon {
+  font-size: 16px;
+}
+
+/* 统计栏样式 */
+.stats-bar {
+  display: flex;
+  gap: 20px;
+  margin-bottom: 20px;
+  padding: 16px 24px;
+  background: white;
+  border-radius: 10px;
+  box-shadow: 0 2px 8px rgba(0, 0, 0, 0.08);
+  border: 1px solid #f0f2f5;
+}
+
+.stat-item {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+}
+
+.stat-label {
+  color: #606266;
+  font-size: 14px;
+}
+
+.stat-value {
+  font-weight: 600;
+  color: #303133;
+  font-size: 16px;
+}
+
 /* 操作栏样式 */
 .actions-bar {
   display: flex;
@@ -772,6 +996,18 @@ onMounted(() => {
   display: flex;
   gap: 12px;
   align-items: center;
+}
+
+.overview-info {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+}
+
+.info-text {
+  color: #666;
+  font-size: 14px;
+  font-style: italic;
 }
 
 .search-input {
@@ -891,6 +1127,43 @@ onMounted(() => {
   width: 30%; /* 增加回答列宽度 */
   min-width: 280px;
   white-space: normal;
+}
+
+/* 概览模式样式 */
+.answers-col, .expert-answers-col {
+  min-width: 200px;
+  max-width: 300px;
+}
+
+.answer-group {
+  padding: 8px 0;
+}
+
+.answer-count {
+  font-weight: 600;
+  color: #333;
+  font-size: 13px;
+  margin-bottom: 4px;
+}
+
+.answer-preview {
+  color: #666;
+  font-size: 12px;
+  line-height: 1.4;
+  margin-bottom: 4px;
+}
+
+.more-answers {
+  color: #007bff;
+  font-size: 11px;
+  font-style: italic;
+}
+
+.no-answers {
+  color: #999;
+  font-style: italic;
+  font-size: 12px;
+  padding: 8px 0;
 }
 
 /* 关联问题列样式 */
@@ -1224,6 +1497,67 @@ onMounted(() => {
   color: #606266;
 }
 
+/* 加载更多样式 */
+.load-more-section {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  gap: 16px;
+  padding: 24px;
+  background: white;
+  border-radius: 10px;
+  box-shadow: 0 2px 8px rgba(0, 0, 0, 0.08);
+  margin-top: 16px;
+}
+
+.data-info {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  gap: 8px;
+  text-align: center;
+}
+
+.info-text {
+  font-size: 14px;
+  color: #606266;
+  font-weight: 500;
+}
+
+.more-info {
+  font-size: 12px;
+  color: #409eff;
+}
+
+.complete-info {
+  font-size: 12px;
+  color: #67c23a;
+}
+
+.load-more-btn {
+  padding: 12px 24px;
+  background: #409eff;
+  color: white;
+  border: none;
+  border-radius: 6px;
+  font-size: 14px;
+  font-weight: 500;
+  cursor: pointer;
+  transition: all 0.3s ease;
+  min-width: 200px;
+}
+
+.load-more-btn:hover:not(:disabled) {
+  background: #337ecc;
+  transform: translateY(-1px);
+}
+
+.load-more-btn:disabled {
+  background: #c0c4cc;
+  cursor: not-allowed;
+  transform: none;
+}
+
 /* 下拉菜单样式 */
 .dropdown-wrapper {
   position: relative;
@@ -1252,187 +1586,6 @@ onMounted(() => {
   top: 100%;
   left: 0;
   right: 0;
-  background: white;
-  border: 1px solid #e4e7ed;
-  border-radius: 8px;
-  box-shadow: 0 4px 12px rgba(0, 0, 0, 0.15);
-  z-index: 1000;
-  overflow: hidden;
-  margin-top: 4px;
-  min-width: 200px;
-}
-
-.dropdown-item {
-  display: flex;
-  align-items: center;
-  gap: 12px;
-  width: 100%;
-  padding: 12px 16px;
-  border: none;
-  background: none;
-  text-align: left;
-  cursor: pointer;
-  transition: background-color 0.2s ease;
-  border-bottom: 1px solid #f5f7fa;
-}
-
-.dropdown-item:last-child {
-  border-bottom: none;
-}
-
-.dropdown-item:hover {
-  background-color: #f5f7fa;
-}
-
-.dropdown-item:active {
-  background-color: #e4e7ed;
-}
-
-.item-icon {
-  font-size: 16px;
-  width: 20px;
-  text-align: center;
-}
-
-.item-content {
-  display: flex;
-  flex-direction: column;
-  gap: 2px;
-}
-
-.item-title {
-  font-weight: 500;
-  color: #303133;
-  font-size: 14px;
-}
-
-.item-desc {
-  font-size: 12px;
-  color: #909399;
-}
-
-/* 美化头部样式 */
-.header {
-  background: linear-gradient(135deg, #667eea 0%, #764ba2 100%);
-  color: white;
-  padding: 24px 32px;
-  border-radius: 12px;
-  margin-bottom: 24px;
-  box-shadow: 0 4px 20px rgba(102, 126, 234, 0.3);
-}
-
-.header-left h1 {
-  margin: 0 0 8px 0;
-  font-size: 28px;
-  font-weight: 600;
-}
-
-.subtitle {
-  margin: 0;
-  opacity: 0.9;
-  font-size: 16px;
-}
-
-.header-actions {
-  display: flex;
-  gap: 12px;
-  align-items: center;
-}
-
-.action-btn {
-  padding: 10px 20px;
-  border: none;
-  border-radius: 8px;
-  font-size: 14px;
-  font-weight: 500;
-  cursor: pointer;
-  transition: all 0.2s ease;
-  display: flex;
-  align-items: center;
-  gap: 8px;
-}
-
-.btn-icon {
-  font-size: 16px;
-}
-
-.action-btn.primary {
-  background: rgba(255, 255, 255, 0.2);
-  color: white;
-  border: 1px solid rgba(255, 255, 255, 0.3);
-}
-
-.action-btn.primary:hover {
-  background: rgba(255, 255, 255, 0.3);
-  transform: translateY(-1px);
-}
-
-.action-btn.secondary {
-  background: rgba(255, 255, 255, 0.1);
-  color: white;
-  border: 1px solid rgba(255, 255, 255, 0.2);
-}
-
-.action-btn.secondary:hover {
-  background: rgba(255, 255, 255, 0.2);
-}
-
-.action-btn:disabled {
-  opacity: 0.6;
-  cursor: not-allowed;
-  transform: none !important;
-}
-
-/* 统计栏美化 */
-.stats-bar {
-  display: flex;
-  gap: 24px;
-  background: white;
-  padding: 16px 24px;
-  border-radius: 10px;
-  margin-bottom: 24px;
-  box-shadow: 0 2px 8px rgba(0, 0, 0, 0.08);
-  border: 1px solid #f0f2f5;
-}
-
-.stat-item {
-  display: flex;
-  align-items: center;
-  gap: 8px;
-}
-
-.stat-label {
-  color: #606266;
-  font-size: 14px;
-}
-
-.stat-value {
-  color: #409eff;
-  font-weight: 600;
-  font-size: 16px;
-}
-
-/* 下拉菜单样式 */
-.dropdown-wrapper {
-  position: relative;
-  display: inline-block;
-}
-
-.dropdown-icon {
-  font-size: 12px;
-  transition: transform 0.2s ease;
-  display: inline-block;
-  margin-left: 4px;
-}
-
-.dropdown-icon.rotated {
-  transform: rotate(180deg);
-}
-
-.dropdown-menu {
-  position: absolute;
-  top: 100%;
-  left: 0;
   background: white;
   border: 1px solid #e4e7ed;
   border-radius: 8px;

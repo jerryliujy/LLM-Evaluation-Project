@@ -81,6 +81,8 @@ try:
                 question_title = driver.find_element(By.CSS_SELECTOR, "#question-header > h1 > a").text
                 print(f"Index: {index}, Question Title: {question_title}, Vote Number: {vote_number}, View Number: {view_number}, Author: {author}, Issued At: {issued_at}")
                 print(f"Tags: {tags}")
+                question_body = driver.find_element(By.CSS_SELECTOR, "#question > div.js-post-body > div").text
+                print(f"Question Body: {question_body[:100]}...")  
 
                 # Collect up to `answer_num` answers
                 answers = []
@@ -117,6 +119,7 @@ try:
                 question_data = {
                     "title": question_title,
                     "url": question_url,
+                    "body": question_body,
                     "votes": vote_number,
                     "views": view_number,
                     "author": author,

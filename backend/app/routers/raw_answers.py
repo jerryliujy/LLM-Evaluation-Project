@@ -2,7 +2,7 @@ from fastapi import APIRouter, Depends, HTTPException, Body, Query
 from sqlalchemy.orm import Session
 from typing import List
 from app.crud import crud_raw_answer
-from app.schemas import RawAnswer, Msg
+from app.schemas import RawAnswer, RawAnswerCreate, Msg
 from app.schemas.common import PaginatedResponse
 from app.db.database import get_db
 
@@ -15,16 +15,20 @@ router = APIRouter(
 @router.get("/", response_model=PaginatedResponse[RawAnswer])
 def read_raw_answers_api(
     skip: int = Query(0, ge=0), 
-    limit: int = Query(20, ge=1, le=100), 
+    limit: int = Query(100, ge=1, le=1000), 
     include_deleted: bool = Query(False),
     deleted_only: bool = Query(False),
     db: Session = Depends(get_db)
 ):
     """获取分页的原始答案列表"""
     result = crud_raw_answer.get_raw_answers_paginated(
-        db, skip=skip, limit=limit, include_deleted=include_deleted, deleted_only=deleted_only
-    )
+        db, skip=skip, limit=limit, include_deleted=include_deleted, deleted_only=deleted_only    )
     return result
+
+@router.post("/", response_model=RawAnswer)
+def create_raw_answer_api(answer: RawAnswerCreate, db: Session = Depends(get_db)):
+    """创建新的原始回答"""
+    return crud_raw_answer.create_raw_answer(db=db, answer=answer)
 
 @router.delete("/{answer_id}/", response_model=Msg)
 def delete_raw_answer_api(answer_id: int, db: Session = Depends(get_db)):

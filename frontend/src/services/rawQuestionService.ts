@@ -6,7 +6,7 @@ import { API_BASE_URL } from "./apiConstants";
 
 export const rawQuestionService = {
   // 获取用户的原始问题列表（调整为通用端点）
-  async getRawQuestions(skip = 0, limit = 100, include_deleted = false, deleted_only = false): Promise<RawQuestion[]> {
+  async getRawQuestions(skip = 0, limit = 1000, include_deleted = false, deleted_only = false): Promise<RawQuestion[]> {
     const response = await apiClient.get(`/raw_questions/`, {
       params: { skip, limit, include_deleted, deleted_only },
     });
@@ -57,6 +57,11 @@ export const rawQuestionService = {
   },
 
   // Raw Answers
+  async createRawAnswer(answerData: Partial<RawAnswer>): Promise<RawAnswer> {
+    const response = await apiClient.post('/raw_answers/', answerData);
+    return response.data;
+  },
+
   async deleteRawAnswer (answerId: number): Promise<ApiMessage> {
     const response = await apiClient.delete(`/raw_answers/${answerId}/`);
     return response.data;
@@ -89,7 +94,7 @@ export const rawQuestionService = {
   },
 
   // 获取原始问题概览（包含所有回答）
-  async getRawQuestionsOverview(skip = 0, limit = 20, include_deleted = false, deleted_only = false): Promise<any> {
+  async getRawQuestionsOverview(skip = 0, limit = 1000, include_deleted = false, deleted_only = false): Promise<any> {
     const response = await apiClient.get(`/raw_questions/overview`, {
       params: { skip, limit, include_deleted, deleted_only },
     });
@@ -97,7 +102,7 @@ export const rawQuestionService = {
   },
 
   // 获取原始回答视图
-  async getRawAnswersView(skip = 0, limit = 20, include_deleted = false, deleted_only = false): Promise<any> {
+  async getRawAnswersView(skip = 0, limit = 1000, include_deleted = false, deleted_only = false): Promise<any> {
     const response = await apiClient.get(`/raw_questions/raw-answers-view`, {
       params: { skip, limit, include_deleted, deleted_only },
     });
@@ -105,7 +110,7 @@ export const rawQuestionService = {
   },
 
   // 获取专家回答视图
-  async getExpertAnswersView(skip = 0, limit = 20, include_deleted = false, deleted_only = false): Promise<any> {
+  async getExpertAnswersView(skip = 0, limit = 1000, include_deleted = false, deleted_only = false): Promise<any> {
     const response = await apiClient.get(`/raw_questions/expert-answers-view`, {
       params: { skip, limit, include_deleted, deleted_only },
     });

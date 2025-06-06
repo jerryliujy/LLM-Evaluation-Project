@@ -20,7 +20,7 @@ router = APIRouter(
 @router.get("/", response_model=PaginatedResponse[RawQuestion])
 def read_raw_questions_api(
     skip: int = Query(0, ge=0), 
-    limit: int = Query(20, ge=1, le=100), 
+    limit: int = Query(100, ge=1, le=1000), 
     include_deleted: bool = Query(False),
     deleted_only: bool = Query(False),
     current_user: User = Depends(get_current_active_user),
@@ -105,7 +105,7 @@ def restore_multiple_raw_questions_api(
 @router.get("/overview", response_model=dict)
 def get_raw_questions_overview_api(
     skip: int = Query(0, ge=0), 
-    limit: int = Query(20, ge=1, le=100), 
+    limit: int = Query(100, ge=1, le=1000), 
     include_deleted: bool = Query(False),
     deleted_only: bool = Query(False),
     current_user: User = Depends(get_current_active_user),
@@ -135,9 +135,8 @@ def get_raw_questions_overview_api(
     
     # 获取总数
     total = query.count()
-    
-    # 分页
-    questions = query.order_by(RawQuestionModel.id.desc()).offset(skip).limit(limit).all()
+      # 分页
+    questions = query.order_by(RawQuestionModel.id.asc()).offset(skip).limit(limit).all()
     
     # 格式化返回数据
     result_data = []
@@ -192,7 +191,7 @@ def get_raw_questions_overview_api(
 @router.get("/raw-answers-view", response_model=dict)
 def get_raw_answers_view_api(
     skip: int = Query(0, ge=0), 
-    limit: int = Query(20, ge=1, le=100), 
+    limit: int = Query(100, ge=1, le=1000), 
     include_deleted: bool = Query(False),
     deleted_only: bool = Query(False),
     current_user: User = Depends(get_current_active_user),
@@ -215,9 +214,8 @@ def get_raw_answers_view_api(
     
     # 获取总数
     total = query.count()
-    
-    # 分页
-    answers = query.order_by(RawAnswer.id.desc()).offset(skip).limit(limit).all()
+      # 分页
+    answers = query.order_by(RawAnswer.id.asc()).offset(skip).limit(limit).all()
       # 格式化返回数据
     result_data = []
     for answer in answers:
@@ -251,7 +249,7 @@ def get_raw_answers_view_api(
 @router.get("/expert-answers-view", response_model=dict)
 def get_expert_answers_view_api(
     skip: int = Query(0, ge=0), 
-    limit: int = Query(20, ge=1, le=100), 
+    limit: int = Query(100, ge=1, le=1000), 
     include_deleted: bool = Query(False),
     deleted_only: bool = Query(False),
     current_user: User = Depends(get_current_active_user),
@@ -274,9 +272,8 @@ def get_expert_answers_view_api(
     
     # 获取总数
     total = query.count()
-    
-    # 分页
-    answers = query.order_by(ExpertAnswer.id.desc()).offset(skip).limit(limit).all()
+      # 分页
+    answers = query.order_by(ExpertAnswer.id.asc()).offset(skip).limit(limit).all()
       # 格式化返回数据
     result_data = []
     for answer in answers:

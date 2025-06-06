@@ -154,10 +154,8 @@
             </div>
           </div>
         </template>
-      </div>
-
-      <div class="dialog-footer">
-        <button @click="handleEdit" class="btn-primary">编辑</button>
+      </div>      <div class="dialog-footer">
+        <button v-if="props.viewMode !== 'overview'" @click="handleEdit" class="btn-primary">编辑</button>
         <button @click="handleClose" class="btn-secondary">关闭</button>
       </div>
     </div>
