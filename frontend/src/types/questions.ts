@@ -23,11 +23,11 @@ export interface StdQuestion {
   id: number;
   dataset_id: number;
   raw_question_id: number;
-  text: string;
-  create_time: string | Date;
+  body: string;
+  created_at: string | Date;
   question_type: string;
   is_valid: boolean;
-  created_by?: string;
+  created_by?: number;
   version: number;
   previous_version_id?: number; // Nullable for the first version
   std_answers?: StdAnswer[]; // Optional relationship to standard answers

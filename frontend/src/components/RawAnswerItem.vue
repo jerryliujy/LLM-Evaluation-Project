@@ -6,10 +6,10 @@
       @change="store.toggleSelection('rawAnswer', answer.id)"
     />
     <div class="answer-content">
-      <p><strong>内容:</strong> {{ answer.content }}</p>
-      <p v-if="answer.author">作者: {{ answer.author }}</p>
-      <p v-if="answer.vote_count !== undefined">
-        投票: {{ answer.vote_count }}
+      <p><strong>内容:</strong> {{ answer.answer }}</p>
+      <p v-if="answer.answered_by">作者: {{ answer.answered_by }}</p>
+      <p v-if="answer.upvotes !== undefined">
+        投票: {{ answer.upvotes }}
       </p>
       <p v-if="answer.answered_at">
         时间: {{ formatDate(answer.answered_at) }}

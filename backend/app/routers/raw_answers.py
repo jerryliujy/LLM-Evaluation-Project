@@ -45,10 +45,13 @@ def restore_raw_answer_api(answer_id: int, db: Session = Depends(get_db)):
     if not initial_check.is_deleted:
         raise HTTPException(status_code=400, detail="RawAnswer is not marked as deleted")
 
-    db_answer = crud_raw_answer.set_raw_answer_deleted_status(db, answer_id=answer_id, deleted_status=False)
-    if db_answer is None:
-        raise HTTPException(status_code=404, detail="Error restoring RawAnswer")
-    return db_answer
+    try:
+        db_answer = crud_raw_answer.set_raw_answer_deleted_status(db, answer_id=answer_id, deleted_status=False)
+        if db_answer is None:
+            raise HTTPException(status_code=404, detail="Error restoring RawAnswer")
+        return db_answer
+    except ValueError as e:
+        raise HTTPException(status_code=400, detail=str(e))
 
 @router.delete("/{answer_id}/force-delete/", response_model=Msg)
 def force_delete_raw_answer_api(answer_id: int, db: Session = Depends(get_db)):
@@ -77,5 +80,8 @@ def delete_multiple_raw_answers_api(answer_ids: List[int] = Body(...), db: Sessi
 def restore_multiple_raw_answers_api(answer_ids: List[int] = Body(...), db: Session = Depends(get_db)):
     if not answer_ids:
         raise HTTPException(status_code=400, detail="No answer IDs provided")
-    num_restored = crud_raw_answer.set_multiple_raw_answers_deleted_status(db, answer_ids=answer_ids, deleted_status=False)
-    return Msg(message=f"Successfully marked {num_restored} raw answers as not deleted")
+    try:
+        num_restored = crud_raw_answer.set_multiple_raw_answers_deleted_status(db, answer_ids=answer_ids, deleted_status=False)
+        return Msg(message=f"Successfully marked {num_restored} raw answers as not deleted")
+    except ValueError as e:
+        raise HTTPException(status_code=400, detail=str(e))

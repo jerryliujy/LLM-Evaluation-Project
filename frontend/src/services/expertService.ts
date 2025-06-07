@@ -72,9 +72,8 @@ class ExpertService {
       throw new Error(error.response?.data?.detail || '获取问题失败')
     }
   }
-
   // 创建专家回答
-  async createAnswer(data: { question_id: number; content: string }): Promise<ExpertAnswer> {
+  async createAnswer(data: { question_id: number; answer: string }): Promise<ExpertAnswer> {
     try {
       const response = await apiClient.post('/expert/answers', data)
       return response.data
@@ -104,9 +103,8 @@ class ExpertService {
       throw new Error(error.response?.data?.detail || '获取回答失败')
     }
   }
-
   // 更新回答
-  async updateAnswer(answerId: number, data: { content: string }): Promise<ExpertAnswer> {
+  async updateAnswer(answerId: number, data: { answer: string }): Promise<ExpertAnswer> {
     try {
       const response = await apiClient.put(`/expert_answers/${answerId}`, data)
       return response.data

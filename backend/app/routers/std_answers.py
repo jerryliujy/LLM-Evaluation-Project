@@ -66,6 +66,7 @@ def update_std_answer(
     std_answer_update: StdAnswerUpdate,
     db: Session = Depends(get_db)
 ):
+    """This needs to be modified"""
     """更新标准答案（版本控制）"""
     # 获取当前答案
     current_answer = db.query(StdAnswer).filter(StdAnswer.id == std_answer_id).first()
@@ -85,12 +86,11 @@ def update_std_answer(
     
     # 标记当前版本为无效
     current_answer.is_valid = False
-    
-    # 创建新版本
+      # 创建新版本
     new_version_data = {
         'std_question_id': current_answer.std_question_id,
         'answer': current_answer.answer,
-        'created_by': current_answer.created_by,
+        'answered_by': current_answer.answered_by,
         'version': current_answer.version + 1,
         'previous_version_id': current_answer.id,
         'is_valid': True
@@ -110,12 +110,11 @@ def update_std_answer(
     
     db.commit()
     db.refresh(new_answer)
-    
-    # 复制评分点到新版本
+      # 复制评分点到新版本
     for point in scoring_points:
         new_point = StdAnswerScoringPoint(
             std_answer_id=new_answer.id,
-            scoring_point_text=point.scoring_point_text,
+            answer=point.answer,
             point_order=point.point_order,
             created_by=point.created_by,
             version=1,  # 新答案的评分点从版本1开始
@@ -250,9 +249,9 @@ def list_scoring_points(
 @router.put("/scoring-points/{scoring_point_id}", response_model=StdAnswerScoringPointResponse)
 def update_scoring_point(
     scoring_point_id: int,
-    scoring_point_text: str,
+    answer: str,
     point_order: Optional[int] = None,
-    created_by: Optional[str] = None,
+    created_by: Optional[int] = None,
     db: Session = Depends(get_db)
 ):
     """更新评分点（版本控制）"""
@@ -264,7 +263,7 @@ def update_scoring_point(
         raise HTTPException(status_code=404, detail="Scoring point not found")
     
     # 检查是否有实际修改
-    has_changes = (current_point.scoring_point_text != scoring_point_text or
+    has_changes = (current_point.answer != answer or
                   (point_order is not None and current_point.point_order != point_order))
     
     if not has_changes:
@@ -276,7 +275,7 @@ def update_scoring_point(
     # 创建新版本
     new_point = StdAnswerScoringPoint(
         std_answer_id=current_point.std_answer_id,
-        scoring_point_text=scoring_point_text,
+        answer=answer,
         point_order=point_order if point_order is not None else current_point.point_order,
         created_by=created_by or current_point.created_by,
         version=current_point.version + 1,

@@ -110,17 +110,32 @@ def get_raw_questions_overview_api(
     deleted_only: bool = Query(False),
     current_user: User = Depends(get_current_active_user),
     db: Session = Depends(get_db)
-):
+):    
     """获取原始问题概览，包含所有相关的原始回答和专家回答"""
+    # 根据参数决定是否包含已删除的回答
+    if include_deleted:
+        # 包含已删除的回答
+        raw_answers_filter = True  # 不过滤
+        expert_answers_filter = True  # 不过滤
+    else:
+        # 对于已删除的问题，仍然显示所有回答（包括已删除的）以便用户了解完整情况
+        # 对于未删除的问题，只显示未删除的回答
+        if deleted_only:
+            # 如果只显示已删除问题，则显示所有回答（包括已删除的）
+            raw_answers_filter = True
+            expert_answers_filter = True
+        else:
+            # 只显示未删除的回答
+            raw_answers_filter = RawAnswer.is_deleted == False
+            expert_answers_filter = ExpertAnswer.is_deleted == False
+            # 只显示未删除的回答
+            raw_answers_filter = RawAnswer.is_deleted == False
+            expert_answers_filter = ExpertAnswer.is_deleted == False
     
     # 构建查询，预加载相关数据
     query = db.query(RawQuestionModel).options(
-        selectinload(RawQuestionModel.raw_answers.and_(
-            RawAnswer.is_deleted == False
-        )),
-        selectinload(RawQuestionModel.expert_answers.and_(
-            ExpertAnswer.is_deleted == False
-        )),
+        selectinload(RawQuestionModel.raw_answers.and_(raw_answers_filter)),
+        selectinload(RawQuestionModel.expert_answers.and_(expert_answers_filter)),
         selectinload(RawQuestionModel.tags)
     )
     
@@ -152,31 +167,29 @@ def get_raw_questions_overview_api(
             "issued_at": question.issued_at.isoformat() if question.issued_at else None,
             "created_at": question.created_at.isoformat() if question.created_at else None,
             "is_deleted": question.is_deleted,
-            "tags": [tag.label for tag in question.tags] if question.tags else [],
-            
-            # 原始回答
+            "tags": [tag.label for tag in question.tags] if question.tags else [],            # 原始回答 - 已经在查询中根据参数过滤了
             "raw_answers": [
                 {
                     "id": answer.id,
-                    "answer_text": answer.answer,
-                    "author": answer.answered_by,
-                    "vote_count": answer.upvotes or 0,
-                    "created_at": answer.answered_at.isoformat() if answer.answered_at else None,
+                    "answer": answer.answer,
+                    "answered_by": answer.answered_by,
+                    "upvotes": answer.upvotes or 0,
+                    "answered_at": answer.answered_at.isoformat() if answer.answered_at else None,
                     "is_deleted": answer.is_deleted
                 }
-                for answer in question.raw_answers if not answer.is_deleted
+                for answer in question.raw_answers
             ],
             
-            # 专家回答
+            # 专家回答 - 已经在查询中根据参数过滤了
             "expert_answers": [
                 {
                     "id": answer.id,
-                    "answer_text": answer.content,
-                    "expert_id": answer.author,
-                    "created_at": answer.created_at.isoformat() if answer.created_at else None,
+                    "answer": answer.answer,
+                    "answered_by": answer.answered_by,
+                    "answered_at": answer.answered_at.isoformat() if answer.answered_at else None,
                     "is_deleted": answer.is_deleted
                 }
-                for answer in question.expert_answers if not answer.is_deleted
+                for answer in question.expert_answers
             ]
         }
         result_data.append(question_data)
@@ -215,18 +228,17 @@ def get_raw_answers_view_api(
     # 获取总数
     total = query.count()
       # 分页
-    answers = query.order_by(RawAnswer.id.asc()).offset(skip).limit(limit).all()
-      # 格式化返回数据
+    answers = query.order_by(RawAnswer.id.asc()).offset(skip).limit(limit).all()    # 格式化返回数据
     result_data = []
     for answer in answers:
         answer_data = {
             "id": answer.id,
-            "answer_text": answer.answer,  # 使用正确的字段名
-            "author": answer.answered_by,  # 使用正确的字段名
-            "vote_count": answer.upvotes or 0,  # 使用正确的字段名
-            "created_at": answer.answered_at.isoformat() if answer.answered_at else None,  # 使用正确的字段名
+            "answer": answer.answer,  # 使用与前端一致的字段名
+            "answered_by": answer.answered_by,  # 使用与前端一致的字段名
+            "upvotes": answer.upvotes or 0,  # 使用与前端一致的字段名
+            "answered_at": answer.answered_at.isoformat() if answer.answered_at else None,  # 使用与前端一致的字段名
             "is_deleted": answer.is_deleted,
-            "raw_question_id": answer.question_id,  # 使用正确的字段名
+            "question_id": answer.question_id,  # 使用与前端一致的字段名
             
             # 关联的问题信息
             "question": {
@@ -273,17 +285,16 @@ def get_expert_answers_view_api(
     # 获取总数
     total = query.count()
       # 分页
-    answers = query.order_by(ExpertAnswer.id.asc()).offset(skip).limit(limit).all()
-      # 格式化返回数据
+    answers = query.order_by(ExpertAnswer.id.asc()).offset(skip).limit(limit).all()    # 格式化返回数据
     result_data = []
     for answer in answers:
         answer_data = {
             "id": answer.id,
-            "answer_text": answer.content,  # 使用正确的字段名
-            "expert_id": answer.author,     # 使用正确的字段名
-            "created_at": answer.created_at.isoformat() if answer.created_at else None,
+            "answer": answer.answer,  # 使用与前端一致的字段名
+            "answered_by": answer.answered_by,     # 使用与前端一致的字段名
+            "answered_at": answer.answered_at.isoformat() if answer.answered_at else None,
             "is_deleted": answer.is_deleted,
-            "raw_question_id": answer.question_id,  # 使用正确的字段名
+            "question_id": answer.question_id,  # 使用与前端一致的字段名
             
             # 关联的问题信息
             "question": {

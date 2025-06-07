@@ -257,13 +257,12 @@ async def upload_expert_answers_data(
             
             # 创建专家回答
             if 'expert_answers' in item and isinstance(item['expert_answers'], list):
-                for expert_answer_data in item['expert_answers']:
+                for expert_answer_data in item['expert_answers']:                   
                     expert_answer = ExpertAnswer(
                         question_id=question_id,
-                        content=expert_answer_data.get('content', ''),
-                        source=expert_answer_data.get('source', 'Expert Review'),
-                        vote_count=expert_answer_data.get('vote_count', 0),
-                        author=expert_answer_data.get('expert_id', 1),
+                        answer=expert_answer_data.get('content', ''),
+                        answered_by=expert_answer_data.get('expert_id', 'Expert'),
+                        answered_at=datetime.now(),
                         is_deleted=False
                     )
                     

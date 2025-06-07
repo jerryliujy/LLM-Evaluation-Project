@@ -73,7 +73,7 @@ export interface CreateStandardQARequest {
   knowledge_points?: string[]
   tags?: string[]
   notes?: string
-  created_by?: string
+  created_by?: number
   
   // 标准答案字段
   answer_text: string
@@ -81,6 +81,7 @@ export interface CreateStandardQARequest {
   scoring_points?: ScoringPoint[]
   total_score?: number
   explanation?: string
+  answered_by?: number
   
   // 关系记录
   raw_question_relations?: RawQuestionRelation[]
@@ -327,46 +328,6 @@ class StandardQAService {
       console.error('搜索标准问答失败:', error)
       throw error
     }
-  }
-  // 兼容性方法 - 旧版本API的封装
-  /**
-   * @deprecated 使用 createStandardQAWithRelations 替代
-   */
-  async createStandardQA(data: {
-    question: {
-      dataset_id: number
-      question_text: string
-      difficulty_level?: string
-      knowledge_points?: string[]
-      tags?: string[]
-      notes?: string
-      created_by?: string
-    }
-    answer: {
-      answer_text: string
-      answer_type?: string
-      scoring_points?: ScoringPoint[]
-      total_score?: number
-      explanation?: string
-      created_by?: string
-    }
-    relations?: {
-      raw_question_ids?: number[]
-      raw_answer_ids?: number[]
-      expert_answer_ids?: number[]
-    }
-  }): Promise<StandardQAWithRelations> {
-    console.warn('⚠️ createStandardQA is deprecated: 使用 createStandardQAWithRelations 替代')
-    
-    const request: CreateStandardQARequest = {
-      ...data.question,
-      ...data.answer,
-      raw_question_relations: data.relations?.raw_question_ids?.map(id => ({ raw_question_id: id })) || [],
-      raw_answer_relations: data.relations?.raw_answer_ids?.map(id => ({ raw_answer_id: id })) || [],
-      expert_answer_relations: data.relations?.expert_answer_ids?.map(id => ({ expert_answer_id: id })) || []
-    }
-    
-    return this.createStandardQAWithRelations(request)
   }
 }
 

@@ -3,19 +3,19 @@ from typing import Optional, List
 from datetime import datetime
 
 class ExpertAnswerBase(BaseModel):
-    content: str
+    answer: str
 
 class ExpertAnswerCreate(ExpertAnswerBase):
     question_id: int
 
 class ExpertAnswerUpdate(BaseModel):
-    content: Optional[str] = None
+    answer: Optional[str] = None
 
 class ExpertAnswer(ExpertAnswerBase):
     id: int
     question_id: int
-    author: int
-    created_at: datetime
+    answered_by: int
+    answered_at: datetime
     is_deleted: bool
 
     class Config:

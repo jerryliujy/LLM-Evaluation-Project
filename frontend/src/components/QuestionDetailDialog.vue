@@ -21,10 +21,9 @@
             <div class="detail-item">
               <label>作者:</label>
               <span>{{ question?.author || '匿名' }}</span>
-            </div>
-            <div class="detail-item">
+            </div>            <div class="detail-item">
               <label>创建时间:</label>
-              <span>{{ formatDate(question?.created_at || question?.issued_at) }}</span>
+              <span>{{ formatDate(question?.issued_at || question?.created_at) }}</span>
             </div>
             <!-- 概览模式和原始问题模式才显示浏览和点赞数 -->
             <div v-if="(props.viewMode === 'overview' || props.viewMode === 'questions') && question?.view_count !== undefined && question?.view_count !== null" class="detail-item">
@@ -36,30 +35,19 @@
               <span>{{ question.vote_count }}</span>
             </div>
           </div>
-        </div>
-
-        <!-- 概览模式：只显示问题内容、原始回答和专家回答 -->
-        <template v-if="props.viewMode === 'overview'">
-          <!-- 问题内容 -->
-          <div v-if="question?.body" class="detail-section">
-            <h4>问题内容</h4>
-            <div class="content-box">
-              {{ question.body }}
-            </div>
-          </div>
-
-          <!-- 原始回答 -->
+        </div>        <!-- 概览模式：只显示原始回答和专家回答，不显示问题详细信息 -->
+        <template v-if="props.viewMode === 'overview'">          <!-- 原始回答 -->
           <div v-if="question?.raw_answers && question.raw_answers.length > 0" class="detail-section">
             <h4>原始回答 ({{ question.raw_answers.length }})</h4>
             <div class="answers-list">
               <div v-for="answer in question.raw_answers" :key="answer.id" class="answer-item">
                 <div class="answer-meta">
-                  <span>作者: {{ answer.author || '匿名' }}</span>
+                  <span>作者: {{ answer.answered_by || '匿名' }}</span>
                   <span>时间: {{ formatDate(answer.answered_at) }}</span>
-                  <span v-if="answer.vote_count !== undefined && answer.vote_count !== null">投票: {{ answer.vote_count }}</span>
+                  <span v-if="answer.upvotes !== undefined && answer.upvotes !== null">投票: {{ answer.upvotes }}</span>
                 </div>
                 <div class="answer-content">
-                  {{ answer.content }}
+                  {{ answer.answer }}
                 </div>
               </div>
             </div>
@@ -71,25 +59,47 @@
             <div class="answers-list">
               <div v-for="answer in question.expert_answers" :key="answer.id" class="answer-item">
                 <div class="answer-meta">
-                  <span>专家: {{ answer.author || '匿名' }}</span>
-                  <span>来源: {{ answer.source }}</span>
-                  <span>时间: {{ formatDate(answer.created_at) }}</span>
+                  <span>专家: {{ answer.answered_by || '匿名' }}</span>
+                  <span>时间: {{ formatDate(answer.answered_at) }}</span>
                 </div>
                 <div class="answer-content">
-                  {{ answer.content }}
+                  {{ answer.answer }}
                 </div>
               </div>
             </div>
           </div>
-        </template>
-
-        <!-- 非概览模式：显示所有详细信息 -->
+        </template>        <!-- 非概览模式：显示所有详细信息 -->
         <template v-else>
-          <!-- 问题内容 -->
-          <div v-if="question?.body" class="detail-section">
+          <!-- 问题内容 - 只在问题模式下显示 -->
+          <div v-if="question?.body && props.viewMode === 'questions'" class="detail-section">
             <h4>问题内容</h4>
             <div class="content-box">
               {{ question.body }}
+            </div>
+          </div>          <!-- 回答内容 - 在原始回答和专家回答模式下显示 -->
+          <div v-if="question?.body && (props.viewMode === 'raw-answers' || props.viewMode === 'expert-answers')" class="detail-section">
+            <h4>{{ props.viewMode === 'raw-answers' ? '原始回答内容' : '专家回答内容' }}</h4>
+            <div class="content-box">
+              {{ question.body }}
+            </div>
+          </div>
+
+          <!-- 关联问题信息 - 在原始回答和专家回答模式下显示 -->
+          <div v-if="(props.viewMode === 'raw-answers' || props.viewMode === 'expert-answers') && question?.original_data?.question" class="detail-section">
+            <h4>关联问题</h4>
+            <div class="detail-grid">
+              <div class="detail-item">
+                <label>问题标题:</label>
+                <span>{{ question.original_data.question.title }}</span>
+              </div>
+              <div class="detail-item">
+                <label>问题作者:</label>
+                <span>{{ question.original_data.question.author || '匿名' }}</span>
+              </div>
+            </div>
+            <div v-if="question.original_data.question.body" class="content-box" style="margin-top: 10px;">
+              <h5>问题内容:</h5>
+              <p>{{ question.original_data.question.body }}</p>
             </div>
           </div>
 
@@ -107,54 +117,9 @@
           <div v-if="question?.url" class="detail-section">
             <h4>原始链接</h4>
             <a :href="question.url" target="_blank" class="link">{{ question.url }}</a>
-          </div>
-
-          <!-- 原始回答 -->
-          <div v-if="question?.raw_answers && question.raw_answers.length > 0" class="detail-section">
-            <h4>原始回答 ({{ question.raw_answers.length }})</h4>
-            <div class="answers-list">
-              <div v-for="answer in question.raw_answers" :key="answer.id" class="answer-item">
-                <div class="answer-meta">
-                  <span>作者: {{ answer.author || '匿名' }}</span>
-                  <span>时间: {{ formatDate(answer.answered_at) }}</span>
-                  <span v-if="answer.vote_count !== undefined && answer.vote_count !== null">投票: {{ answer.vote_count }}</span>
-                </div>
-                <div class="answer-content">
-                  {{ answer.content }}
-                </div>
-              </div>
-            </div>
-          </div>
-
-          <!-- 专家回答 -->
-          <div v-if="question?.expert_answers && question.expert_answers.length > 0" class="detail-section">
-            <h4>专家回答 ({{ question.expert_answers.length }})</h4>
-            <div class="answers-list">
-              <div v-for="answer in question.expert_answers" :key="answer.id" class="answer-item">
-                <div class="answer-meta">
-                  <span>专家: {{ answer.author || '匿名' }}</span>
-                  <span>来源: {{ answer.source }}</span>
-                  <span>时间: {{ formatDate(answer.created_at) }}</span>
-                </div>
-                <div class="answer-content">
-                  {{ answer.content }}
-                </div>
-              </div>
-            </div>
-          </div>
-
-          <!-- 特殊模式下的原始数据展示 -->
-          <div v-if="question?.type && question.type !== 'question'" class="detail-section">
-            <h4>关联问题信息</h4>
-            <div v-if="question.original_data?.question" class="content-box">
-              <h5>{{ question.original_data.question.title }}</h5>
-              <p v-if="question.original_data.question.body">
-                {{ question.original_data.question.body }}
-              </p>
-            </div>
-          </div>
-        </template>
-      </div>      <div class="dialog-footer">
+          </div>          <!-- 原始回答和专家回答 - 在问题模式下不显示，回答应该在概览模式中查看 -->
+          <!-- 问题模式的详情对话框只显示问题信息，不显示回答 --></template>
+      </div><div class="dialog-footer">
         <button v-if="props.viewMode !== 'overview'" @click="handleEdit" class="btn-primary">编辑</button>
         <button @click="handleClose" class="btn-secondary">关闭</button>
       </div>

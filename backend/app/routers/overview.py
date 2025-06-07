@@ -90,13 +90,10 @@ async def get_std_questions_overview(
             } if std_q.raw_question else None,
             
             # 标准答案
-            "std_answers_count": len(std_q.std_answers) if std_q.std_answers else 0,
-            "std_answers": [
+            "std_answers_count": len(std_q.std_answers) if std_q.std_answers else 0,            "std_answers": [
                 {
                     "id": std_a.id,
-                    "answer_text": std_a.answer_text[:150] + "..." if std_a.answer_text and len(std_a.answer_text) > 150 else std_a.answer_text,
-                    "answer_type": std_a.answer_type,
-                    "is_correct": std_a.is_correct,
+                    "answer_text": std_a.answer[:150] + "..." if std_a.answer and len(std_a.answer) > 150 else std_a.answer,
                     "version": std_a.version,
                     "created_by": std_a.created_by,
                     "is_valid": std_a.is_valid

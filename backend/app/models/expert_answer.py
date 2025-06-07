@@ -8,9 +8,9 @@ class ExpertAnswer(Base):
 
     id = Column(Integer, primary_key=True, index=True)
     question_id = Column(Integer, ForeignKey("RawQuestion.id"), nullable=False, index=True)
-    content = Column(Text, nullable=False)
-    author = Column(Integer, ForeignKey("User.id"), nullable=False, index=True)
-    created_at = Column(DateTime(timezone=True), server_default=func.now())   
+    answer = Column(Text, nullable=False)
+    answered_by = Column(Integer, ForeignKey("User.id"), nullable=False, index=True)
+    answered_at = Column(DateTime(timezone=True), server_default=func.now())   
     is_deleted = Column(Boolean, default=False, nullable=False, index=True)
     question = relationship("RawQuestion", back_populates="expert_answers")
     author_user = relationship("User")

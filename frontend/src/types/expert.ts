@@ -51,9 +51,9 @@ export interface InviteCodeInfo {
 
 export interface ExpertAnswerCreate {
   question_id: number
-  content: string
+  answer: string
 }
 
 export interface ExpertAnswerUpdate {
-  content: string
+  answer: string
 }

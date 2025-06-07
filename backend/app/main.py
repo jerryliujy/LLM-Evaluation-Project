@@ -34,7 +34,8 @@ from .routers import (
     auth,
     relationship_records,
     std_qa_management,
-    expert
+    expert,
+    evaluations
 )
 
 app.include_router(auth.router)

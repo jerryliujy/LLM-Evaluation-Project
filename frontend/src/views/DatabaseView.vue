@@ -383,39 +383,37 @@ const tableConfigs: Record<TableName, TableConfig> = {  raw_questions: {
       { key: "answered_at", label: "回答时间", type: "date", className: "date-col" },
     ],
     editable: ["answer", "answered_by", "upvotes"]
-  },
-  expert_answers: {
+  },  expert_answers: {
     columns: [
       { key: "id", label: "ID", type: "number", className: "id-col" },
       { key: "question_id", label: "问题ID", type: "number", className: "question-id-col" },
-      { key: "content", label: "专家答案", type: "text", className: "answer-col", multiline: true },
-      { key: "source", label: "来源", type: "text", className: "source-col" },
-      { key: "vote_count", label: "投票数", type: "number", className: "votes-col" },
-      { key: "author", label: "专家ID", type: "number", className: "author-col" },
+      { key: "answer", label: "专家答案", type: "text", className: "answer-col", multiline: true },
+      { key: "answered_by", label: "专家ID", type: "number", className: "author-col" },
+      { key: "answered_at", label: "回答时间", type: "date", className: "date-col" },
     ],
-    editable: ["content", "source", "vote_count"]
+    editable: ["answer", "answered_by"]
   },  std_questions: {
     columns: [
       { key: "id", label: "ID", type: "number", className: "id-col" },
       { key: "dataset_id", label: "数据集ID", type: "number", className: "dataset-col" },
       { key: "raw_question_id", label: "原始问题ID", type: "number", className: "question-id-col" },
-      { key: "text", label: "问题文本", type: "text", className: "text-col", multiline: true },
+      { key: "body", label: "问题文本", type: "text", className: "text-col", multiline: true },
       { key: "question_type", label: "问题类型", type: "text", className: "type-col" },
       { key: "version", label: "版本", type: "number", className: "version-col" },
-      { key: "created_by", label: "创建者", type: "text", className: "author-col" },
+      { key: "created_by", label: "创建者", type: "number", className: "author-col" },
       { key: "is_valid", label: "有效", type: "boolean", className: "valid-col" },
     ],
-    editable: ["text", "question_type", "created_by"]
-  },std_answers: {
+    editable: ["body", "question_type", "created_by"]
+  },  std_answers: {
     columns: [
       { key: "id", label: "ID", type: "number", className: "id-col" },
       { key: "std_question_id", label: "标准问题ID", type: "number", className: "question-id-col" },
       { key: "answer", label: "答案文本", type: "text", className: "answer-col", multiline: true },
       { key: "version", label: "版本", type: "number", className: "version-col" },
-      { key: "created_by", label: "创建者", type: "text", className: "author-col" },
+      { key: "answered_by", label: "回答者", type: "number", className: "author-col" },
       { key: "is_valid", label: "有效", type: "boolean", className: "valid-col" },
     ],
-    editable: ["answer", "created_by"]
+    editable: ["answer", "answered_by"]
   },
   overview_std: {
     columns: [

@@ -77,6 +77,16 @@ export const rawQuestionService = {
     return response.data;
   },
 
+  async restoreMultipleRawAnswers (answerIds: number[]): Promise<ApiMessage> {
+    const response = await apiClient.post('/raw_answers/restore-multiple/', answerIds);
+    return response.data;
+  },
+
+  async forceDeleteRawAnswer (answerId: number): Promise<ApiMessage> {
+    const response = await apiClient.delete(`/raw_answers/${answerId}/force-delete/`);
+    return response.data;
+  },
+
   // Expert Answers
   async deleteExpertAnswer (answerId: number): Promise<ApiMessage> {
     const response = await apiClient.delete(`/expert_answers/${answerId}/`);
@@ -88,8 +98,18 @@ export const rawQuestionService = {
     return response.data;
   },
 
+  async forceDeleteExpertAnswer (answerId: number): Promise<ApiMessage> {
+    const response = await apiClient.delete(`/expert_answers/${answerId}/force-delete/`);
+    return response.data;
+  },
+
   async deleteMultipleExpertAnswers (answerIds: number[]): Promise<ApiMessage> {
     const response = await apiClient.post('/expert_answers/delete-multiple/', answerIds);
+    return response.data;
+  },
+
+  async restoreMultipleExpertAnswers (answerIds: number[]): Promise<ApiMessage> {
+    const response = await apiClient.post('/expert_answers/restore-multiple/', answerIds);
     return response.data;
   },
 

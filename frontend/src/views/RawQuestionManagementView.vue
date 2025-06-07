@@ -35,23 +35,22 @@
         <span class="stat-value">{{ selectedItems.length }}</span>
       </div>
     </div>    <!-- 操作栏 -->
-    <div class="actions-bar">
-      <div class="bulk-actions" v-if="viewMode !== 'overview'">
-        <button 
+    <div class="actions-bar">      <div class="bulk-actions" v-if="isNotOverviewMode">        <button 
           @click="selectAll" 
           class="action-btn"
           :disabled="filteredQuestions.length === 0"
         >
           {{ selectedItems.length === filteredQuestions.length ? "取消全选" : "全选" }}
         </button>
-        <button 
+        <!-- 概览模式禁用批量删除和创建标准问答 -->        <button 
+          v-if="isNotOverviewMode"
           @click="deleteSelectedQuestions" 
           class="action-btn danger"
           :disabled="selectedItems.length === 0"
         >
           批量删除 ({{ selectedItems.length }})
-        </button>
-        <button 
+        </button>        <button 
+          v-if="isQuestionsMode"
           @click="createStandardQA" 
           class="action-btn success"
           :disabled="selectedItems.length === 0"
@@ -61,7 +60,7 @@
       </div>
       
       <!-- 概览模式下的提示信息 -->
-      <div class="overview-info" v-if="viewMode === 'overview'">
+      <div class="overview-info" v-if="isOverviewMode">
         <span class="info-text">概览模式 - 仅供浏览</span>
       </div><div class="view-options">
         <select v-model="viewMode" @change="handleViewModeChange" class="view-mode-select">
@@ -82,8 +81,8 @@
           type="text"
           placeholder="搜索问题..."
           class="search-input"
-        />
-        <select v-model="itemsPerPage" @change="loadData" class="per-page-select">
+        />        
+        <select v-model="itemsPerPage" @change="() => loadData()" class="per-page-select">
           <option value="20">20条/页</option>
           <option value="50">50条/页</option>
           <option value="100">100条/页</option>
@@ -96,15 +95,14 @@
       <table class="data-table" v-if="filteredQuestions.length > 0">        <thead>
           <tr>
             <!-- 概览模式下不显示复选框 -->
-            <th v-if="viewMode !== 'overview'" class="checkbox-col">
+            <th v-if="isNotOverviewMode" class="checkbox-col">
               <input 
                 type="checkbox" 
                 :checked="selectedItems.length === filteredQuestions.length && filteredQuestions.length > 0"
                 @change="selectAll"
               />
-            </th>
-              <!-- 概览模式简化表头 -->
-            <template v-if="viewMode === 'overview'">
+            </th>              <!-- 概览模式简化表头 -->
+            <template v-if="isOverviewMode">
               <th class="id-col">ID</th>
               <th class="title-col">原始问题</th>
               <th class="answers-col">原始回答</th>
@@ -114,23 +112,21 @@
               <!-- 其他模式的表头 -->
             <template v-else>
               <th class="id-col">ID</th>
-              <th class="title-col">
-                <span v-if="viewMode === 'questions'">标题</span>
-                <span v-else-if="viewMode === 'raw-answers'">原始回答内容</span>
-                <span v-else-if="viewMode === 'expert-answers'">专家回答内容</span>
+              <th class="title-col">                <span v-if="isQuestionsMode">标题</span>
+                <span v-else-if="isRawAnswersMode">原始回答内容</span>
+                <span v-else-if="isExpertAnswersMode">专家回答内容</span>
               </th>
               <th class="author-col">作者</th>
-              <th v-if="viewMode === 'raw-answers' || viewMode === 'expert-answers'" class="question-col">关联问题</th>
-              <th v-if="viewMode !== 'expert-answers'" class="stats-col">统计</th>
+              <th v-if="isRawAnswersMode || isExpertAnswersMode" class="question-col">关联问题</th>
+              <th v-if="!isExpertAnswersMode" class="stats-col">统计</th>
               <th class="tags-col">标签</th>
               <th class="date-col">创建时间</th>
               <th class="actions-col">操作</th>
             </template>
           </tr>
         </thead>        <tbody>          
-          <tr v-for="question in paginatedQuestions" :key="question.id" class="data-row">
-            <!-- 概览模式的简化行 -->
-            <template v-if="viewMode === 'overview'">
+          <tr v-for="question in paginatedQuestions" :key="question.id" class="data-row">            <!-- 概览模式的简化行 -->
+            <template v-if="isOverviewMode">
               <td class="id-col">{{ question.id }}</td>
               <td class="title-col">
                 <div class="cell-content">
@@ -141,21 +137,23 @@
                     {{ truncateText(question.body, 50) }}
                   </div>
                 </div>
-              </td>
+              </td>                
               <td class="answers-col">
                 <div class="answers-content">
                   <div v-if="question.raw_answers && question.raw_answers.length > 0" class="answer-group">
                     <div class="answer-count">{{ question.raw_answers.length }}个回答</div>
-                    <div class="answer-preview">{{ truncateText(question.raw_answers[0].content, 60) }}</div>
+                    <div class="answer-preview">{{ truncateText(question.raw_answers[0].answer || '', 60) }}</div>
                     <div v-if="question.raw_answers.length > 1" class="more-answers">+{{ question.raw_answers.length - 1 }}个</div>
                   </div>
                   <div v-else class="no-answers">暂无原始回答</div>
                 </div>
-              </td>              <td class="expert-answers-col">
+              </td>
+
+              <td class="expert-answers-col">
                 <div class="answers-content">
                   <div v-if="question.expert_answers && question.expert_answers.length > 0" class="answer-group">
                     <div class="answer-count">{{ question.expert_answers.length }}个专家回答</div>
-                    <div class="answer-preview">{{ truncateText(question.expert_answers[0].content, 60) }}</div>
+                    <div class="answer-preview">{{ truncateText(question.expert_answers[0].answer || '', 60) }}</div>
                     <div v-if="question.expert_answers.length > 1" class="more-answers">+{{ question.expert_answers.length - 1 }}个</div>
                   </div>
                   <div v-else class="no-answers">暂无专家回答</div>
@@ -200,7 +198,7 @@
                 </span>              </td>
               
               <!-- 非概览模式下显示关联问题信息 -->
-              <td v-if="viewMode === 'raw-answers' || viewMode === 'expert-answers'" class="question-col">
+              <td v-if="isRawAnswersMode || isExpertAnswersMode" class="question-col">
                 <div class="cell-content">
                   <div class="question-info" v-if="question.original_data && question.original_data.question">
                     <div class="question-title" :title="question.original_data.question.title">
@@ -217,21 +215,16 @@
               </td>
               
               <!-- 只在非专家回答模式下显示统计列 -->
-              <td v-if="viewMode !== 'expert-answers'" class="stats-col">
-                <div class="stats-content">
-                  <div class="stats-info">
-                    <!-- 原始问题模式显示浏览和点赞 -->
-                    <template v-if="viewMode === 'questions'">
+              <td v-if="!isExpertAnswersMode" class="stats-col">                
+                <div class="stats-content">                  <div class="stats-info">                    <!-- 概览和原始问题模式显示浏览和点赞 -->
+                    <template v-if="isOverviewOrQuestions">
                       <span v-if="question.view_count !== undefined && question.view_count !== null" class="stats-item">👁 {{ question.view_count }}</span>
                       <span v-if="question.vote_count !== undefined && question.vote_count !== null" class="stats-item">⭐ {{ question.vote_count }}</span>
-                    </template>
-                    <!-- 原始回答模式不显示浏览和点赞 -->
-                    <template v-else-if="viewMode === 'raw-answers'">
-                      <span class="stats-item">原始回答</span>
-                    </template>
-                    <!-- 专家回答模式不显示浏览和点赞 -->
-                    <template v-else-if="viewMode === 'expert-answers'">
-                      <span class="stats-item">专家回答</span>
+                    </template>                    <!-- 原始回答模式显示upvotes数量 -->
+                    <template v-else-if="isRawAnswersMode">
+                      <span v-if="question.original_data && question.original_data.score !== undefined && question.original_data.score !== null" class="stats-item">👍 {{ question.original_data.score }}</span>
+                      <span v-else-if="question.vote_count !== undefined && question.vote_count !== null" class="stats-item">👍 {{ question.vote_count }}</span>
+                      <span v-else class="stats-item">👍 0</span>
                     </template>
                   </div>
                 </div>
@@ -250,12 +243,12 @@
                     +{{ question.tags.length - 2 }}
                   </span>
                 </div>
-              </td>
+              </td>              
               <td class="date-col">
-                <span class="truncate-text" :title="formatDate(question.created_at || question.issued_at)">
-                  {{ formatDate(question.created_at || question.issued_at) }}
+                <span class="truncate-text" :title="formatDate(question.issued_at || question.created_at)">
+                  {{ formatDate(question.issued_at || question.created_at) }}
                 </span>
-              </td>
+              </td>              
               <td class="actions-col">
                 <div class="row-actions">
                   <button 
@@ -263,35 +256,170 @@
                     class="action-btn small"
                     title="查看详情"
                   >
-                    👁️
-                  </button>
-                  <button 
-                    @click.stop="editQuestion(question)" 
-                    class="action-btn small"
-                    title="编辑"
-                  >
-                    ✏️
-                  </button>
-                  <button 
-                    @click.stop="showDeleteConfirm(question)" 
-                    class="action-btn small danger"
-                    title="删除"
-                  >
-                    🗑️
-                  </button>
+                    👁️                  
+                  </button>                  <!-- 概览模式只允许查看，不允许编辑和删除 -->
+                  <template v-if="isNotOverviewMode">                    <!-- 原始问题模式 -->
+                    <template v-if="isQuestionsMode">
+                      <button 
+                        v-if="!question.is_deleted"
+                        @click.stop="editQuestion(question)" 
+                        class="action-btn small"
+                        title="编辑"
+                      >
+                        ✏️
+                      </button>
+                      <template v-if="!question.is_deleted">
+                        <button 
+                          @click.stop="softDeleteQuestion(question)" 
+                          class="action-btn small danger"
+                          title="删除问题"
+                        >
+                          🗑️
+                        </button>
+                      </template>
+                      <template v-else>
+                        <button 
+                          @click.stop="restoreQuestion(question)" 
+                          class="action-btn small success"
+                          title="恢复问题"
+                        >
+                          ♻️
+                        </button>
+                        <button 
+                          @click.stop="forceDeleteQuestion(question)" 
+                          class="action-btn small danger"
+                          title="永久删除问题"
+                        >
+                          💀
+                        </button>
+                      </template>
+                    </template>                    <!-- 原始回答模式 -->
+                    <template v-else-if="isRawAnswersMode">
+                      <button 
+                        v-if="!question.is_deleted"
+                        @click.stop="editRawAnswer(question)" 
+                        class="action-btn small"
+                        title="编辑原始回答"
+                      >
+                        ✏️
+                      </button>
+                      <template v-if="!question.is_deleted">
+                        <button 
+                          @click.stop="deleteRawAnswer(question)" 
+                          class="action-btn small danger"
+                          title="删除原始回答"
+                        >
+                          🗑️
+                        </button>
+                      </template>
+                      <template v-else>
+                        <button 
+                          @click.stop="restoreRawAnswer(question)" 
+                          class="action-btn small success"
+                          title="恢复原始回答"
+                        >
+                          ♻️
+                        </button>
+                        <button 
+                          @click.stop="forceDeleteRawAnswer(question)" 
+                          class="action-btn small danger"
+                          title="永久删除原始回答"
+                        >
+                          💀
+                        </button>
+                      </template>
+                    </template>                    <!-- 专家回答模式 -->
+                    <template v-else-if="isExpertAnswersMode">
+                      <button 
+                        v-if="!question.is_deleted"
+                        @click.stop="editExpertAnswer(question)" 
+                        class="action-btn small"
+                        title="编辑专家回答"
+                      >
+                        ✏️
+                      </button>
+                      <button 
+                        v-if="!question.is_deleted"
+                        @click.stop="deleteExpertAnswer(question)" 
+                        class="action-btn small danger"
+                        title="删除专家回答"
+                      >
+                        🗑️
+                      </button>
+                      <button 
+                        v-if="question.is_deleted"
+                        @click.stop="restoreExpertAnswer(question)" 
+                        class="action-btn small success"
+                        title="恢复专家回答"
+                      >
+                        ♻️
+                      </button>
+                    </template>
+                  </template>
                 </div>
               </td>
             </template>
           </tr>
         </tbody>
       </table>      <div v-if="loading" class="loading-state">
-        <p>加载中...</p>
+        <div class="loading-content">
+          <div class="loading-icon">⏳</div>
+          <p class="loading-text">加载中...</p>
+        </div>
       </div>
 
       <div v-else-if="filteredQuestions.length === 0" class="empty-state">
-        <p>暂无数据</p>
-        <p v-if="searchQuery">尝试调整搜索条件，或者<button @click="searchQuery = ''" class="link-btn">清除搜索</button></p>
-        <p v-else>您还没有添加任何问题，<button @click="addNewQuestion" class="link-btn">开始添加</button>或<button @click="showImportDialog" class="link-btn">导入数据</button></p>
+        <div class="empty-content">
+          <!-- 搜索无结果的情况 -->
+          <template v-if="searchQuery">
+            <div class="empty-icon">🔍</div>
+            <h3 class="empty-title">未找到匹配的数据</h3>
+            <p class="empty-description">尝试调整搜索条件，或者清除搜索重新查看所有数据</p>
+            <button @click="searchQuery = ''" class="empty-action-btn primary">
+              <span class="btn-icon">🔄</span>
+              清除搜索
+            </button>
+          </template>
+            <!-- 专家回答模式下无数据的情况 -->
+          <template v-else-if="isExpertAnswersMode">
+            <div class="empty-icon">👨‍🏫</div>
+            <h3 class="empty-title">暂无专家回答</h3>
+            <p class="empty-description">当前还没有专家回答数据。专家回答需要通过专家用户在专家仪表板中创建。</p>
+          </template>
+            <!-- 原始回答模式下无数据的情况 -->
+          <template v-else-if="isRawAnswersMode">
+            <div class="empty-icon">💬</div>
+            <h3 class="empty-title">暂无原始回答</h3>
+            <p class="empty-description">当前还没有原始回答数据。您可以通过导入数据或手动添加问题和回答来创建内容。</p>
+            <div class="empty-actions">
+              <button @click="addNewQuestion" class="empty-action-btn primary">
+                <span class="btn-icon">✏️</span>
+                手动添加问答
+              </button>
+              <button @click="showImportDialog" class="empty-action-btn secondary">
+                <span class="btn-icon">📁</span>
+                导入数据
+              </button>
+            </div>
+          </template>
+          
+          <!-- 默认情况（概览模式或问题模式）无数据 -->
+          <template v-else>
+            <div class="empty-icon">📝</div>
+            <h3 class="empty-title">暂无问题数据</h3>
+            <p class="empty-description">您还没有添加任何问题。开始创建您的第一个问题，或导入现有数据来快速开始。</p>
+            <div class="empty-actions">
+              <button @click="addNewQuestion" class="empty-action-btn primary">
+                <span class="btn-icon">✏️</span>
+                手动添加问题
+              </button>
+              <button @click="showImportDialog" class="empty-action-btn secondary">
+                <span class="btn-icon">📁</span>
+                导入数据
+              </button>
+            </div>
+          </template>
+        </div>
       </div>
     </div>    <!-- 分页 -->
     <div class="pagination" v-if="totalPages > 1">
@@ -399,8 +527,16 @@ const hasMore = ref(true) // 新增：是否还有更多数据
 const loadSize = ref(1000) // 新增：每次加载的数量
 
 // 视图模式状态
-const viewMode = ref<'overview' | 'questions' | 'raw-answers' | 'expert-answers'>('overview')
+const viewMode = ref<'overview' | 'questions' | 'raw-answers' | 'expert-answers'>('overview');
 const showMode = ref<'active_only' | 'deleted_only' | 'all'>('active_only')
+
+// 计算属性来避免TypeScript类型推断问题
+const isOverviewMode = computed(() => viewMode.value === 'overview')
+const isQuestionsMode = computed(() => viewMode.value === 'questions')
+const isRawAnswersMode = computed(() => viewMode.value === 'raw-answers')
+const isExpertAnswersMode = computed(() => viewMode.value === 'expert-answers')
+const isNotOverviewMode = computed(() => viewMode.value !== 'overview')
+const isOverviewOrQuestions = computed(() => viewMode.value === 'overview' || viewMode.value === 'questions')
 
 // 对话框状态
 const questionDialogVisible = ref(false)
@@ -491,13 +627,13 @@ const loadData = async (loadMore = false) => {
     } else if (showMode.value === 'deleted_only') {
       include_deleted = true
       deleted_only = true
-    }
-      // 根据视图模式调用不同的接口
+    }    // 根据视图模式调用不同的接口
     let response
     const skip = loadMore ? currentSkip.value : 0
     const limit = loadSize.value
-    
-    if (viewMode.value === 'overview' || viewMode.value === 'questions') {
+
+    if (viewMode.value === 'overview') {
+      // 使用概览接口，包含完整的嵌套回答数据
       response = await rawQuestionService.getRawQuestionsOverview(skip, limit, include_deleted, deleted_only)
       const newData = response.data || []
       if (loadMore) {
@@ -505,47 +641,70 @@ const loadData = async (loadMore = false) => {
       } else {
         allQuestions.value = newData
       }
-    } else if (viewMode.value === 'raw-answers') {
-      response = await rawQuestionService.getRawAnswersView(skip, limit, include_deleted, deleted_only)
-      // 将原始回答数据转换为问题格式以便在表格中显示
+    } else if (viewMode.value === 'questions') {
+      // 使用标准的原始问题接口
+      response = await rawQuestionService.getRawQuestions(skip, limit, include_deleted, deleted_only)
+      const newData = response || []
+      if (loadMore) {
+        allQuestions.value.push(...newData)
+      } else {
+        allQuestions.value = newData
+      }} else if (viewMode.value === 'raw-answers') {
+      response = await rawQuestionService.getRawAnswersView(skip, limit, include_deleted, deleted_only)      // 将原始回答数据转换为问题格式以便在表格中显示
       const newData = (response.data || []).map((answer: any) => ({
         id: answer.id,
-        title: answer.answer_text ? `${truncateText(answer.answer_text, 60)}` : '原始回答',
-        body: answer.answer_text,
-        author: answer.author || '匿名',
+        title: answer.answer ? `${truncateText(answer.answer, 60)}` : '原始回答',
+        body: answer.answer,
+        author: answer.answered_by || '匿名',
         view_count: 0,
-        vote_count: answer.vote_count || 0,
-        issued_at: answer.issued_at,
-        created_at: answer.created_at,
+        vote_count: answer.upvotes || 0,
+        issued_at: answer.answered_at, // note: 原始回答使用 answered_at 作为发布时间
+        created_at: answer.answered_at,
         is_deleted: answer.is_deleted,
         tags: answer.question?.tags || [],
         type: 'raw-answer',
+        url: answer.question?.url,
         original_data: answer,
-        raw_answers: [], // 确保有这些数组字段
+        // 构造原始回答数组，用于详情对话框显示
+        raw_answers: [{
+          id: answer.id,
+          answer: answer.answer,
+          answered_by: answer.answered_by,
+          answered_at: answer.answered_at,
+          upvotes: answer.upvotes,
+          is_deleted: answer.is_deleted
+        }],
         expert_answers: []
       }))
       if (loadMore) {
         allQuestions.value.push(...newData)
       } else {
         allQuestions.value = newData
-      }
-    } else if (viewMode.value === 'expert-answers') {
-      response = await rawQuestionService.getExpertAnswersView(skip, limit, include_deleted, deleted_only)
-      // 将专家回答数据转换为问题格式以便在表格中显示
+      }    } else if (viewMode.value === 'expert-answers') {
+      response = await rawQuestionService.getExpertAnswersView(skip, limit, include_deleted, deleted_only)      // 将专家回答数据转换为问题格式以便在表格中显示
       const newData = (response.data || []).map((answer: any) => ({
         id: answer.id,
-        title: answer.answer_text ? `${truncateText(answer.answer_text, 60)}` : '专家回答',
-        body: answer.answer_text,        
-        author: answer.expert_name || answer.author || '匿名专家',
+        title: answer.answer ? `${truncateText(answer.answer, 60)}` : '专家回答',
+        body: answer.answer,        
+        author: answer.answered_by || '匿名专家',
         view_count: undefined,
         vote_count: undefined,
-        issued_at: answer.issued_at,
-        created_at: answer.created_at,
+        issued_at: answer.answered_at, // note: 专家回答使用 answered_at 作为发布时间
+        created_at: answer.answered_at,
         is_deleted: answer.is_deleted,
-        tags: answer.question?.tags || [],        type: 'expert-answer',
-        raw_answers: [], // 确保有这些数组字段
-        expert_answers: [],
-        original_data: answer
+        tags: answer.question?.tags || [],
+        type: 'expert-answer',
+        url: answer.question?.url,
+        original_data: answer,
+        raw_answers: [],
+        // 构造专家回答数组，用于详情对话框显示
+        expert_answers: [{
+          id: answer.id,
+          answer: answer.answer,
+          answered_by: answer.answered_by,
+          answered_at: answer.answered_at,
+          is_deleted: answer.is_deleted
+        }]
       }))
       if (loadMore) {
         allQuestions.value.push(...newData)
@@ -613,6 +772,24 @@ const editQuestion = (question: RawQuestion) => {
   questionDialogVisible.value = true
 }
 
+// 编辑原始回答（仅显示提示信息，因为原始回答按设计不可编辑）
+const editRawAnswer = (question: RawQuestion) => {
+  if (question.is_deleted) {
+    showMessage('已删除的原始回答不允许编辑', 'warning')
+    return
+  }
+  showMessage('根据系统设计，原始回答内容不可编辑，只能删除或恢复', 'info')
+}
+
+// 编辑专家回答（仅显示提示信息，因为编辑功能需要专门的编辑器）
+const editExpertAnswer = (question: RawQuestion) => {
+  if (question.is_deleted) {
+    showMessage('已删除的专家回答不允许编辑', 'warning')
+    return
+  }
+  showMessage('专家回答编辑功能请使用专家仪表板', 'info')
+}
+
 const viewQuestion = (question: RawQuestion) => {
   console.log('查看问题详情:', question.title) // 添加调试日志
   currentQuestion.value = question
@@ -635,6 +812,118 @@ const deleteQuestion = async (question: RawQuestion) => {
   } catch (error) {
     console.error('删除问题失败:', error)
     showMessage('删除失败', 'error')
+  }
+}
+
+// 原始回答的删除恢复函数
+const deleteRawAnswer = async (question: RawQuestion) => {
+  if (!question.original_data) return
+  
+  try {
+    const answerId = question.original_data.id
+    await rawQuestionService.deleteRawAnswer(answerId)
+    
+    // 重新加载数据以确保显示状态正确
+    await loadData()
+    
+    // 从选中项中移除
+    selectedItems.value = selectedItems.value.filter(id => id !== answerId)
+    
+    showMessage('原始回答已删除', 'success')
+  } catch (error) {
+    console.error('删除原始回答失败:', error)
+    showMessage('删除原始回答失败', 'error')
+  }
+}
+
+const restoreRawAnswer = async (question: RawQuestion) => {
+  if (!question.original_data) return
+    try {
+    const answerId = question.original_data.id
+    await rawQuestionService.restoreRawAnswer(answerId)
+    
+    // 重新加载数据以确保显示状态正确
+    await loadData()
+    
+    // 从选中项中移除
+    selectedItems.value = selectedItems.value.filter(id => id !== answerId)
+    
+    showMessage('原始回答已恢复', 'success')
+  } catch (error: any) {
+    console.error('恢复原始回答失败:', error)
+    const errorMessage = error?.response?.data?.detail || error?.message || '恢复原始回答失败'
+    showMessage(errorMessage, 'error')
+  }
+}
+
+const forceDeleteRawAnswer = async (question: RawQuestion) => {
+  if (!question.original_data) return
+  
+  if (!confirm(`确定要永久删除这个原始回答吗？此操作无法撤销！`)) return
+  
+  try {
+    const answerId = question.original_data.id
+    
+    // 如果回答未被软删除，先软删除
+    if (!question.is_deleted) {
+      await rawQuestionService.deleteRawAnswer(answerId)
+    }
+    
+    // 然后强制删除
+    await rawQuestionService.forceDeleteRawAnswer(answerId)
+    
+    // 重新加载数据以确保显示状态正确
+    await loadData()
+    
+    // 从选中项中移除
+    selectedItems.value = selectedItems.value.filter(id => id !== answerId)
+    
+    showMessage('原始回答已永久删除', 'success')
+  } catch (error) {
+    console.error('强制删除原始回答失败:', error)
+    showMessage('强制删除原始回答失败', 'error')
+  }
+}
+
+// 专家回答的删除恢复函数
+const deleteExpertAnswer = async (question: RawQuestion) => {
+  if (!question.original_data) return
+  
+  try {
+    const answerId = question.original_data.id
+    await rawQuestionService.deleteExpertAnswer(answerId)
+    
+    // 重新加载数据以确保显示状态正确
+    await loadData()
+    
+    // 从选中项中移除
+    selectedItems.value = selectedItems.value.filter(id => id !== answerId)
+    
+    showMessage('专家回答已删除', 'success')
+  } catch (error) {
+    console.error('删除专家回答失败:', error)
+    showMessage('删除专家回答失败', 'error')
+  }
+}
+
+const restoreExpertAnswer = async (question: RawQuestion) => {
+  if (!question.original_data) return
+  
+  try {
+    const answerId = question.original_data.id
+    await rawQuestionService.restoreExpertAnswer(answerId)
+    
+    // 重新加载数据以确保显示状态正确
+    await loadData()
+    
+    // 从选中项中移除
+    selectedItems.value = selectedItems.value.filter(id => id !== answerId)
+    
+    showMessage('专家回答已恢复', 'success')
+  } catch (error: any) {
+    console.error('恢复专家回答失败:', error)
+    const errorMessage = error?.response?.data?.detail || error?.message || '恢复专家回答失败'
+    showMessage(errorMessage, 'error')
   }
 }
 
@@ -664,10 +953,15 @@ const deleteSelectedQuestions = async () => {
     // 使用批量删除API
     await rawQuestionService.deleteMultipleRawQuestions(selectedItems.value)
     
-    // 从本地数组中移除
-    allQuestions.value = allQuestions.value.filter(q => !selectedItems.value.includes(q.id))
-      const deletedCount = selectedItems.value.length
+    // 记录删除数量
+    const deletedCount = selectedItems.value.length
+    
+    // 清空选中项
     selectedItems.value = []
+    
+    // 重新加载数据以确保显示状态正确
+    await loadData()
+    
     showMessage(`已删除 ${deletedCount} 个问题`, 'success')
   } catch (error) {
     console.error('批量删除失败:', error)
@@ -716,7 +1010,7 @@ const handleQuestionAnswerSave = async (data: { question: Partial<RawQuestion>, 
   try {
     // 首先创建问题
     const questionResponse = await rawQuestionService.createRawQuestion(data.question)
-    const questionId = questionResponse.data?.id || questionResponse.id
+    const questionId = questionResponse.id
     
     if (!questionId) {
       throw new Error('创建问题失败，未获取到问题ID')
@@ -759,43 +1053,63 @@ const handleStandardQACreated = () => {
 }
 
 const handleDetailEdit = (question: RawQuestion) => {
+  // 检查问题是否已被删除，已删除的问题不允许编辑
+  if (question.is_deleted) {
+    showMessage('已删除的问题不允许编辑', 'warning')
+    return
+  }
+  
   detailDialogVisible.value = false
   editQuestion(question)
 }
 
 // 删除确认和处理
 const showDeleteConfirm = (question: RawQuestion) => {
-  const message = question.is_deleted 
-    ? `问题 "${question.title}" 已被软删除。\n\n请选择操作：\n- 确定：恢复问题\n- 取消：永久删除问题`
-    : `确定要删除问题 "${question.title}" 吗？`
-  
   if (question.is_deleted) {
-    // 已删除的问题，询问是恢复还是永久删除
-    if (confirm(message)) {
-      restoreQuestion(question)
-    } else {
-      if (confirm(`确定要永久删除问题 "${question.title}" 吗？此操作无法撤销！`)) {
-        forceDeleteQuestion(question)
-      }
-    }
+    // 已删除的问题，显示恢复和强制删除选项
+    showDeletedQuestionActions(question)
   } else {
     // 未删除的问题，直接软删除
+    const message = `确定要删除问题 "${question.title}" 吗？`
     if (confirm(message)) {
       softDeleteQuestion(question)
     }
   }
 }
 
+// 显示已删除问题的操作选项
+const showDeletedQuestionActions = (question: RawQuestion) => {
+  // 创建一个更友好的操作选择界面
+  const choice = window.confirm(
+    `问题 "${question.title}" 已被软删除。\n\n点击"确定"恢复问题，点击"取消"查看永久删除选项。`
+  )
+  
+  if (choice) {
+    // 用户选择恢复
+    restoreQuestion(question)
+  } else {
+    // 用户选择查看永久删除选项
+    const forceDelete = window.confirm(
+      `您选择了查看删除选项。\n\n点击"确定"将永久删除问题 "${question.title}"，此操作无法撤销！\n点击"取消"将不执行任何操作。`
+    )
+    
+    if (forceDelete) {
+      forceDeleteQuestion(question)
+    }
+    // 如果用户取消，不执行任何操作
+  }
+}
+
 // 删除功能
 const softDeleteQuestion = async (question: RawQuestion) => {
   try {
-    await rawQuestionService.updateRawQuestion(question.id, { is_deleted: true })
+    await rawQuestionService.deleteRawQuestion(question.id);
     
-    // 更新本地状态
-    const index = allQuestions.value.findIndex(q => q.id === question.id)
-    if (index !== -1) {
-      allQuestions.value[index].is_deleted = true
-    }
+    // 重新加载数据以确保显示状态正确
+    await loadData()
+    
+    // 从选中项中移除
+    selectedItems.value = selectedItems.value.filter(id => id !== question.id)
     
     showMessage('问题已软删除', 'success')
   } catch (error) {
@@ -806,18 +1120,19 @@ const softDeleteQuestion = async (question: RawQuestion) => {
 
 const restoreQuestion = async (question: RawQuestion) => {
   try {
-    await rawQuestionService.updateRawQuestion(question.id, { is_deleted: false })
+    await rawQuestionService.restoreRawQuestion(question.id)
     
-    // 更新本地状态
-    const index = allQuestions.value.findIndex(q => q.id === question.id)
-    if (index !== -1) {
-      allQuestions.value[index].is_deleted = false
-    }
+    // 重新加载数据以确保显示状态正确
+    await loadData()
+    
+    // 从选中项中移除
+    selectedItems.value = selectedItems.value.filter(id => id !== question.id)
     
     showMessage('问题已恢复', 'success')
-  } catch (error) {
+  } catch (error: any) {
     console.error('恢复失败:', error)
-    showMessage('恢复失败', 'error')
+    const errorMessage = error?.response?.data?.detail || error?.message || '恢复失败'
+    showMessage(errorMessage, 'error')
   }
 }
 
@@ -831,11 +1146,8 @@ const forceDeleteQuestion = async (question: RawQuestion) => {
     // 然后强制删除
     await rawQuestionService.forceDeleteRawQuestion(question.id)
     
-    // 从本地数组中移除
-    const index = allQuestions.value.findIndex(q => q.id === question.id)
-    if (index !== -1) {
-      allQuestions.value.splice(index, 1)
-    }
+    // 重新加载数据以确保显示状态正确
+    await loadData()
     
     // 从选中项中移除
     selectedItems.value = selectedItems.value.filter(id => id !== question.id)
@@ -1673,5 +1985,172 @@ onMounted(() => {
   outline: none;
   border-color: #409eff;
   box-shadow: 0 0 0 2px rgba(64, 158, 255, 0.2);
+}
+
+/* 加载状态样式 */
+.loading-state {
+  display: flex;
+  justify-content: center;
+  align-items: center;
+  padding: 80px 20px;
+  background: white;
+  border-radius: 12px;
+  box-shadow: 0 2px 8px rgba(0, 0, 0, 0.08);
+}
+
+.loading-content {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  gap: 16px;
+}
+
+.loading-icon {
+  font-size: 48px;
+  animation: pulse 2s ease-in-out infinite;
+}
+
+@keyframes pulse {
+  0%, 100% { opacity: 1; }
+  50% { opacity: 0.5; }
+}
+
+.loading-text {
+  color: #606266;
+  font-size: 16px;
+  font-weight: 500;
+  margin: 0;
+}
+
+/* 空状态样式 */
+.empty-state {
+  display: flex;
+  justify-content: center;
+  align-items: center;
+  padding: 80px 20px;
+  background: white;
+  border-radius: 12px;
+  box-shadow: 0 2px 8px rgba(0, 0, 0, 0.08);
+  margin: 24px 0;
+}
+
+.empty-content {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  text-align: center;
+  max-width: 480px;
+  gap: 20px;
+}
+
+.empty-icon {
+  font-size: 64px;
+  opacity: 0.6;
+  margin-bottom: 8px;
+}
+
+.empty-title {
+  font-size: 24px;
+  font-weight: 600;
+  color: #303133;
+  margin: 0;
+  line-height: 1.3;
+}
+
+.empty-description {
+  font-size: 16px;
+  color: #606266;
+  line-height: 1.6;
+  margin: 0;
+}
+
+.empty-actions {
+  display: flex;
+  gap: 16px;
+  flex-wrap: wrap;
+  justify-content: center;
+  margin-top: 8px;
+}
+
+.empty-action-btn {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  padding: 12px 24px;
+  border: 1px solid #dcdfe6;
+  border-radius: 8px;
+  background: white;
+  color: #303133;
+  text-decoration: none;
+  cursor: pointer;
+  font-size: 14px;
+  font-weight: 500;
+  transition: all 0.3s ease;
+  box-shadow: 0 2px 4px rgba(0, 0, 0, 0.05);
+  min-width: 140px;
+  justify-content: center;
+}
+
+.empty-action-btn:hover {
+  transform: translateY(-2px);
+  box-shadow: 0 4px 12px rgba(0, 0, 0, 0.12);
+}
+
+.empty-action-btn.primary {
+  background: linear-gradient(135deg, #409eff 0%, #337ecc 100%);
+  border-color: #409eff;
+  color: white;
+}
+
+.empty-action-btn.primary:hover {
+  background: linear-gradient(135deg, #337ecc 0%, #2b6cb0 100%);
+  border-color: #337ecc;
+}
+
+.empty-action-btn.secondary {
+  background: #f8f9fb;
+  border-color: #e4e7ed;
+  color: #606266;
+}
+
+.empty-action-btn.secondary:hover {
+  background: #ecf5ff;
+  border-color: #b3d8ff;
+  color: #409eff;
+}
+
+.empty-action-btn .btn-icon {
+  font-size: 16px;
+}
+
+/* 响应式设计 */
+@media (max-width: 768px) {
+  .empty-content {
+    max-width: 320px;
+    gap: 16px;
+  }
+  
+  .empty-icon {
+    font-size: 48px;
+  }
+  
+  .empty-title {
+    font-size: 20px;
+  }
+  
+  .empty-description {
+    font-size: 14px;
+  }
+  
+  .empty-actions {
+    flex-direction: column;
+    gap: 12px;
+    width: 100%;
+  }
+  
+  .empty-action-btn {
+    width: 100%;
+    min-width: unset;
+  }
 }
 </style>

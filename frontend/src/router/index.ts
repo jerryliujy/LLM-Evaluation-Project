@@ -75,13 +75,13 @@ router.beforeEach((to, from, next) => {
   
   // 检查是否需要认证
   if (to.meta.requiresAuth) {
-    if (!user || !token) {
-      // 清除可能残留的认证信息
-      localStorage.removeItem('userInfo')
-      localStorage.removeItem('token')
-      next({ name: 'RoleSelection' })
-      return
-    }
+    // if (!user || !token) {
+    //   // 清除可能残留的认证信息
+    //   localStorage.removeItem('userInfo')
+    //   localStorage.removeItem('token')
+    //   next({ name: 'RoleSelection' })
+    //   return
+    // }
 
     // 检查角色权限
     if (to.meta.role && user.role !== to.meta.role) {

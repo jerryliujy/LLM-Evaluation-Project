@@ -3,9 +3,9 @@ from typing import Optional, List
 from datetime import datetime
 
 class StdAnswerScoringPointBase(BaseModel):
-    scoring_point_text: str
+    answer: str  # 统一字段名为answer
     point_order: Optional[int] = 0
-    created_by: Optional[str] = None
+    created_by: Optional[int] = None  # 改为int类型用户ID
 
 class StdAnswerScoringPointCreate(StdAnswerScoringPointBase):
     pass
@@ -15,7 +15,6 @@ class StdAnswerScoringPoint(StdAnswerScoringPointBase):
     std_answer_id: int
     is_valid: bool
     create_time: datetime
-    version: int
     previous_version_id: Optional[int] = None
 
     class Config:
@@ -23,7 +22,7 @@ class StdAnswerScoringPoint(StdAnswerScoringPointBase):
 
 class StdAnswerBase(BaseModel):
     answer: str
-    created_by: Optional[str] = None
+    answered_by: Optional[int] = None  # 统一为answered_by，并改为int类型用户ID
 
 class StdAnswerCreate(StdAnswerBase):
     std_question_id: Optional[int] = None  # 在嵌套创建时不需要，在独立创建时需要
@@ -35,8 +34,7 @@ class StdAnswerCreate(StdAnswerBase):
 
 class StdAnswerUpdate(BaseModel):
     answer: Optional[str] = None
-    created_by: Optional[str] = None
-    version: Optional[int] = None
+    answered_by: Optional[int] = None  # 统一为answered_by
     previous_version_id: Optional[int] = None
     scoring_points: Optional[List[StdAnswerScoringPointCreate]] = None
     referenced_raw_answer_ids: Optional[List[int]] = None
@@ -46,8 +44,7 @@ class StdAnswer(StdAnswerBase):
     id: int
     std_question_id: int
     is_valid: bool
-    create_time: datetime
-    version: int
+    answered_at: datetime  # 统一为answered_at
     previous_version_id: Optional[int] = None
 
     class Config:

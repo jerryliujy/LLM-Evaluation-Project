@@ -282,8 +282,8 @@
                 >
                   <div class="relation-content">
                     <strong>原始回答</strong>
-                    <p>{{ truncateText(answer.content, 100) }}</p>
-                    <small>{{ answer.author || '匿名' }} · {{ formatDate(answer.answered_at) }}</small>
+                    <p>{{ truncateText(answer.answer, 100) }}</p>
+                    <small>{{ answer.answered_by || '匿名' }} · {{ formatDate(answer.answered_at) }}</small>
                   </div>
                   <div class="relation-config">
                     <input
@@ -303,11 +303,10 @@
                   v-for="(answer, index) in selectedExpertAnswers" 
                   :key="answer.id"
                   class="relation-item"
-                >
-                  <div class="relation-content">
+                >                  <div class="relation-content">
                     <strong>专家回答</strong>
-                    <p>{{ truncateText(answer.content, 100) }}</p>
-                    <small>来源: {{ answer.source }} | 作者: {{ answer.author || '匿名' }}</small>
+                    <p>{{ truncateText(answer.answer, 100) }}</p>
+                    <small>回答者: {{ answer.answered_by || '匿名' }}</small>
                   </div>
                   <div class="relation-config">
                     <input
@@ -475,7 +474,7 @@ watch(() => props.selectedItems, () => {
   if (selectedExpertAnswers.value.length === 1) {
     const expertAnswer = selectedExpertAnswers.value[0]
     if (!formData.value.answer_text) {
-      formData.value.answer_text = expertAnswer.content
+      formData.value.answer_text = expertAnswer.answer
     }
   }
 
@@ -665,27 +664,26 @@ const handleSave = async () => {
   if (!validateForm()) return
 
   try {
-    loading.value = true
-
-    // 获取当前用户信息
+    loading.value = true    // 获取当前用户信息
     const currentUser = authService.getCurrentUserFromStorage()
-    const created_by = currentUser?.username || 'anonymous'
+    const user_id = currentUser?.id || 1 // 默认使用用户ID 1
 
     // 构建要提交的数据
     const requestData: CreateStandardQARequest = {
       ...formData.value,
-      created_by,
+      created_by: user_id,
+      answered_by: user_id,
       raw_question_relations: rawQuestionRelations.value.map(rel => ({
         ...rel,
-        created_by
+        created_by: user_id
       })),
       raw_answer_relations: rawAnswerRelations.value.map(rel => ({
         ...rel,
-        created_by
+        created_by: user_id
       })),
       expert_answer_relations: expertAnswerRelations.value.map(rel => ({
         ...rel,
-        created_by
+        created_by: user_id
       }))
     }
 

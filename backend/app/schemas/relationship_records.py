@@ -8,7 +8,7 @@ class StdAnswerRawAnswerRecordBase(BaseModel):
     std_answer_id: int
     raw_answer_id: int
     notes: Optional[str] = None
-    created_by: Optional[str] = None
+    created_by: Optional[int] = None
 
 
 class StdAnswerRawAnswerRecordCreate(StdAnswerRawAnswerRecordBase):
@@ -26,7 +26,7 @@ class StdAnswerExpertAnswerRecordBase(BaseModel):
     std_answer_id: int
     expert_answer_id: int
     notes: Optional[str] = None
-    created_by: Optional[str] = None
+    created_by: Optional[int] = None
 
 
 class StdAnswerExpertAnswerRecordCreate(StdAnswerExpertAnswerRecordBase):
@@ -44,7 +44,7 @@ class StdQuestionRawQuestionRecordBase(BaseModel):
     std_question_id: int
     raw_question_id: int
     notes: Optional[str] = None
-    created_by: Optional[str] = None
+    created_by: Optional[int] = None
 
 class StdQuestionRawQuestionRecordCreate(StdQuestionRawQuestionRecordBase):
     pass

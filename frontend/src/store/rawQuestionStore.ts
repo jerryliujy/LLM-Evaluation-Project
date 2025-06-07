@@ -29,78 +29,7 @@ export const useRawQuestionStore = defineStore("rawQuestion", {
       this.currentPage = 0;
       this.clearSelections();
       this.loadFromLocalStorage();
-      
-      // 如果本地没有数据，创建一些示例数据
-      if (this.questions.length === 0) {
-        await this.loadMoreQuestions();
-      }
       this.hasMore = false; // 本地存储模式下不需要分页
-    },
-
-    async loadMoreQuestions() {
-      if (this.isLoading || !this.hasMore) return;
-      this.isLoading = true;
-
-      try {
-        // 创建示例数据
-        const mockQuestions: RawQuestion[] = [
-          {
-            id: Date.now() + Math.random(),
-            title: "如何在 React 中使用 TypeScript？",
-            body: "我想在现有的 React 项目中引入 TypeScript，请问应该如何配置和使用？有什么最佳实践吗？",
-            author: "React新手",
-            tags: ["javascript", "typescript", "react"],
-            issued_at: new Date().toISOString(),
-            view_count: 156,
-            vote_count: 12,
-            raw_answers: [
-              {
-                id: Date.now() + Math.random() + 1,
-                question_id: Date.now() + Math.random(),
-                content: "你可以使用 Create React App 的 TypeScript 模板来快速开始...",
-                author: "资深开发者",
-                vote_count: 8,
-                answered_at: new Date().toISOString(),
-                is_deleted: false
-              }
-            ],
-            expert_answers: [
-              {
-                id: Date.now() + Math.random() + 2,
-                question_id: Date.now() + Math.random(),
-                content: "TypeScript 与 React 结合使用的最佳实践包括：1. 正确定义组件 Props 类型 2. 使用泛型处理状态...",
-                source: "官方文档",
-                author: "TypeScript 专家",
-                created_at: new Date().toISOString(),
-                is_deleted: false
-              }
-            ],
-            is_deleted: false,
-          },
-          {
-            id: Date.now() + Math.random() + 100,
-            title: "Docker 容器化部署最佳实践",
-            body: "项目需要使用 Docker 进行容器化部署，请问有哪些需要注意的事项和最佳实践？",
-            author: "DevOps工程师",
-            tags: ["docker", "deployment", "devops"],
-            issued_at: new Date().toISOString(),
-            view_count: 89,
-            vote_count: 6,
-            raw_answers: [],
-            expert_answers: [],
-            is_deleted: false,
-          },
-        ];
-
-        this.questions.push(...mockQuestions);
-        this.saveToLocalStorage();
-        this.hasMore = false;
-        this.currentPage++;
-      } catch (error) {
-        console.error("Failed to fetch raw questions:", error);
-      } finally {
-        this.isLoading = false;
-      }
     },
 
     toggleSelection(

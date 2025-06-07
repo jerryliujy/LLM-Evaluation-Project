@@ -154,7 +154,7 @@ def create_std_question_from_raw(
     raw_question_id: int,
     dataset_id: int,
     question_type: str = "single_choice",
-    created_by: Optional[str] = None,
+    created_by: Optional[int] = None,  # 改为int类型用户ID
     db: Session = Depends(get_db)
 ):
     """从原始问题创建标准问题"""
@@ -167,24 +167,10 @@ def create_std_question_from_raw(
     if not db.query(Dataset).filter(Dataset.id == dataset_id).first():
         raise HTTPException(status_code=404, detail="Dataset not found")
     
-    # 检查是否已存在相同的标准问题
-    existing = db.query(StdQuestion).filter(
-        StdQuestion.raw_question_id == raw_question_id,
-        StdQuestion.dataset_id == dataset_id,
-        StdQuestion.is_valid == True
-    ).first()
-    
-    if existing:
-        raise HTTPException(
-            status_code=400, 
-            detail="Standard question already exists for this raw question in this dataset"
-        )
-    
     # 创建标准问题
     std_question_data = StdQuestionCreate(
         dataset_id=dataset_id,
-        raw_question_id=raw_question_id,
-        text=raw_question.title,  # 使用原始问题的标题作为标准问题文本
+        body=raw_question.title,  # 使用body字段，并使用原始问题的标题
         question_type=question_type,
         created_by=created_by
     )

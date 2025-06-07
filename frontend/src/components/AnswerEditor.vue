@@ -58,12 +58,11 @@
               v-for="(historyItem, index) in answerHistory" 
               :key="index"
               class="history-item"
-            >
-              <div class="history-header">
-                <span class="history-date">{{ formatDate(historyItem.created_at) }}</span>
+            >              <div class="history-header">
+                <span class="history-date">{{ formatDate(historyItem.answered_at) }}</span>
               </div>
               <div class="history-content">
-                {{ truncateText(historyItem.content, 200) }}
+                {{ truncateText(historyItem.answer, 200) }}
               </div>
             </div>
           </div>
@@ -105,7 +104,7 @@ const isEditing = computed(() => !!props.answer)
 // 生命周期
 onMounted(async () => {
   if (props.answer) {
-    answerContent.value = props.answer.content
+    answerContent.value = props.answer.answer
     await loadAnswerHistory()
   }
 })
@@ -113,7 +112,7 @@ onMounted(async () => {
 // 监听props变化
 watch(() => props.answer, (newAnswer) => {
   if (newAnswer) {
-    answerContent.value = newAnswer.content
+    answerContent.value = newAnswer.answer
   } else {
     answerContent.value = ''
   }
@@ -126,17 +125,16 @@ async function saveAnswer() {
   saving.value = true
   try {
     let savedAnswer: ExpertAnswer
-    
-    if (isEditing.value && props.answer) {
+      if (isEditing.value && props.answer) {
       // 更新现有回答
       savedAnswer = await expertService.updateAnswer(props.answer.id, {
-        content: answerContent.value.trim()
+        answer: answerContent.value.trim()
       })
     } else {
       // 创建新回答
       savedAnswer = await expertService.createAnswer({
         question_id: props.question.id,
-        content: answerContent.value.trim()
+        answer: answerContent.value.trim()
       })
     }
     

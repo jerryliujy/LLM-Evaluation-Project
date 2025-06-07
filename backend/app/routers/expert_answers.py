@@ -41,10 +41,13 @@ def restore_expert_answer_api(answer_id: int, db: Session = Depends(get_db)):
     if not initial_check.is_deleted:
         raise HTTPException(status_code=400, detail="ExpertAnswer is not marked as deleted")
     
-    db_answer = crud_expert_answer.set_expert_answer_deleted_status(db, answer_id=answer_id, deleted_status=False)
-    if db_answer is None:
-        raise HTTPException(status_code=404, detail="Error restoring ExpertAnswer")
-    return db_answer
+    try:
+        db_answer = crud_expert_answer.set_expert_answer_deleted_status(db, answer_id=answer_id, deleted_status=False)
+        if db_answer is None:
+            raise HTTPException(status_code=404, detail="Error restoring ExpertAnswer")
+        return db_answer
+    except ValueError as e:
+        raise HTTPException(status_code=400, detail=str(e))
 
 @router.delete("/{answer_id}/force-delete/", response_model=Msg)
 def force_delete_expert_answer_api(answer_id: int, db: Session = Depends(get_db)):
@@ -73,5 +76,8 @@ def delete_multiple_expert_answers_api(answer_ids: List[int] = Body(...), db: Se
 def restore_multiple_expert_answers_api(answer_ids: List[int] = Body(...), db: Session = Depends(get_db)):
     if not answer_ids:
         raise HTTPException(status_code=400, detail="No answer IDs provided")
-    num_restored = crud_expert_answer.set_multiple_expert_answers_deleted_status(db, answer_ids=answer_ids, deleted_status=False)
-    return Msg(message=f"Successfully marked {num_restored} expert answers as not deleted")
+    try:
+        num_restored = crud_expert_answer.set_multiple_expert_answers_deleted_status(db, answer_ids=answer_ids, deleted_status=False)
+        return Msg(message=f"Successfully marked {num_restored} expert answers as not deleted")
+    except ValueError as e:
+        raise HTTPException(status_code=400, detail=str(e))

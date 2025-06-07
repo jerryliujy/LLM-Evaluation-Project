@@ -80,14 +80,21 @@ def set_raw_question_deleted_status(db: Session, question_id: int, deleted_statu
     db_question = db.query(models.RawQuestion).filter(models.RawQuestion.id == question_id).first()
     if db_question:
         db_question.is_deleted = deleted_status
-        # Note: Cascading soft delete for answers is handled by relationship cascade="all, delete-orphan"
-        # if SQLAlchemy is configured for it, or manually:
-        # if deleted_status:
-        #     for ra in db_question.raw_answers: ra.is_deleted = True
-        #     for ca in db_question.crowdsourced_answers: ca.is_deleted = True
-        # Else, if restoring, answers might need separate restoration if they were individually deleted.
-        # For simplicity, this example assumes deleting a question makes its answers effectively inaccessible
-        # unless restored with the question or individually.
+        
+        # 只在删除时级联删除相关回答，恢复时不自动恢复回答
+        if deleted_status:  # 删除操作 - 级联删除相关回答
+            # 软删除所有相关的原始回答和专家回答
+            db.query(RawAnswer).filter(
+                RawAnswer.question_id == question_id,
+                RawAnswer.is_deleted == False
+            ).update({"is_deleted": True}, synchronize_session=False)
+            
+            db.query(ExpertAnswer).filter(
+                ExpertAnswer.question_id == question_id,
+                ExpertAnswer.is_deleted == False
+            ).update({"is_deleted": True}, synchronize_session=False)
+        # 恢复问题时不自动恢复回答，回答需要单独恢复
+        
         db.commit()
         db.refresh(db_question)
         # For response, reload with filtered answers if it's a restore operation
@@ -99,6 +106,22 @@ def set_raw_question_deleted_status(db: Session, question_id: int, deleted_statu
 def set_multiple_raw_questions_deleted_status(db: Session, question_ids: List[int], deleted_status: bool) -> int:
     if not question_ids: 
         return 0
+    
+    # 只在删除时级联删除相关回答，恢复时不自动恢复回答
+    if deleted_status:  # 删除操作 - 级联删除相关回答
+        # 软删除所有相关的原始回答和专家回答
+        db.query(RawAnswer).filter(
+            RawAnswer.question_id.in_(question_ids),
+            RawAnswer.is_deleted == False
+        ).update({"is_deleted": True}, synchronize_session=False)
+        
+        db.query(ExpertAnswer).filter(
+            ExpertAnswer.question_id.in_(question_ids),
+            ExpertAnswer.is_deleted == False
+        ).update({"is_deleted": True}, synchronize_session=False)
+    # 恢复问题时不自动恢复回答，回答需要单独恢复
+    
+    # 更新问题状态
     num_updated = db.query(models.RawQuestion).filter(models.RawQuestion.id.in_(question_ids)).update({"is_deleted": deleted_status}, synchronize_session=False)
     db.commit()
     return num_updated

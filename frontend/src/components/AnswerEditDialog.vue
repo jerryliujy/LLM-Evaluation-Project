@@ -11,10 +11,9 @@
       :rules="rules"
       label-width="80px"
       label-position="top"
-    >
-      <el-form-item label="回答内容" prop="content">
+    >      <el-form-item label="回答内容" prop="answer">
         <el-input
-          v-model="formData.content"
+          v-model="formData.answer"
           type="textarea"
           placeholder="请输入回答内容"
           :rows="8"
@@ -23,21 +22,18 @@
         />
       </el-form-item>
 
-      <el-row :gutter="20">
-        <el-col :span="12">
-          <el-form-item label="作者">
+      <el-row :gutter="20">        <el-col :span="12">
+          <el-form-item label="回答者">
             <el-input
-              v-model="formData.author"
-              placeholder="请输入作者名称"
+              v-model="formData.answered_by"
+              placeholder="请输入回答者名称"
             />
           </el-form-item>
-        </el-col>
-        <el-col :span="12">
+        </el-col>        <el-col :span="12" v-if="type === 'raw'">
           <el-form-item label="投票数">
-            <el-input-number
-              v-model="formData.vote_count"
-              controls-position="right"
-              style="width: 100%"
+            <el-input
+              v-model="formData.upvotes"
+              placeholder="请输入投票数"              
             />
           </el-form-item>
         </el-col>
@@ -51,13 +47,12 @@
               placeholder="请输入答案来源"
             />
           </el-form-item>
-        </el-col>
-        <el-col :span="12">
-          <el-form-item label="创建时间">
+        </el-col>        <el-col :span="12">
+          <el-form-item label="回答时间">
             <el-date-picker
-              v-model="formData.created_at"
+              v-model="formData.answered_at"
               type="datetime"
-              placeholder="选择创建时间"
+              placeholder="选择回答时间"
               style="width: 100%"
               format="YYYY-MM-DD HH:mm:ss"
               value-format="YYYY-MM-DD HH:mm:ss"
@@ -138,13 +133,14 @@ const loading = ref(false)
 
 // 表单数据
 const formData = ref({
-  content: '',
-  author: '',
-  vote_count: 0,
+  answer: '',
+  answered_by: '',
+  upvotes: '0',
   question_id: 0,
-  source: '', // 专家回答专用
-  created_at: '', // 专家回答专用
-  answered_at: '' // 原始回答专用
+  answered_at: '',
+  source: '',
+  created_by: '',
+  create_time: ''
 })
 
 // 计算属性
@@ -162,23 +158,24 @@ const dialogTitle = computed(() => {
 
 const availableQuestions = computed(() => store.questions)
 
-// 重置表单 - 需要在watch之前定义
+// 重置表单
 const resetForm = () => {
   const now = new Date().toISOString().slice(0, 19).replace('T', ' ')
   formData.value = {
-    content: '',
-    author: '',
-    vote_count: 0,
+    answer: '',
+    answered_by: '',
+    upvotes: '0',
     question_id: 0,
+    answered_at: now,
     source: '',
-    created_at: now,
-    answered_at: now
+    created_by: '',
+    create_time: now
   }
 }
 
 // 表单验证规则
 const rules: FormRules = {
-  content: [
+  answer: [
     { required: true, message: '请输入回答内容', trigger: 'blur' },
     { min: 10, message: '回答内容至少需要10个字符', trigger: 'blur' }
   ],
@@ -189,7 +186,7 @@ const rules: FormRules = {
     { 
       required: true, 
       message: '请输入专家回答来源', 
-      trigger: 'blur',      // 只在专家回答时验证
+      trigger: 'blur',
       validator: (rule: any, value: string, callback: (error?: Error) => void) => {
         if (props.type === 'expert' && !value) {
           callback(new Error('请输入专家回答来源'))
@@ -204,20 +201,21 @@ const rules: FormRules = {
 // 监听props变化
 watch(() => props.answer, (newAnswer) => {
   if (newAnswer) {
+    const answered_at = newAnswer.answered_at 
+      ? (typeof newAnswer.answered_at === 'string' 
+         ? newAnswer.answered_at 
+         : newAnswer.answered_at.toISOString().slice(0, 19).replace('T', ' '))
+      : ''
+    
     formData.value = {
-      content: newAnswer.content,
-      author: newAnswer.author || '',
-      vote_count: newAnswer.vote_count || 0,
+      answer: newAnswer.answer,
+      answered_by: newAnswer.answered_by || '',
+      upvotes: String((newAnswer as RawAnswer).upvotes || '0'),
       question_id: newAnswer.question_id,
-      source: (newAnswer as ExpertAnswer).source || '',
-      created_at: (newAnswer as ExpertAnswer).created_at ? 
-        (typeof (newAnswer as ExpertAnswer).created_at === 'string' 
-          ? (newAnswer as ExpertAnswer).created_at as string
-          : ((newAnswer as ExpertAnswer).created_at as Date).toISOString()) : '',
-      answered_at: (newAnswer as RawAnswer).answered_at ? 
-        (typeof (newAnswer as RawAnswer).answered_at === 'string' 
-          ? (newAnswer as RawAnswer).answered_at as string
-          : ((newAnswer as RawAnswer).answered_at as Date).toISOString()) : ''
+      answered_at,
+      source: (newAnswer as any).source || '',
+      created_by: (newAnswer as any).created_by || '',
+      create_time: (newAnswer as any).create_time || ''
     }
   } else {
     resetForm()
@@ -232,16 +230,13 @@ const handleClose = () => {
 
 const handleSave = async () => {
   if (!formRef.value) return
-
   try {
     await formRef.value.validate()
     loading.value = true
 
     const baseAnswerData = {
-      id: props.answer?.id || Date.now() + Math.random(),
-      content: formData.value.content,
-      author: formData.value.author,
-      vote_count: formData.value.vote_count,
+      id: props.answer?.id || 0,
+      answer: formData.value.answer,
       question_id: formData.value.question_id,
       is_deleted: false
     }
@@ -249,8 +244,8 @@ const handleSave = async () => {
     if (props.type === 'expert') {
       const expertAnswerData: ExpertAnswer = {
         ...baseAnswerData,
-        source: formData.value.source,
-        created_at: formData.value.created_at || new Date().toISOString()
+        answered_by: formData.value.answered_by,
+        answered_at: formData.value.answered_at
       }
 
       if (isEdit.value) {
@@ -261,7 +256,9 @@ const handleSave = async () => {
     } else {
       const rawAnswerData: RawAnswer = {
         ...baseAnswerData,
-        answered_at: formData.value.answered_at || new Date().toISOString()
+        answered_by: formData.value.answered_by,
+        answered_at: formData.value.answered_at,
+        upvotes: formData.value.upvotes
       }
 
       if (isEdit.value) {
@@ -273,8 +270,10 @@ const handleSave = async () => {
 
     emit('save')
     ElMessage.success(isEdit.value ? '回答已更新' : '回答已创建')
+    handleClose()
   } catch (error) {
     console.error('保存回答失败:', error)
+    ElMessage.error('保存失败，请重试')
   } finally {
     loading.value = false
   }

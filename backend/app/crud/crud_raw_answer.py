@@ -52,15 +52,46 @@ def create_raw_answer(db: Session, answer: schemas.RawAnswerCreate) -> models.Ra
 
 def set_raw_answer_deleted_status(db: Session, answer_id: int, deleted_status: bool) -> Optional[models.RawAnswer]:
     db_answer = db.query(models.RawAnswer).filter(models.RawAnswer.id == answer_id).first()
-    if db_answer:
-        db_answer.is_deleted = deleted_status
-        db.commit()
-        db.refresh(db_answer)
+    if not db_answer:
+        return None
+        
+    # 如果是恢复操作，需要检查关联的问题是否已恢复
+    if not deleted_status:  # 恢复操作
+        # 检查关联的问题状态
+        question = db.query(models.RawQuestion).filter(
+            models.RawQuestion.id == db_answer.question_id
+        ).first()
+        
+        if not question or question.is_deleted:
+            # 关联的问题不存在或已被删除，不能恢复回答
+            raise ValueError("Cannot restore answer: associated question is deleted or does not exist")
+    
+    db_answer.is_deleted = deleted_status
+    db.commit()
+    db.refresh(db_answer)
     return db_answer
     
 def set_multiple_raw_answers_deleted_status(db: Session, answer_ids: List[int], deleted_status: bool) -> int:
     if not answer_ids: 
         return 0
+        
+    # 如果是恢复操作，需要检查每个回答关联的问题状态
+    if not deleted_status:  # 恢复操作
+        # 获取所有回答及其关联的问题
+        answers_with_questions = db.query(models.RawAnswer, models.RawQuestion).join(
+            models.RawQuestion, models.RawAnswer.question_id == models.RawQuestion.id
+        ).filter(models.RawAnswer.id.in_(answer_ids)).all()
+        
+        # 检查是否有关联的问题被删除
+        deleted_questions = [
+            (answer.id, question.id) for answer, question in answers_with_questions 
+            if question.is_deleted
+        ]
+        
+        if deleted_questions:
+            deleted_question_ids = [q_id for _, q_id in deleted_questions]
+            raise ValueError(f"Cannot restore answers: associated questions {deleted_question_ids} are deleted")
+    
     num_updated = db.query(models.RawAnswer).filter(models.RawAnswer.id.in_(answer_ids)).update({"is_deleted": deleted_status}, synchronize_session=False)
     db.commit()
     return num_updated
