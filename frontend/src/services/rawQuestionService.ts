@@ -136,4 +136,26 @@ export const rawQuestionService = {
     });
     return response.data;
   },
+
+  // 事务性地创建问题和回答
+  async createRawQuestionWithAnswers(data: {
+    question: Partial<RawQuestion>,
+    answers: Array<{
+      answer: string,
+      answered_by?: string,
+      upvotes?: string,
+      answered_at?: string
+    }>
+  }): Promise<{
+    question: RawQuestion,
+    answers: RawAnswer[],
+    success: boolean,
+    message?: string
+  }> {
+    const response = await apiClient.post('/raw_questions/with-answers/', {
+      question: data.question,
+      answers: data.answers
+    });
+    return response.data;
+  },
 }

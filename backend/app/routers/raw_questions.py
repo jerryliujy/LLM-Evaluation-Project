@@ -2,7 +2,8 @@ from fastapi import APIRouter, Depends, HTTPException, Body, Query
 from sqlalchemy.orm import Session, joinedload, selectinload
 from typing import List, Optional
 from ..crud import crud_raw_question
-from ..schemas import RawQuestion, Msg
+from ..schemas import RawQuestion, RawQuestionCreate, Msg
+from ..schemas.raw_question import RawQuestionWithAnswersCreate, RawQuestionWithAnswersResponse
 from ..schemas.common import PaginatedResponse
 from ..db.database import get_db
 from ..auth import require_admin_or_expert, get_current_active_user
@@ -28,9 +29,44 @@ def read_raw_questions_api(
 ):
     """获取分页的原始问题列表"""
     result = crud_raw_question.get_raw_questions_paginated(
-        db, skip=skip, limit=limit, include_deleted=include_deleted, deleted_only=deleted_only, created_by=current_user.id 
-    )
+        db, skip=skip, limit=limit, include_deleted=include_deleted, deleted_only=deleted_only, created_by=current_user.id    )
     return result
+
+@router.post("/with-answers/", response_model=RawQuestionWithAnswersResponse)
+def create_raw_question_with_answers_api(
+    data: RawQuestionWithAnswersCreate,
+    current_user: User = Depends(get_current_active_user),
+    db: Session = Depends(get_db)
+):
+    """事务性地创建原始问题和相关回答"""
+    try:
+        # 转换回答数据格式
+        answers_data = []
+        for answer in data.answers:
+            answers_data.append({
+                'answer': answer.answer,
+                'answered_by': answer.answered_by,
+                'upvotes': answer.upvotes,
+                'answered_at': answer.answered_at
+            })
+        
+        # 调用CRUD函数
+        result = crud_raw_question.create_raw_question_with_answers(
+            db=db, 
+            question_data=data.question, 
+            answers_data=answers_data,
+            created_by=current_user.id
+        )
+        
+        return RawQuestionWithAnswersResponse(
+            question=result['question'],
+            answers=result['answers'],
+            success=True,
+            message=f"成功创建问题和 {len(result['answers'])} 个回答"
+        )
+        
+    except Exception as e:
+        raise HTTPException(status_code=400, detail=f"创建失败: {str(e)}")
 
 @router.delete("/{question_id}/", response_model=Msg)
 def delete_raw_question_api(

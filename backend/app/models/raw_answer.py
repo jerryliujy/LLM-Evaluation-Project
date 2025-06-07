@@ -9,7 +9,7 @@ class RawAnswer(Base):
     id = Column(Integer, primary_key=True, index=True)
     question_id = Column(Integer, ForeignKey("RawQuestion.id"), nullable=False, index=True)
     answer = Column(Text, nullable=False)  
-    upvotes = Column(String(20), default=0)   
+    upvotes = Column(String(20), default="0")   
     answered_by = Column(String(255), nullable=True) 
     answered_at = Column(DateTime, nullable=True) 
     is_deleted = Column(Boolean, default=False, nullable=False, index=True)

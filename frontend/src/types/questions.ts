@@ -5,10 +5,11 @@ export interface RawQuestion {
   title: string;
   url?: string;
   body?: string;
-  vote_count?: number;
-  view_count?: number;
+  votes?: string;  // 支持 "1.1k" 格式的投票数
+  views?: string;  // 支持 "1.1m" 格式的查看数
   author?: string;
   tags?: string[];
+  tags_json?: string[]; // 添加 tags_json 字段用于后端兼容
   issued_at?: string | Date;
   created_at?: string | Date;
   is_deleted: boolean;

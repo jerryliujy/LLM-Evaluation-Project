@@ -71,10 +71,7 @@ def get_raw_questions_paginated(db: Session, skip: int = 0, limit: int = 10, inc
         "per_page": limit,
         "total_pages": (total + limit - 1) // limit,
         "has_next": skip + limit < total,
-        "has_prev": skip > 0
-    }
-
-# create_raw_question (deferred)
+        "has_prev": skip > 0    }
 
 def set_raw_question_deleted_status(db: Session, question_id: int, deleted_status: bool) -> Optional[models.RawQuestion]:
     db_question = db.query(models.RawQuestion).filter(models.RawQuestion.id == question_id).first()
@@ -145,7 +142,7 @@ def force_delete_raw_question(db: Session, question_id: int) -> bool:
         
         # 3. 删除标准问题
         from ..models.std_question import StdQuestion
-        db.query(StdQuestion).filter(StdQuestion.raw_question_id == question_id).delete(synchronize_session=False)
+        db.query(StdQuestion).filter(StdQuestion.id == question_id).delete(synchronize_session=False)
         
         # 4. 最后删除问题本身
         num_deleted = db.query(models.RawQuestion).filter(models.RawQuestion.id == question_id).delete(synchronize_session=False)
@@ -156,3 +153,77 @@ def force_delete_raw_question(db: Session, question_id: int) -> bool:
         db.rollback()
         print(f"Error in force_delete_raw_question: {e}")  # 添加日志输出以便调试
         return False
+
+def create_raw_question(question: schemas.RawQuestionCreate, created_by: int = None) -> models.RawQuestion:
+    """创建新的原始问题"""
+    # 处理空字符串URL - 转换为None以避免唯一约束冲突
+    url_value = question.url if question.url and question.url.strip() else None
+    
+    db_question = models.RawQuestion(
+        title=question.title,
+        url=url_value,  
+        body=question.body,
+        votes=question.votes,
+        views=question.views,
+        author=question.author,
+        tags_json=question.tags_json,
+        issued_at=question.issued_at,
+        created_by=created_by,
+        is_deleted=False  # 默认不删除
+    )
+    return db_question
+
+def create_raw_question_with_answers(db: Session, question_data: schemas.RawQuestionCreate, answers_data: List[dict], created_by: int = None) -> dict:
+    """事务性地创建问题和相关回答"""
+    try:
+        # 1. 创建问题
+        question = create_raw_question(question_data, created_by)
+        db.add(question)
+        db.flush()  # 刷新以获取问题ID
+        
+        # 2. 创建所有回答
+        created_answers = []
+        for answer_data in answers_data:
+            # 为每个回答添加 question_id 和 created_by
+            answer_create_data = {
+                'question_id': question.id,
+                'answer': answer_data.get('answer', ''),
+                'answered_by': answer_data.get('answered_by'),
+                'upvotes': answer_data.get('upvotes', '0'),
+                'answered_at': answer_data.get('answered_at'),
+                'created_by': created_by,
+                'is_deleted': False
+            }
+            
+            # 创建 RawAnswerCreate 对象
+            from ..schemas.raw_answer import RawAnswerCreate
+            answer_schema = RawAnswerCreate(**answer_create_data)
+            
+            # 创建回答
+            answer_dict = answer_schema.dict()
+            if "is_deleted" not in answer_dict:
+                answer_dict["is_deleted"] = False
+            
+            db_answer = models.RawAnswer(**answer_dict)
+            db.add(db_answer)
+            db.flush()  # 刷新以获取ID，但不提交
+            created_answers.append(db_answer)
+        
+        # 3. 提交整个事务
+        db.commit()
+        
+        # 4. 重新加载数据以包含关系
+        db.refresh(question)
+        for answer in created_answers:
+            db.refresh(answer)
+        
+        return {
+            'question': question,
+            'answers': created_answers,
+            'success': True
+        }
+        
+    except Exception as e:
+        # 发生错误时回滚
+        db.rollback()
+        raise e

@@ -308,6 +308,7 @@ import { ref, computed, onMounted } from "vue";
 import { useRoute, useRouter } from "vue-router";
 import { databaseService } from "@/services/databaseService";
 import { datasetService } from "@/services/datasetService";
+import { formatDate, formatTags } from "@/utils/formatters";
 
 // 路由
 const route = useRoute();
@@ -666,11 +667,6 @@ const formatCellValue = (value: any, column: any) => {
   return value;
 };
 
-const formatDate = (dateString: string) => {
-  if (!dateString) return "";
-  return new Date(dateString).toLocaleString("zh-CN");
-};
-
 const formatDetailValue = (value: any) => {
   if (value === null || value === undefined) return "无";
   if (typeof value === "boolean") return value ? "是" : "否";
@@ -679,17 +675,7 @@ const formatDetailValue = (value: any) => {
 };
 
 const parseTagsValue = (value: any) => {
-  if (!value) return [];
-  if (Array.isArray(value)) return value;
-  if (typeof value === "string") {
-    try {
-      const parsed = JSON.parse(value);
-      return Array.isArray(parsed) ? parsed : [value];
-    } catch {
-      return value.split(",").map(tag => tag.trim()).filter(Boolean);
-    }
-  }
-  return [];
+  return formatTags(value);
 };
 
 const getInputType = (columnType: string) => {

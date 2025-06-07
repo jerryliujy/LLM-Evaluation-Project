@@ -58,8 +58,7 @@
                   class="form-input"
                 />
               </div>
-            </div>
-
+            </div>            
             <div class="form-group">
               <label for="tags">标签</label>
               <input
@@ -71,6 +70,44 @@
               />
               <div v-if="formData.tags && formData.tags.length > 0" class="tags-preview">
                 <span v-for="tag in formData.tags" :key="tag" class="tag">{{ tag }}</span>
+              </div>
+            </div>
+
+            <!-- 可选的元数据字段 -->
+            <div class="form-section">
+              <h5 class="subsection-title">可选信息</h5>
+              
+              <div class="form-row">
+                <div class="form-group">
+                  <label for="votes">投票数</label>
+                  <input
+                    id="votes"
+                    v-model="formData.votes"
+                    type="text"
+                    placeholder="如：123 或 1.2k"
+                    class="form-input"
+                  />
+                </div>
+                <div class="form-group">
+                  <label for="views">浏览数</label>
+                  <input
+                    id="views"
+                    v-model="formData.views"
+                    type="text"
+                    placeholder="如：456 或 4.5k"
+                    class="form-input"
+                  />
+                </div>
+              </div>
+
+              <div class="form-group">
+                <label for="issued_at">发布时间</label>
+                <input
+                  id="issued_at"
+                  v-model="formData.issued_at"
+                  type="datetime-local"
+                  class="form-input"
+                />
               </div>
             </div>
           </div>
@@ -111,20 +148,17 @@
                     placeholder="请输入回答者名称"
                     class="form-input"
                   />
-                </div>
-                <div class="form-group">
-                  <label :for="`answer-score-${index}`">评分</label>
+                </div>                <div class="form-group">
+                  <label :for="`answer-score-${index}`">点赞量</label>
                   <input
                     :id="`answer-score-${index}`"
-                    v-model.number="answer.score"
-                    type="number"
-                    placeholder="回答评分（可选）"
+                    v-model="answer.upvotes"
+                    type="text"
+                    placeholder="如：789 或 7.8k"
                     class="form-input"
                   />
                 </div>
-              </div>
-
-              <div class="form-group">
+              </div>              <div class="form-group">
                 <label :for="`answer-body-${index}`">回答内容 *</label>
                 <textarea
                   :id="`answer-body-${index}`"
@@ -135,6 +169,17 @@
                   required
                   class="form-textarea"
                 ></textarea>
+              </div>
+
+              <div class="form-group">
+                <label :for="`answer-time-${index}`">回答时间</label>
+                <input
+                  :id="`answer-time-${index}`"
+                  v-model="answer.answered_at"
+                  type="datetime-local"
+                  placeholder="回答发布时间（可选）"
+                  class="form-input"
+                />
               </div>
             </div>
           </div>
@@ -171,7 +216,8 @@ import { RawQuestion } from '@/types/questions'
 interface Answer {
   author: string
   body: string
-  score?: number
+  upvotes?: string
+  answered_at?: string
 }
 
 interface Props {
@@ -197,6 +243,9 @@ const formData = ref<Partial<RawQuestion>>({
   author: '',
   url: '',
   tags: [],
+  votes: '',
+  views: '',
+  issued_at: '',
   is_deleted: false
 })
 
@@ -205,12 +254,20 @@ const tagsInput = ref('')
 
 const isEdit = computed(() => !!props.question?.id)
 
+// 格式化日期时间为本地输入格式
+const formatDateTimeLocal = (dateTime: string | Date): string => {
+  if (!dateTime) return ''
+  const date = new Date(dateTime)
+  return date.toISOString().slice(0, 16) // 格式: YYYY-MM-DDTHH:mm
+}
+
 // 添加回答
 const addAnswer = () => {
   answers.value.push({
     author: '',
     body: '',
-    score: undefined
+    upvotes: undefined,
+    answered_at: ''
   })
 }
 
@@ -230,6 +287,9 @@ watch(() => props.question, (newQuestion) => {
       author: newQuestion.author || '',
       url: newQuestion.url || '',
       tags: newQuestion.tags || [],
+      votes: newQuestion.votes || '',
+      views: newQuestion.views || '',
+      issued_at: newQuestion.issued_at ? formatDateTimeLocal(newQuestion.issued_at) : '',
       is_deleted: newQuestion.is_deleted || false
     }
     tagsInput.value = newQuestion.tags?.join(', ') || ''
@@ -246,10 +306,13 @@ watch(() => props.question, (newQuestion) => {
       author: '',
       url: '',
       tags: [],
+      votes: '',
+      views: '',
+      issued_at: '',      
       is_deleted: false
     }
     tagsInput.value = ''
-    answers.value = [{ author: '', body: '', score: undefined }]
+    answers.value = [{ author: '', body: '', upvotes: undefined, answered_at: '' }]
   }
 }, { immediate: true })
 
@@ -282,22 +345,30 @@ const handleSubmit = () => {
   if (validAnswers.length === 0) {
     alert('至少需要一个有效的回答内容')
     return
+  }  // 清理数据
+  const questionData: Partial<RawQuestion> = {
+    title: formData.value.title.trim(),
+    body: formData.value.body?.trim() || '',
+    author: formData.value.author?.trim() || '',
+    url: formData.value.url?.trim() || '',
+    tags_json: formData.value.tags || [],  // 修正字段名为 tags_json
+    votes: formData.value.votes?.trim() || undefined,
+    views: formData.value.views?.trim() || undefined,
+    issued_at: formData.value.issued_at || undefined,
+    is_deleted: formData.value.is_deleted || false
   }
 
-  // 清理数据
+  // 如果是编辑模式，包含ID
+  if (isEdit.value && props.question?.id) {
+    questionData.id = props.question.id
+  }
   const submitData = {
-    question: {
-      title: formData.value.title.trim(),
-      body: formData.value.body?.trim() || '',
-      author: formData.value.author?.trim() || '',
-      url: formData.value.url?.trim() || '',
-      tags: formData.value.tags || [],
-      is_deleted: formData.value.is_deleted || false
-    },
+    question: questionData,
     answers: validAnswers.map(answer => ({
       author: answer.author?.trim() || '',
       body: answer.body.trim(),
-      score: answer.score || 0
+      upvotes: answer.upvotes || '0',
+      answered_at: answer.answered_at || undefined
     }))
   }
 
@@ -396,6 +467,23 @@ const handleSubmit = () => {
   color: #303133;
   font-size: 16px;
   font-weight: 600;
+}
+
+.subsection-title {
+  color: #606266;
+  font-size: 14px;
+  font-weight: 500;
+  margin: 0 0 12px 0;
+  padding-bottom: 6px;
+  border-bottom: 1px solid #e4e7ed;
+}
+
+.form-section {
+  margin: 20px 0;
+  padding: 16px;
+  background: #f8f9fb;
+  border-radius: 8px;
+  border: 1px solid #e4e7ed;
 }
 
 .required-note {

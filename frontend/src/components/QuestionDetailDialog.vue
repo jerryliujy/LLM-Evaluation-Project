@@ -25,14 +25,14 @@
               <label>创建时间:</label>
               <span>{{ formatDate(question?.issued_at || question?.created_at) }}</span>
             </div>
-            <!-- 概览模式和原始问题模式才显示浏览和点赞数 -->
-            <div v-if="(props.viewMode === 'overview' || props.viewMode === 'questions') && question?.view_count !== undefined && question?.view_count !== null" class="detail-item">
+            <!-- 原始问题模式才显示浏览和点赞数 -->
+            <div v-if="(props.viewMode === 'overview' || props.viewMode === 'questions') && question?.views !== undefined && question?.views !== null" class="detail-item">
               <label>浏览数:</label>
-              <span>{{ question.view_count }}</span>
+              <span>{{ question.views }}</span>
             </div>
-            <div v-if="(props.viewMode === 'overview' || props.viewMode === 'questions') && question?.vote_count !== undefined && question?.vote_count !== null" class="detail-item">
+            <div v-if="(props.viewMode === 'overview' || props.viewMode === 'questions') && question?.votes !== undefined && question?.votes !== null" class="detail-item">
               <label>投票数:</label>
-              <span>{{ question.vote_count }}</span>
+              <span>{{ question.votes }}</span>
             </div>
           </div>
         </div>        <!-- 概览模式：只显示原始回答和专家回答，不显示问题详细信息 -->

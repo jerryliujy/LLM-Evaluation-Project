@@ -285,14 +285,79 @@ async def upload_expert_answers_data(
 async def upload_std_qa_data(
     dataset_id: int,
     json_data: JsonDataImport,
+    current_user: User = Depends(get_current_active_user),
     db: Session = Depends(get_db)
 ):
-    """上传标准Q&A数据到指定数据集（暂未实现）"""
+    """上传标准Q&A数据到指定数据集"""
     
     # 验证数据集是否存在
     dataset = db.query(Dataset).filter(Dataset.id == dataset_id).first()
     if not dataset:
         raise HTTPException(status_code=404, detail="Dataset not found")
     
-    # TODO: 实现标准Q&A数据导入逻辑
-    raise HTTPException(status_code=501, detail="Standard Q&A import not implemented yet")
+    try:
+        from ..models.std_question import StdQuestion
+        from ..models.std_answer import StdAnswer, StdAnswerScoringPoint
+        
+        data = json_data.data
+        imported_questions = 0
+        imported_answers = 0
+        imported_scoring_points = 0
+        
+        for item in data:
+            # 验证必需字段
+            if not item.get('question'):
+                continue
+                
+            # 创建标准问题
+            std_question = StdQuestion(
+                dataset_id=dataset_id,
+                body=item.get('question', ''),
+                question_type=item.get('question_type', 'text'),
+                created_by=current_user.id,
+                is_valid=True
+            )
+            
+            db.add(std_question)
+            db.flush()  # 获取问题ID
+            imported_questions += 1
+            
+            # 创建标准答案
+            if item.get('answer'):
+                std_answer = StdAnswer(
+                    std_question_id=std_question.id,
+                    answer=item.get('answer', ''),
+                    answered_by=current_user.id,
+                    is_valid=True
+                )
+                
+                db.add(std_answer)
+                db.flush()  # 获取答案ID
+                imported_answers += 1
+                
+                # 创建评分点（如果有key_points）
+                if item.get('key_points') and isinstance(item['key_points'], list):
+                    for idx, key_point in enumerate(item['key_points']):
+                        scoring_point = StdAnswerScoringPoint(
+                            std_answer_id=std_answer.id,
+                            answer=key_point,  # 使用key_point作为评分点内容
+                            point_order=idx + 1,
+                            created_by=current_user.id,
+                            is_valid=True
+                        )
+                        
+                        db.add(scoring_point)
+                        imported_scoring_points += 1
+        
+        db.commit()
+        return {
+            "message": f"Standard Q&A data imported successfully to dataset {dataset.name}",
+            "dataset_id": dataset_id,
+            "imported_questions": imported_questions,
+            "imported_answers": imported_answers,
+            "imported_scoring_points": imported_scoring_points
+        }
+        
+    except Exception as e:
+        db.rollback()
+        raise HTTPException(status_code=500, detail=f"Error importing standard Q&A data: {str(e)}")

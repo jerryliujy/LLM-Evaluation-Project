@@ -44,7 +44,12 @@ def get_raw_answers_paginated(db: Session, skip: int = 0, limit: int = 10, inclu
 # create_raw_answer
 def create_raw_answer(db: Session, answer: schemas.RawAnswerCreate) -> models.RawAnswer:
     """创建新的原始回答"""
-    db_answer = models.RawAnswer(**answer.dict())
+    answer_data = answer.dict()
+    
+    if "is_deleted" not in answer_data:
+        answer_data["is_deleted"] = False
+    
+    db_answer = models.RawAnswer(**answer_data)
     db.add(db_answer)
     db.commit()
     db.refresh(db_answer)

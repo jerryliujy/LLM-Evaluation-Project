@@ -352,6 +352,10 @@ const handleImport = async () => {
 }
 
 const handleClose = () => {
+  // 如果导入成功，触发刷新事件
+  if (uploadResult.value) {
+    emit('imported')
+  }
   emit('update:visible', false)
 }
 

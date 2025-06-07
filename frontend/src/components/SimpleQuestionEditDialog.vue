@@ -31,9 +31,7 @@
               maxlength="2000"
               class="form-textarea"
             ></textarea>
-          </div>
-
-          <div class="form-row">
+          </div>          <div class="form-row">
             <div class="form-group">
               <label for="author">作者</label>
               <input
@@ -51,6 +49,44 @@
                 v-model="formData.url"
                 type="url"
                 placeholder="原始问题链接（可选）"
+                class="form-input"
+              />
+            </div>
+          </div>
+
+          <!-- 可选的元数据字段 -->
+          <div class="form-section">
+            <h4 class="section-title">可选信息</h4>
+            
+            <div class="form-row">
+              <div class="form-group">
+                <label for="votes">投票数</label>
+                <input
+                  id="votes"
+                  v-model="formData.votes"
+                  type="text"
+                  placeholder="如：123 或 1.2k"
+                  class="form-input"
+                />
+              </div>
+              <div class="form-group">
+                <label for="views">浏览数</label>
+                <input
+                  id="views"
+                  v-model="formData.views"
+                  type="text"
+                  placeholder="如：456 或 2.5k"
+                  class="form-input"
+                />
+              </div>
+            </div>
+
+            <div class="form-group">
+              <label for="issued_at">发布时间</label>
+              <input
+                id="issued_at"
+                v-model="formData.issued_at"
+                type="datetime-local"
                 class="form-input"
               />
             </div>
@@ -122,12 +158,22 @@ const formData = ref<Partial<RawQuestion>>({
   author: '',
   url: '',
   tags: [],
+  votes: '',
+  views: '',
+  issued_at: '',
   is_deleted: false
 })
 
 const tagsInput = ref('')
 
 const isEdit = computed(() => !!props.question?.id)
+
+// 格式化日期时间为本地输入格式
+const formatDateTimeLocal = (dateTime: string | Date): string => {
+  if (!dateTime) return ''
+  const date = new Date(dateTime)
+  return date.toISOString().slice(0, 16) // 格式: YYYY-MM-DDTHH:mm
+}
 
 // 监听问题变化，初始化表单数据
 watch(() => props.question, (newQuestion) => {
@@ -138,6 +184,9 @@ watch(() => props.question, (newQuestion) => {
       author: newQuestion.author || '',
       url: newQuestion.url || '',
       tags: newQuestion.tags || [],
+      votes: newQuestion.votes || '',
+      views: newQuestion.views || '',
+      issued_at: newQuestion.issued_at ? formatDateTimeLocal(newQuestion.issued_at) : '',
       is_deleted: newQuestion.is_deleted || false
     }
     tagsInput.value = newQuestion.tags?.join(', ') || ''
@@ -149,6 +198,9 @@ watch(() => props.question, (newQuestion) => {
       author: '',
       url: '',
       tags: [],
+      votes: '',
+      views: '',
+      issued_at: '',
       is_deleted: false
     }
     tagsInput.value = ''
@@ -172,16 +224,22 @@ const handleSubmit = () => {
   if (!formData.value.title?.trim()) {
     alert('请输入问题标题')
     return
-  }
-
-  // 清理数据
+  }  // 清理数据
   const submitData: Partial<RawQuestion> = {
     title: formData.value.title.trim(),
     body: formData.value.body?.trim() || '',
     author: formData.value.author?.trim() || '',
     url: formData.value.url?.trim() || '',
-    tags: formData.value.tags || [],
+    tags_json: formData.value.tags || [],  // 修正字段名为 tags_json
+    votes: formData.value.votes?.trim() || undefined,
+    views: formData.value.views?.trim() || undefined,
+    issued_at: formData.value.issued_at || undefined,
     is_deleted: formData.value.is_deleted || false
+  }
+
+  // 如果是编辑模式，包含ID
+  if (isEdit.value && props.question?.id) {
+    submitData.id = props.question.id
   }
 
   emit('save', submitData)
@@ -258,6 +316,23 @@ const handleSubmit = () => {
 
 .form-group {
   margin-bottom: 20px;
+}
+
+.form-section {
+  margin: 24px 0;
+  padding: 16px;
+  background: #f8f9fb;
+  border-radius: 8px;
+  border: 1px solid #e4e7ed;
+}
+
+.section-title {
+  margin: 0 0 16px 0;
+  font-size: 16px;
+  font-weight: 500;
+  color: #303133;
+  border-bottom: 1px solid #e4e7ed;
+  padding-bottom: 8px;
 }
 
 .form-row {

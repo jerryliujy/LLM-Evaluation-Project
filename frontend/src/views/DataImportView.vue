@@ -138,12 +138,12 @@
           
           <div
             @click="selectDataType('std-qa')"
-            class="data-type-card disabled"
-            title="暂未实现"
+            class="data-type-card"
+            :class="{ selected: selectedDataType === 'std-qa' }"
           >
             <div class="type-icon">✅</div>
             <h4>标准问答对</h4>
-            <p>标准化的问题和答案对（暂未实现）</p>
+            <p>标准化的问题和答案对</p>
           </div>
         </div>
 
@@ -300,6 +300,9 @@ const newDatasetIsPublic = ref(true)
 const creatingDataset = ref(false)
 const isCreatingNew = ref(false)
 
+// 数据类型相关
+const selectedDataType = ref<DataType | null>(null)
+
 // 路由参数：数据集ID
 const datasetId = computed(() => route.query.datasetId as string)
 
@@ -336,6 +339,93 @@ const goToStep = (step: number) => {
   
   currentStep.value = step
   clearError()
+}
+
+// 数据类型选择
+const selectDataType = (type: DataType) => {
+  selectedDataType.value = type
+}
+
+const getDataTypeLabel = () => {
+  switch (selectedDataType.value) {
+    case 'raw-qa': return '原始问答'
+    case 'expert-answers': return '专家回答'
+    case 'std-qa': return '标准问答'
+    default: return '数据'
+  }
+}
+
+const getFormatExample = () => {
+  switch (selectedDataType.value) {
+    case 'raw-qa':
+      return `[
+  {
+    "title": "问题标题",
+    "body": "问题详细内容",
+    "author": "提问者",
+    "tags": ["标签1", "标签2"],
+    "answers": [
+      {
+        "answer": "回答内容",
+        "answered_by": "回答者",
+        "upvotes": "10"
+      }
+    ]
+  }
+]`
+    case 'expert-answers':
+      return `[
+  {
+    "question_id": 1,
+    "expert_answers": [
+      {
+        "answer": "专家回答内容",
+        "answered_by": "专家用户ID"
+      }
+    ]
+  }
+]`
+    case 'std-qa':
+      return `[
+  {
+    "question": "What is the purpose of the 'vmlinux' file in the Linux kernel build process?",
+    "answer": "The 'vmlinux' file is the Linux kernel in a statically linked executable file format. It is an intermediate step in the boot procedure and is generally not directly used for booting.",
+    "question_type": "text",
+    "key_points": [
+      "vmlinux is a statically linked executable file format of the Linux kernel.",
+      "It serves as an intermediate step in the boot procedure.",
+      "The raw 'vmlinux' file can be useful for debugging."
+    ]
+  }
+]`
+    default:
+      return '请选择数据类型'
+  }
+}
+
+// 消息提示
+const showMessage = (text: string, type: 'success' | 'error' = 'success') => {
+  const messageEl = document.createElement('div')
+  messageEl.textContent = text
+  messageEl.style.cssText = `
+    position: fixed;
+    top: 20px;
+    left: 50%;
+    transform: translateX(-50%);
+    padding: 12px 24px;
+    border-radius: 6px;
+    color: white;
+    font-size: 14px;
+    z-index: 9999;
+    background: ${type === 'success' ? '#67c23a' : '#f56c6c'};
+    box-shadow: 0 2px 12px rgba(0, 0, 0, 0.1);
+  `
+  document.body.appendChild(messageEl)
+  setTimeout(() => {
+    if (messageEl.parentNode) {
+      messageEl.parentNode.removeChild(messageEl)
+    }
+  }, 3000)
 }
 
 // 数据集管理
@@ -375,7 +465,7 @@ const createDataset = async () => {
       newDatasetIsPublic.value
     )
     const newDataset: Dataset = {
-      id: result.dataset_id,
+      id: result.id,
       name: result.name,
       description: result.description,
       create_time: new Date().toISOString()
@@ -506,6 +596,9 @@ const confirmUpload = async () => {
 
     uploadResult.value = result
     previewData.value = []
+    
+    // 显示成功消息并提示用户可以查看数据
+    showMessage('数据导入成功！您可以在数据库管理页面查看导入的数据', 'success')
 
   } catch (err: any) {
     error.value = err.message || '上传失败'

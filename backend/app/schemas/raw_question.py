@@ -57,3 +57,23 @@ class RawQuestion(RawQuestionBase):
 
 # 添加response模型的别名
 RawQuestionResponse = RawQuestion
+
+# 组合创建模式
+class RawAnswerCreateForQuestion(BaseModel):
+    """用于在创建问题时一起创建答案的简化模式"""
+    answer: str
+    answered_by: Optional[str] = None
+    upvotes: Optional[str] = "0"
+    answered_at: Optional[datetime] = None
+
+class RawQuestionWithAnswersCreate(BaseModel):
+    """用于事务性创建问题和回答的模式"""
+    question: RawQuestionCreate
+    answers: List[RawAnswerCreateForQuestion] = []
+
+class RawQuestionWithAnswersResponse(BaseModel):
+    """返回创建结果的模式"""
+    question: RawQuestion
+    answers: List[RawAnswerSchema]
+    success: bool = True
+    message: Optional[str] = None

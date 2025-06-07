@@ -14,7 +14,8 @@ class RawAnswerCreate(RawAnswerBase):
 class RawAnswer(RawAnswerBase):
     id: int
     question_id: int
+    created_by: Optional[int] = None
     is_deleted: bool
 
     class Config:
-        from_attributes = True  
+        from_attributes = True

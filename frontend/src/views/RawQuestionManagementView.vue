@@ -216,34 +216,35 @@
               
               <!-- 只在非专家回答模式下显示统计列 -->
               <td v-if="!isExpertAnswersMode" class="stats-col">                
-                <div class="stats-content">                  <div class="stats-info">                    <!-- 概览和原始问题模式显示浏览和点赞 -->
+                <div class="stats-content">                  
+                  <div class="stats-info">                    <!-- 概览和原始问题模式显示浏览和点赞 -->
                     <template v-if="isOverviewOrQuestions">
-                      <span v-if="question.view_count !== undefined && question.view_count !== null" class="stats-item">👁 {{ question.view_count }}</span>
-                      <span v-if="question.vote_count !== undefined && question.vote_count !== null" class="stats-item">⭐ {{ question.vote_count }}</span>
+                      <span v-if="question.views !== undefined && question.views !== null" class="stats-item">👁 {{ question.views }}</span>
+                      <span v-if="question.votes !== undefined && question.votes !== null" class="stats-item">⭐ {{ question.votes }}</span>
                     </template>                    <!-- 原始回答模式显示upvotes数量 -->
                     <template v-else-if="isRawAnswersMode">
                       <span v-if="question.original_data && question.original_data.score !== undefined && question.original_data.score !== null" class="stats-item">👍 {{ question.original_data.score }}</span>
-                      <span v-else-if="question.vote_count !== undefined && question.vote_count !== null" class="stats-item">👍 {{ question.vote_count }}</span>
+                      <span v-else-if="question.votes !== undefined && question.votes !== null" class="stats-item">👍 {{ question.votes }}</span>
                       <span v-else class="stats-item">👍 0</span>
                     </template>
                   </div>
                 </div>
-              </td>
+              </td>              
               <td class="tags-col">
                 <div class="tags-content">
                   <span 
-                    v-for="tag in question.tags?.slice(0, 2)" 
+                    v-for="tag in formatTags(question.tags)?.slice(0, 2)" 
                     :key="tag" 
                     class="tag"
-                    :title="question.tags?.join(', ')"
+                    :title="formatTags(question.tags)?.join(', ')"
                   >
                     {{ tag }}
                   </span>
-                  <span v-if="question.tags && question.tags.length > 2" class="tag">
-                    +{{ question.tags.length - 2 }}
+                  <span v-if="formatTags(question.tags) && formatTags(question.tags).length > 2" class="tag">
+                    +{{ formatTags(question.tags).length - 2 }}
                   </span>
                 </div>
-              </td>              
+              </td>
               <td class="date-col">
                 <span class="truncate-text" :title="formatDate(question.issued_at || question.created_at)">
                   {{ formatDate(question.issued_at || question.created_at) }}
@@ -510,6 +511,7 @@ import StandardQADialog from '@/components/StandardQADialog.vue'
 import RawQAImportDialog from '@/components/RawQAImportDialog.vue'
 import QuestionDetailDialog from '@/components/QuestionDetailDialog.vue'
 import { rawQuestionService } from "@/services/rawQuestionService"
+import { formatTags, formatDate } from '@/utils/formatters'
 
 // 响应式状态
 const loading = ref(false)
@@ -562,14 +564,13 @@ const filteredQuestions = computed(() => {
     questions = questions.filter(q => q.is_deleted)
   }
   // 'all' 模式不需要过滤
-  
-  // 根据搜索查询过滤
+    // 根据搜索查询过滤
   if (!searchQuery.value) return questions
   const query = searchQuery.value.toLowerCase()
   return questions.filter(q => 
     q.title.toLowerCase().includes(query) ||
     q.body?.toLowerCase().includes(query) ||
-    q.tags?.some(tag => tag.toLowerCase().includes(query))
+    formatTags(q.tags).some(tag => tag.toLowerCase().includes(query))
   )
 })
 
@@ -593,12 +594,6 @@ const selectedQuestionData = computed(() => ({
 const showMessage = (message: string, type: 'success' | 'error' | 'warning' | 'info' = 'info') => {
   // 简单的消息提示实现
   alert(`${type.toUpperCase()}: ${message}`)
-}
-
-const formatDate = (date: string | Date | undefined) => {
-  if (!date) return ''
-  const d = new Date(date)
-  return d.toLocaleDateString('zh-CN')
 }
 
 const truncateText = (text: string | undefined | null, maxLength: number) => {
@@ -981,10 +976,15 @@ const showImportDialog = () => {
   importDialogVisible.value = true
 }
 
-const handleDataImported = () => {
-  // 重新加载问题列表
-  loadData()
-  showMessage('数据导入完成，问题列表已更新', 'success')
+const handleDataImported = async () => {
+  try {
+    // 重新加载问题列表
+    await loadData()
+    showMessage('数据导入完成，问题列表已更新', 'success')
+  } catch (error) {
+    console.error('刷新数据失败:', error)
+    showMessage('数据导入成功，但刷新失败，请手动刷新页面', 'warning')
+  }
 }
 
 const handleQuestionSave = async (questionData: Partial<RawQuestion>) => {
@@ -1008,32 +1008,26 @@ const handleQuestionSave = async (questionData: Partial<RawQuestion>) => {
 
 const handleQuestionAnswerSave = async (data: { question: Partial<RawQuestion>, answers: any[] }) => {
   try {
-    // 首先创建问题
-    const questionResponse = await rawQuestionService.createRawQuestion(data.question)
-    const questionId = questionResponse.id
+    // 准备回答数据
+    const answersData = data.answers.map(answer => ({
+      answer: answer.body, // 后端数据库字段名
+      answered_by: answer.author || '匿名',
+      upvotes: answer.upvotes?.toString() || '0',
+      answered_at: answer.answered_at || new Date().toISOString()
+    }))
     
-    if (!questionId) {
-      throw new Error('创建问题失败，未获取到问题ID')
+    // 使用事务性API一次性创建问题和所有回答
+    const result = await rawQuestionService.createRawQuestionWithAnswers({
+      question: data.question,
+      answers: answersData
+    })
+      if (result.success) {
+      showMessage(`问题和 ${result.answers.length} 个回答已创建`, 'success')
+      addDialogVisible.value = false
+      loadData() // 重新加载数据
+    } else {
+      throw new Error(result.message || '创建失败')
     }
-    
-    // 然后为每个回答创建原始回答记录
-    for (const answer of data.answers) {
-      const answerData = {
-        question_id: questionId,
-        answer: answer.body, // 后端数据库字段名
-        answered_by: answer.author || '匿名',
-        upvotes: answer.score?.toString() || '0',
-        answered_at: new Date().toISOString(),
-        is_deleted: false
-      }
-      
-      // 调用创建原始回答的API
-      await rawQuestionService.createRawAnswer(answerData)
-    }
-    
-    showMessage(`问题和 ${data.answers.length} 个回答已创建`, 'success')
-    addDialogVisible.value = false
-    loadData() // 重新加载数据
   } catch (error) {
     console.error('保存问题和回答失败:', error)
     showMessage('保存问题和回答失败', 'error')
