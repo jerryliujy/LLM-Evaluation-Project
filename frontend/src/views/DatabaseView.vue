@@ -51,15 +51,14 @@
           :disabled="selectedItems.length === 0 || selectedDeletedItems.length === selectedItems.length"
         >
           批量删除 ({{ selectedItems.length - selectedDeletedItems.length }})
-        </button>
-        <!-- 在有已删除项目时显示恢复按钮 -->
+        </button>          
         <button 
-          v-if="viewMode === 'deleted_only' || (viewMode === 'all' && selectedDeletedItems.length > 0)"
+          v-if="viewMode === 'deleted_only'"
           @click="bulkRestore" 
           class="action-btn success"
-          :disabled="selectedDeletedItems.length === 0"
+          :disabled="selectedItems.length === 0"
         >
-          批量恢复 ({{ selectedDeletedItems.length }})
+          批量恢复 ({{ selectedItems.length }})
         </button>
       </div>
         <div class="view-options">
@@ -113,7 +112,7 @@
           <tr 
             v-for="item in currentData" 
             :key="item.id" 
-            :class="{ 'deleted-row': item.is_deleted }"
+            :class="{ 'deleted-row': !item.is_valid }"
           >
             <td class="checkbox-col" v-if="!isOverviewTable">
               <input 
@@ -130,40 +129,34 @@
                   <template v-else>
                     {{ formatCellValue(item[column.key], column) }}
                   </template>
-                </span>
-                <span v-else-if="column.type === 'number' && column.key === 'scoring_points_count'" class="number-content">
-                  {{ item.scoring_points ? item.scoring_points.length : 0 }}
+                </span>                <span v-else-if="column.type === 'number' && column.key === 'scoring_points_count'" class="number-content">
+                  <span class="scoring-points-count">
+                    {{ getScoringPointsCount(item) }}
+                    <span v-if="getDeletedScoringPointsCount(item) > 0" class="deleted-count">
+                      ({{ getDeletedScoringPointsCount(item) }} 已删除)
+                    </span>
+                  </span>
                 </span>
                 <span v-else-if="column.type === 'number'" class="number-content">
                   {{ item[column.key] || 0 }}
                 </span>
                 <span v-else-if="column.type === 'date'" class="date-content">
                   {{ formatDate(item[column.key]) }}
-                </span>
-                <span v-else-if="column.type === 'tags'" class="tags-content">
+                </span>                <span v-else-if="column.type === 'tags'" class="tags-content">
                   <span 
-                    v-for="tag in formatTags(item[column.key])" 
+                    v-for="tag in parseTagsValue(item[column.key])" 
                     :key="tag" 
                     class="tag"
                   >
                     {{ tag }}
                   </span>
                 </span>
-                <span v-else-if="column.type === 'action' && column.key === 'scoring_points_management'" class="action-content">
-                  <button 
-                    @click="manageScoringPoints(item)" 
-                    class="action-btn small"
-                    title="管理得分点"
-                  >
-                    📊
-                  </button>
-                </span>
                 <span v-else class="default-content">
                   {{ item[column.key] }}
-                </span>              
+                </span>
               </div>
             </td>            <td class="actions-col">
-              <div class="row-actions" v-if="!isOverviewTable">
+              <div class="row-actions">
                 <button 
                   @click="viewItem(item)" 
                   class="action-btn small"
@@ -171,95 +164,87 @@
                 >
                   👁️
                 </button>
-                <!-- 编辑按钮：非删除状态下显示 -->
-                <button 
-                  v-if="!item.is_deleted"
-                  @click="editItem(item)" 
-                  class="action-btn small"
-                  title="编辑"
-                >
-                  ✏️
-                </button>
-
-                <!-- 标准问题和标准答案的特定操作 -->
-                <template v-if="selectedTable === 'std_questions' || selectedTable === 'std_answers'">
-                  <!-- 管理得分点按钮 -->
-                  <button
-                    v-if="selectedTable === 'std_answers' && !item.is_deleted"
-                    @click="manageScoringPoints(item)"
-                    class="action-btn small"
-                    title="管理得分点"
-                  >
-                    🎯
-                  </button>
-                  <button
-                    v-if="selectedTable === 'std_questions' && !item.is_deleted && item.std_answer_id" 
-                    @click="manageScoringPointsForQuestion(item)"
-                    class="action-btn small"
-                    title="管理关联答案的得分点"
-                  >
-                    🎯
-                  </button>
-
-                  <!-- 删除/恢复操作 -->
-                  <template v-if="!item.is_deleted">
+                <template v-if="!isOverviewTable">
+                  <!-- 标准问题和标准答案绑定删除恢复逻辑 -->                  <template v-if="selectedTable === 'std_questions' || selectedTable === 'std_answers'">
                     <button 
-                      @click="deleteStdItem(item)" 
-                      class="action-btn small danger"
-                      title="删除（关联项会同步处理）"
+                      v-if="item.is_valid"
+                      @click="editItem(item)" 
+                      class="action-btn small"
+                      title="编辑"
                     >
-                      🗑️
+                      ✏️
                     </button>
-                  </template>
+                    <!-- 得分点管理按钮：只在标准答案视图中显示，且非选择题类型 -->
+                    <button 
+                      v-if="selectedTable === 'std_answers' && item.is_valid && shouldShowScoringPointsButton(item)"
+                      @click="manageScoringPoints(item)" 
+                      class="action-btn small scoring-btn"
+                      title="管理得分点 (有效: {{ getScoringPointsCount(item) }}, 已删除: {{ getDeletedScoringPointsCount(item) }})"
+                    >
+                      🎯
+                    </button>
+                    <template v-if="item.is_valid">
+                      <button 
+                        @click="deleteStdItem(item)" 
+                        class="action-btn small danger"
+                        title="删除（将同时删除关联的标准问题/答案）"
+                      >
+                        🗑️
+                      </button>
+                    </template>
+                    <template v-else>
+                      <button 
+                        @click="restoreStdItem(item)" 
+                        class="action-btn small success"
+                        title="恢复（将同时恢复关联的标准问题/答案）"
+                      >
+                        ♻️
+                      </button>
+                      <button 
+                        @click="forceDeleteStdItem(item)" 
+                        class="action-btn small danger"
+                        title="永久删除"
+                      >
+                        💀
+                      </button>
+                    </template>
+                  </template><!-- 其他表的原有逻辑 -->
                   <template v-else>
                     <button 
-                      @click="restoreStdItem(item)" 
-                      class="action-btn small success"
-                      title="恢复（关联项会同步处理）"
+                      v-if="item.is_valid"
+                      @click="editItem(item)" 
+                      class="action-btn small"
+                      title="编辑"
                     >
-                      ♻️
+                      ✏️
                     </button>
-                    <button 
-                      @click="forceDeleteStdItem(item)" 
-                      class="action-btn small danger"
-                      title="永久删除（关联项会同步处理）"
-                    >
-                      💀
-                    </button>
+                    <template v-if="item.is_valid">
+                      <button 
+                        @click="deleteItem(item.id)" 
+                        class="action-btn small danger"
+                        title="删除"
+                      >
+                        🗑️
+                      </button>
+                    </template>
+                    <template v-else>
+                      <button 
+                        @click="restoreItem(item.id)" 
+                        class="action-btn small success"
+                        title="恢复"
+                      >
+                        ♻️
+                      </button>
+                      <button 
+                        @click="forceDeleteItem(item.id)" 
+                        class="action-btn small danger"
+                        title="永久删除"
+                      >
+                        💀
+                      </button>
+                    </template>
                   </template>
                 </template>
-
-                <!-- 其他表的通用删除/恢复操作 -->
-                <template v-else>
-                  <template v-if="!item.is_deleted">
-                    <button 
-                      @click="deleteItem(item.id)" 
-                      class="action-btn small danger"
-                      title="删除"
-                    >
-                      🗑️
-                    </button>
-                  </template>
-                  <template v-else>
-                    <button 
-                      @click="restoreItem(item.id)" 
-                      class="action-btn small success"
-                      title="恢复"
-                    >
-                      ♻️
-                    </button>
-                    <button 
-                      @click="forceDeleteItem(item.id)" 
-                      class="action-btn small danger"
-                      title="永久删除"
-                    >
-                      💀
-                    </button>
-                  </template>
-                </template>
-              </div>
-              <div v-else>
-                ---
               </div>
             </td>
           </tr>
@@ -391,7 +376,8 @@
                       暂无得分点
                     </div>
                   </div>
-                </template>                  <!-- 其他普通字段的显示 -->
+                </template>
+                  <!-- 其他普通字段的显示 -->
                 <template v-else>
                   <span v-if="column.type === 'text'" class="text-value">
                     {{ selectedItem[column.key] || '-' }}
@@ -423,7 +409,8 @@
           <h3>编辑 {{ selectedTable }}</h3>
           <button @click="closeEditModal" class="close-btn">×</button>
         </div>
-        <div class="modal-content">          <form @submit.prevent="saveEdit" class="edit-form">
+        <div class="modal-content">          
+          <form @submit.prevent="saveEdit" class="edit-form">
             <div v-for="column in editableColumns" :key="column.key" class="form-group">
               <label :for="column.key">{{ column.label }}:</label>
               
@@ -446,8 +433,6 @@
                 :rows="3"
                 class="form-control"
               ></textarea>
-              
-              <!-- 普通输入框 -->
               <input 
                 v-else
                 :id="column.key"
@@ -466,9 +451,8 @@
             </div>
           </form>
         </div>
-      </div>    </div>
-
-    <!-- 得分点管理弹窗 -->    <div v-if="showScoringPointsModal" class="modal-overlay" @click="closeScoringPointsModal">
+      </div>    </div>    <!-- 得分点管理弹窗 -->    
+     <div v-if="showScoringPointsModal" class="modal-overlay" @click="closeScoringPointsModal">
       <div class="scoring-points-modal" @click.stop>
         <div class="modal-header">
           <h3>管理得分点 - {{ selectedItem?.answer || selectedItem?.std_question_body || '未知答案' }}</h3>
@@ -488,14 +472,15 @@
                   {{ point.is_valid ? '有效' : '已删除' }}
                 </span>
               </div>
-              <div class="point-content">{{ point.answer }}</div>              <div class="point-actions">
+              <div class="point-content">{{ point.answer }}</div>
+              <div class="point-actions">
                 <template v-if="point.is_valid">
                   <button 
                     @click="deleteScoringPoint(point.id)" 
                     class="action-btn small danger"
-                    title="删除得分点"
+                    title="软删除得分点"
                   >
-                    🗑️
+                    🗑️ 删除
                   </button>
                 </template>
                 <template v-else>
@@ -504,14 +489,14 @@
                     class="action-btn small success"
                     title="恢复得分点"
                   >
-                    ♻️
+                    ♻️ 恢复
                   </button>
                   <button 
                     @click="forceDeleteScoringPoint(point.id)" 
                     class="action-btn small danger"
                     title="永久删除得分点"
                   >
-                    💀
+                    💀 永久删除
                   </button>
                 </template>
               </div>
@@ -543,7 +528,7 @@ const router = useRouter();
 interface TableColumn {
   key: string;
   label: string;
-  type: 'text' | 'number' | 'date' | 'tags' | 'boolean' | 'action'; // Added 'action'
+  type: 'text' | 'number' | 'date' | 'tags' | 'boolean' | 'action';
   className: string;
   multiline?: boolean;
 }
@@ -557,120 +542,101 @@ type TableName = 'std_questions' | 'std_answers' | 'overview_std';
 
 interface DatabaseItem {
   id: number;
-  is_deleted?: boolean;
+  is_valid?: boolean;
   [key: string]: any;
 }
-
-// 表格配置
-const tableConfigs: Record<TableName, TableConfig> = {
-  overview_std: {
-    columns: [
-      { key: "std_question_id", label: "标准问题ID", type: "number", className: "col-id" },
-      { key: "std_question_body", label: "标准问题", type: "text", className: "col-text-long", multiline: true },
-      { key: "std_question_type", label: "问题类型", type: "text", className: "col-text-short" },
-      { key: "std_answer_id", label: "标准答案ID", type: "number", className: "col-id" },
-      { key: "std_answer_body", label: "标准答案", type: "text", className: "col-text-long", multiline: true },
-      { key: "scoring_points_count", label: "得分点数", type: "number", className: "col-number" },
-      { key: "created_at", label: "创建时间", type: "date", className: "col-date" },
-      { key: "updated_at", label: "更新时间", type: "date", className: "col-date" },
-    ],
-    editable: [] // Overview is not editable
-  },
-  std_questions: {
-    columns: [
-      { key: "id", label: "ID", type: "number", className: "col-id" },
-      { key: "body", label: "问题内容", type: "text", className: "col-text-long", multiline: true },
-      { key: "question_type", label: "问题类型", type: "text", className: "col-text-short" },
-      { key: "std_answer_id", label: "关联答案ID", type: "number", className: "col-id" },
-      { key: "tags", label: "标签", type: "tags", className: "col-tags" },
-      { key: "created_at", label: "创建时间", type: "date", className: "col-date" },
-      { key: "updated_at", label: "更新时间", type: "date", className: "col-date" },
-      { key: "is_deleted", label: "已删除", type: "boolean", className: "col-boolean" },
-    ],
-    editable: ["body", "question_type", "tags"]
-  },
-  std_answers: {
-    columns: [
-      { key: "id", label: "ID", type: "number", className: "col-id" },
-      { key: "answer", label: "答案内容", type: "text", className: "col-text-long", multiline: true },
-      { key: "scoring_points_count", label: "得分点数", type: "action", className: "col-action" }, // Type changed to action for button
-      { key: "tags", label: "标签", type: "tags", className: "col-tags" },
-      { key: "created_at", label: "创建时间", type: "date", className: "col-date" },
-      { key: "updated_at", label: "更新时间", type: "date", className: "col-date" },
-      { key: "is_deleted", label: "已删除", type: "boolean", className: "col-boolean" },
-    ],
-    editable: ["answer", "tags"]
-  }
-};
 
 // 响应式数据
 const selectedTable = ref<TableName>("overview_std");
 const currentDatasetId = ref<number | undefined>(undefined);
 const currentDataset = ref<any>(null);
 const currentData = ref<DatabaseItem[]>([]);
-const selectedItems = ref<number[]>([]); // Stores IDs of selected items
+const selectedItems = ref<number[]>([]);
 const loading = ref(false);
-// const showDeleted = ref(false); // This seems replaced by viewMode
-const viewMode = ref<"all" | "deleted_only" | "active_only">("active_only");
+const showDeleted = ref(false);
+const viewMode = ref<"all" | "deleted_only" | "active_only">("active_only"); // 新增视图模式
 const itemsPerPage = ref(20);
 const currentPage = ref(1);
 const totalItems = ref(0);
-const deletedCount = ref(0);
 
-// Refs for modals and selected item state
-const selectedItem = ref<DatabaseItem | null>(null);
+// 弹窗相关
 const showDetailModal = ref(false);
-const editForm = ref<any>({});
 const showEditModal = ref(false);
-const saving = ref(false); // For edit save operation
 const showScoringPointsModal = ref(false);
-const scoringPointsData = ref<any[]>([]); // For scoring points modal
+const selectedItem = ref<DatabaseItem | null>(null);
+const editForm = ref<Record<string, any>>({});
+const saving = ref(false);
+const scoringPointsData = ref<any[]>([]);
 
-// Refs for messaging
-const message = ref<string | null>(null);
-const messageType = ref<'success' | 'error'>('success');
+// 消息提示
+const message = ref("");
+const messageType = ref<"success" | "error">("success");
 
-// Computed property for selected deleted items (used for bulk restore button)
-const selectedDeletedItems = computed(() => {
-  return selectedItems.value.filter(id => {
-    const item = currentData.value.find(d => d.id === id);
-    return item && item.is_deleted;
-  });
-});
-
-// Helper function to show messages
-const showMessage = (msg: string, type: 'success' | 'error' = 'success', duration: number = 3000) => {
-  message.value = msg;
-  messageType.value = type;
-  setTimeout(() => {
-    message.value = null;
-  }, duration);
+// 表格配置
+const tableConfigs: Record<TableName, TableConfig> = {  std_questions: {
+    columns: [
+      { key: "id", label: "ID", type: "number", className: "id-col" },
+      { key: "body", label: "问题文本", type: "text", className: "text-col", multiline: true },
+      { key: "question_type", label: "问题类型", type: "text", className: "type-col" },
+      { key: "scoring_points_count", label: "得分点数量", type: "number", className: "scoring-points-count-col" },
+    ],
+    editable: ["body", "question_type", "created_by"]
+  },std_answers: {
+    columns: [
+      { key: "id", label: "ID", type: "number", className: "id-col" },
+      { key: "std_question_body", label: "标准问题", type: "text", className: "question-col", multiline: true },
+      { key: "answer", label: "答案文本", type: "text", className: "answer-col", multiline: true },
+      { key: "scoring_points_count", label: "得分点数量", type: "number", className: "scoring-points-count-col" },
+    ],
+    editable: ["answer", "answered_by"]
+  },
+  overview_std: {
+    columns: [
+      { key: "id", label: "ID", type: "number", className: "id-col" },
+      { key: "text", label: "标准问题", type: "text", className: "title-col", multiline: true },
+      { key: "answer_text", label: "标准答案", type: "text", className: "answer-col", multiline: true },
+      { key: "raw_questions", label: "原始问题", type: "text", className: "title-col", multiline: true },
+      { key: "raw_answers", label: "原始回答", type: "text", className: "answer-col", multiline: true },
+      { key: "expert_answers", label: "专家回答", type: "text", className: "answer-col", multiline: true },
+      { key: "question_type", label: "问题类型", type: "text", className: "type-col" },
+    ],
+    editable: []
+  }
 };
 
-// Helper function to determine input type for edit form
-const getInputType = (columnType: 'text' | 'number' | 'date' | 'tags' | 'boolean' | 'action') => {
-  if (columnType === 'number') return 'number';
-  if (columnType === 'date') return 'date';
-  // Add other mappings if needed
-  return 'text';
-};
-
-// Computed Properties
-const isOverviewTable = computed(() => selectedTable.value === "overview_std");
-
-const tableColumns = computed(() => {
+// 计算属性
+const tableColumns = computed<TableColumn[]>(() => {
   return tableConfigs[selectedTable.value]?.columns || [];
 });
 
-const editableColumns = computed(() => {
+const editableColumns = computed<TableColumn[]>(() => {
   const config = tableConfigs[selectedTable.value];
-  if (!config || !config.editable) return [];
-  return config.columns.filter(col => config.editable.includes(col.key));
+  if (!config) return [];
+  
+  return config.columns.filter((col: TableColumn) => 
+    config.editable.includes(col.key)
+  );
 });
 
 const totalPages = computed(() => {
-  if (totalItems.value === 0 || itemsPerPage.value === 0) return 1;
   return Math.ceil(totalItems.value / itemsPerPage.value);
+});
+
+const isOverviewTable = computed(() => {
+  return selectedTable.value === 'overview_std';
+});
+
+// 计算选中的已删除项目
+const selectedDeletedItems = computed(() => {
+  return selectedItems.value.filter(id => {
+    const item = currentData.value.find(item => item.id === id);
+    return item && !item.is_valid;
+  });
+});
+
+// 计算已删除项目的数量
+const deletedCount = computed(() => {
+  return currentData.value.filter(item => !item.is_valid).length;
 });
 
 // 方法
@@ -691,22 +657,21 @@ const loadDataset = async () => {
 
 const loadTableData = async () => {
   loading.value = true;
-  selectedItems.value = []; // Clear selection on data load
   try {
     const skip = (currentPage.value - 1) * itemsPerPage.value;
     const limit = itemsPerPage.value;
     
+    // 根据视图模式确定参数
     let includeDeleted = false;
     let deletedOnly = false;
     
     if (viewMode.value === 'all') {
       includeDeleted = true;
     } else if (viewMode.value === 'deleted_only') {
-      // includeDeleted = true; // This was redundant, deletedOnly implies includeDeleted in backend/service
+      includeDeleted = true;
       deletedOnly = true;
     }
-    
-    let result;
+      let result;
     if (selectedTable.value === 'overview_std') {
       result = await databaseService.getStdQuestionsOverview(
         skip,
@@ -714,29 +679,30 @@ const loadTableData = async () => {
         currentDatasetId.value
       );
     } else {
-      // Corrected order of arguments for getTableData
-      // Assuming signature: (tableName, skip, limit, datasetId, includeDeleted, deletedOnly)
-      // If datasetId is optional and comes after flags, adjust accordingly.
-      // For now, placing datasetId before flags as per common patterns.
       result = await databaseService.getTableData(
         selectedTable.value,
         skip,
         limit,
-        currentDatasetId.value, // datasetId
-        includeDeleted,         // includeDeleted
-        deletedOnly             // deletedOnly
+        includeDeleted,
+        currentDatasetId.value,
+        deletedOnly
       );
     }
+      currentData.value = result.data;
     
-    currentData.value = result.data;
-    totalItems.value = result.total;
-    deletedCount.value = result.deletedCount || 0;
+    // 特殊处理标准答案数据，添加 std_question_body 字段
+    if (selectedTable.value === 'std_answers') {
+      currentData.value = result.data.map(item => ({
+        ...item,
+        std_question_body: item.std_question?.body || '无关联问题'
+      }));
+    }
+      totalItems.value = result.total;
+    // deletedCount 是计算属性，不需要手动设置
+    selectedItems.value = [];
   } catch (error) {
     showMessage("加载数据失败", "error");
     console.error("Load data error:", error);
-    currentData.value = []; // Ensure data is cleared on error
-    totalItems.value = 0;
-    deletedCount.value = 0;
   } finally {
     loading.value = false;
   }
@@ -769,12 +735,13 @@ const bulkDelete = async () => {
 };
 
 const bulkRestore = async () => {
-  const deletedItemIds = selectedDeletedItems.value;
-  if (!confirm(`确定要恢复选中的 ${deletedItemIds.length} 项吗？`)) return;
+  // 在 deleted_only 模式下，所有选中的项目都应该是已删除的
+  const itemsToRestore = viewMode.value === 'deleted_only' ? selectedItems.value : selectedDeletedItems.value;
+  if (!confirm(`确定要恢复选中的 ${itemsToRestore.length} 项吗？`)) return;
   
   try {
-    await databaseService.bulkRestore(selectedTable.value, deletedItemIds);
-    showMessage(`成功恢复 ${deletedItemIds.length} 项`, "success");
+    await databaseService.bulkRestore(selectedTable.value, itemsToRestore);
+    showMessage(`成功恢复 ${itemsToRestore.length} 项`, "success");
     selectedItems.value = [];
     loadTableData();
   } catch (error) {
@@ -808,21 +775,8 @@ const forceDeleteItem = async (id: number) => {
   if (!confirm("确定要永久删除这个项目吗？此操作不可恢复！")) return;
   
   try {
-    // 查找当前项目以检查删除状态
-    const currentItem = currentData.value.find(item => item.id === id);
-    
-    // 如果项目未被软删除，先软删除
-    if (currentItem && !currentItem.is_deleted) {
-      await databaseService.deleteItem(selectedTable.value, id);
-    }
-    
-    // 然后强制删除
     await databaseService.forceDeleteItem(selectedTable.value, id);
     showMessage("永久删除成功", "success");
-    
-    // 从选中项中移除
-    selectedItems.value = selectedItems.value.filter(itemId => itemId !== id);
-    
     loadTableData();
   } catch (error) {
     showMessage("永久删除失败", "error");
@@ -832,9 +786,15 @@ const forceDeleteItem = async (id: number) => {
 // 标准问题/答案绑定删除逻辑
 const deleteStdItem = async (item: DatabaseItem) => {
   const itemType = selectedTable.value === 'std_questions' ? '标准问题' : '标准答案';
-  const bindingType = selectedTable.value === 'std_questions' ? '标准答案' : '标准问题';
   
-  if (!confirm(`确定要删除这个${itemType}吗？\n\n注意：删除${itemType}将同时删除关联的${bindingType}！`)) return;
+  let confirmMessage = '';
+  if (selectedTable.value === 'std_questions') {
+    confirmMessage = `确定要删除这个${itemType}吗？\n\n注意：删除标准问题将同时删除所有关联的标准答案！`;
+  } else {
+    confirmMessage = `确定要删除这个${itemType}吗？\n\n注意：如果这是关联标准问题的最后一个答案，标准问题也将被同时删除！`;
+  }
+  
+  if (!confirm(confirmMessage)) return;
   
   try {
     if (selectedTable.value === 'std_questions') {
@@ -879,22 +839,8 @@ const forceDeleteStdItem = async (item: DatabaseItem) => {
   if (!confirm(`确定要永久删除这个${itemType}吗？此操作不可恢复！\n\n注意：这将永久删除所有相关数据！`)) return;
   
   try {
-    // 如果项目未被软删除，先软删除
-    if (!item.is_deleted) {
-      if (selectedTable.value === 'std_questions') {
-        await databaseService.deleteItem('std_questions', item.id);
-      } else {
-        await databaseService.deleteItem('std_answers', item.id);
-      }
-    }
-    
-    // 然后强制删除
     await databaseService.forceDeleteItem(selectedTable.value, item.id);
     showMessage(`${itemType}永久删除成功`, "success");
-    
-    // 从选中项中移除
-    selectedItems.value = selectedItems.value.filter(itemId => itemId !== item.id);
-    
     loadTableData();
   } catch (error) {
     showMessage(`${itemType}永久删除失败`, "error");
@@ -906,17 +852,14 @@ const manageScoringPoints = async (stdAnswer: DatabaseItem) => {
   selectedItem.value = stdAnswer;
   
   try {
-    // 获取所有得分点（包含已删除的） - 不传递is_valid参数
+    // 获取该标准回答的所有得分点（包含已删除的）
     const response = await fetch(`/api/std-answers/${stdAnswer.id}/scoring-points`);
-    
     if (response.ok) {
       const allPoints = await response.json();
       scoringPointsData.value = allPoints;
     } else {
-      console.error("获取得分点失败:", response.status);
       scoringPointsData.value = [];
     }
-    
     showScoringPointsModal.value = true;
   } catch (error) {
     console.error("获取得分点数据失败:", error);
@@ -939,6 +882,8 @@ const deleteScoringPoint = async (pointId: number) => {
     if (selectedItem.value) {
       await manageScoringPoints(selectedItem.value);
     }
+    // 同时刷新主表数据以更新得分点计数
+    loadTableData();
   } catch (error) {
     showMessage("得分点删除失败", "error");
   }
@@ -955,6 +900,8 @@ const restoreScoringPoint = async (pointId: number) => {
     if (selectedItem.value) {
       await manageScoringPoints(selectedItem.value);
     }
+    // 同时刷新主表数据以更新得分点计数
+    loadTableData();
   } catch (error) {
     showMessage("得分点恢复失败", "error");
   }
@@ -964,17 +911,6 @@ const forceDeleteScoringPoint = async (pointId: number) => {
   if (!confirm("确定要永久删除这个得分点吗？此操作不可恢复！")) return;
   
   try {
-    // 查找当前得分点以检查删除状态
-    const currentPoint = scoringPointsData.value.find(point => point.id === pointId);
-    
-    // 如果得分点未被软删除，先软删除
-    if (currentPoint && !currentPoint.is_deleted) {
-      await fetch(`/api/std-answers/scoring-points/${pointId}`, {
-        method: 'DELETE'
-      });
-    }
-    
-    // 然后强制删除
     await fetch(`/api/std-answers/scoring-points/${pointId}/force-delete`, {
       method: 'DELETE'
     });
@@ -984,6 +920,8 @@ const forceDeleteScoringPoint = async (pointId: number) => {
     if (selectedItem.value) {
       await manageScoringPoints(selectedItem.value);
     }
+    // 同时刷新主表数据以更新得分点计数
+    loadTableData();
   } catch (error) {
     showMessage("得分点永久删除失败", "error");
   }
@@ -995,19 +933,9 @@ const closeScoringPointsModal = () => {
   scoringPointsData.value = [];
 };
 
-const manageScoringPointsForQuestion = async (questionItem: DatabaseItem) => {
-  if (!questionItem.std_answer_id) {
-    showMessage("该标准问题没有关联的标准答案，无法管理得分点。", "error"); // 修正 messageType
-    return;
-  }
-  // 模拟一个标准答案对象，或者如果后端能在获取标准问题时直接返回关联的标准答案对象则更好
-  const mockStdAnswer = { id: questionItem.std_answer_id, answer: '关联的标准答案 (ID: ' + questionItem.std_answer_id + ')' };
-  await manageScoringPoints(mockStdAnswer);
-};
-
 const handleViewModeChange = () => {
   currentPage.value = 1;
-  selectedItems.value = []; // Clear selection when view mode changes
+  selectedItems.value = [];
   loadTableData();
 };
 
@@ -1054,46 +982,993 @@ const goToPage = (page: number) => {
   loadTableData();
 };
 
-const formatCellValue = (value: any, column: TableColumn): string => {
-  if (value === null || typeof value === 'undefined' || value === '') {
-    if (selectedTable.value === 'overview_std') {
-        // Special handling for overview table to show question body or answer body
-        if (column.key === 'std_question_body' && !value) return '(无标准问题)';
-        if (column.key === 'std_answer_body' && !value) return '(无标准答案)';
-    }
-    return '-';
-  }
-
-  if (column.type === 'text') {
+const formatCellValue = (value: any, column: any) => {
+  if (!value) return "";
+  
+  if (column.type === "text") {
+    let text = "";
+    
+    // 处理数组类型的数据（总览中的关联数据）
     if (Array.isArray(value)) {
-      if (value.length === 0) return '(空列表)';
-      const joinedValue = value.map(v => String(v ?? '-')).join(', ');
-      return joinedValue.length > 100 ? joinedValue.substring(0, 97) + '...' : joinedValue;
+      if (value.length === 0) return "无";
+      text = value.map((item: any) => {
+        if (typeof item === 'object') {
+          // 对于总览数据，显示主要内容
+          return item.content || item.answer || item.text || item.title || JSON.stringify(item);
+        }
+        return String(item);
+      }).join("; ");    } else if (typeof value === 'object') {
+      // 处理对象类型
+      text = value.content || value.answer || value.text || value.title || value.body || JSON.stringify(value);
+    } else {
+      text = String(value);
     }
-    const stringValue = String(value);
-    const longTextKeys = ['std_question_body', 'std_answer_body', 'answer', 'body', 'title', 'content', 'description'];
-    if (longTextKeys.includes(column.key) && stringValue.length > 100) {
-      return stringValue.substring(0, 97) + '...';
-    }
-    return stringValue;
+    
+    return text.length > 100 ? text.substring(0, 100) + "..." : text;
   }
-  if (column.type === 'boolean') {
-    return value ? '是' : '否';
-  }
-  if (column.type === 'date') {
-    return formatDate(value);
-  }
-  // For numbers, tags, actions, the template handles direct rendering or specific components
+  
+  return value;
+};
+
+const formatDetailValue = (value: any) => {
+  if (value === null || value === undefined) return "无";
+  if (typeof value === "boolean") return value ? "是" : "否";
+  if (typeof value === "object") return JSON.stringify(value, null, 2);
   return String(value);
 };
 
-onMounted(() => {
-  const datasetIdFromRoute = route.query.dataset_id;
-  if (datasetIdFromRoute) {
-    currentDatasetId.value = Number(datasetIdFromRoute);
-    loadDataset(); // Load dataset info
+const formatDetailTextValue = (value: any) => {
+  if (!value) return "无";
+  
+  // 如果是字符串，直接返回
+  if (typeof value === 'string') {
+    return value;
   }
-  loadTableData(); // Initial data load
-});
+  
+  // 如果是数组类型的数据（总览中的关联数据）
+  if (Array.isArray(value)) {
+    if (value.length === 0) return "无";    return value.map((item: any) => {
+      if (typeof item === 'object') {
+        return item.content || item.answer || item.text || item.title || item.body || JSON.stringify(item);
+      }
+      return String(item);
+    }).join("\n\n");
+  } 
+    // 如果是对象类型
+  if (typeof value === 'object') {
+    return value.content || value.answer || value.text || value.title || value.body || JSON.stringify(value, null, 2);
+  }
+  
+  return String(value);
+};
 
+const parseTagsValue = (value: any) => {
+  return formatTags(value);
+};
+
+const getInputType = (columnType: string) => {
+  switch (columnType) {
+    case "number": return "number";
+    case "date": return "datetime-local";
+    case "boolean": return "checkbox";
+    default: return "text";
+  }
+};
+
+const showMessage = (text: string, type: "success" | "error" = "success") => {
+  message.value = text;
+  messageType.value = type;
+  setTimeout(() => {
+    message.value = "";
+  }, 3000);
+};
+
+// 得分点相关辅助函数
+const getScoringPointsCount = (item: DatabaseItem) => {
+  if (!item.scoring_points) return 0;
+  if (Array.isArray(item.scoring_points)) {
+    return item.scoring_points.filter(point => point.is_valid !== false).length;
+  }
+  return 0;
+};
+
+const getDeletedScoringPointsCount = (item: DatabaseItem) => {
+  if (!item.scoring_points) return 0;
+  if (Array.isArray(item.scoring_points)) {
+    return item.scoring_points.filter(point => point.is_valid === false).length;
+  }
+  return 0;
+};
+
+// 判断是否应该显示得分点管理按钮
+const shouldShowScoringPointsButton = (item: DatabaseItem) => {
+  // 只有在标准答案视图中才显示
+  if (selectedTable.value !== 'std_answers') return false;
+  
+  // 获取关联的标准问题类型
+  const questionType = item.std_question?.question_type;
+  
+  // 对于选择题（choice）类型不显示得分点管理按钮
+  return questionType !== 'choice';
+};
+
+// 生命周期
+onMounted(async () => {
+  // 从路由参数获取数据集ID
+  const datasetId = route.query.dataset;
+  if (datasetId && !isNaN(Number(datasetId))) {
+    currentDatasetId.value = Number(datasetId);
+    await loadDataset();
+  }
+  
+  loadTableData();
+});
 </script>
+
+<style scoped>
+.database-view {
+  max-width: 1400px;
+  margin: 0 auto;
+  padding: 20px;
+}
+
+.header {
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+  margin-bottom: 20px;
+  padding: 20px;
+  background: white;
+  border-radius: 8px;
+  box-shadow: 0 2px 4px rgba(0, 0, 0, 0.1);
+}
+
+.header h2 {
+  margin: 0;
+  color: #333;
+}
+
+.header-actions {
+  display: flex;
+  gap: 10px;
+  align-items: center;
+}
+
+.table-select,
+.per-page-select {
+  padding: 8px 12px;
+  border: 1px solid #ddd;
+  border-radius: 4px;
+  font-size: 14px;
+}
+
+.refresh-btn {
+  padding: 8px 16px;
+  background: #007bff;
+  color: white;
+  border: none;
+  border-radius: 4px;
+  cursor: pointer;
+  font-size: 14px;
+}
+
+.refresh-btn:hover:not(:disabled) {
+  background: #0056b3;
+}
+
+.refresh-btn:disabled {
+  background: #6c757d;
+  cursor: not-allowed;
+}
+
+.stats-bar {
+  display: flex;
+  gap: 20px;
+  margin-bottom: 15px;
+  padding: 15px;
+  background: #f8f9fa;
+  border-radius: 6px;
+  font-size: 14px;
+}
+
+.stat-item {
+  display: flex;
+  gap: 5px;
+}
+
+.stat-label {
+  color: #666;
+}
+
+.stat-value {
+  font-weight: bold;
+  color: #333;
+}
+
+.actions-bar {
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+  margin-bottom: 15px;
+  padding: 15px;
+  background: white;
+  border-radius: 6px;
+  box-shadow: 0 1px 3px rgba(0, 0, 0, 0.1);
+}
+
+.bulk-actions {
+  display: flex;
+  gap: 10px;
+}
+
+.view-options {
+  display: flex;
+  gap: 15px;
+  align-items: center;
+  font-size: 14px;
+}
+
+/* 美化下拉框样式 */
+.view-mode-select,
+.per-page-select {
+  padding: 8px 12px;
+  border: 1px solid #dcdfe6;
+  border-radius: 6px;
+  font-size: 14px;
+  background-color: white;
+  cursor: pointer;
+  transition: all 0.3s ease;
+  outline: none;
+  min-width: 130px;
+}
+
+.view-mode-select:hover,
+.per-page-select:hover {
+  border-color: #409eff;
+  box-shadow: 0 0 0 2px rgba(64, 158, 255, 0.1);
+}
+
+.view-mode-select:focus,
+.per-page-select:focus {
+  border-color: #409eff;
+  box-shadow: 0 0 0 3px rgba(64, 158, 255, 0.2);
+}
+
+.action-btn {
+  padding: 8px 12px;
+  border: 1px solid #ddd;
+  border-radius: 4px;
+  background: white;
+  cursor: pointer;
+  font-size: 14px;
+  transition: all 0.2s;
+}
+
+.action-btn:hover:not(:disabled) {
+  background: #f8f9fa;
+}
+
+.action-btn:disabled {
+  opacity: 0.5;
+  cursor: not-allowed;
+}
+
+.action-btn.danger {
+  border-color: #dc3545;
+  color: #dc3545;
+}
+
+.action-btn.danger:hover:not(:disabled) {
+  background: #dc3545;
+  color: white;
+}
+
+.action-btn.success {
+  border-color: #28a745;
+  color: #28a745;
+}
+
+.action-btn.success:hover:not(:disabled) {
+  background: #28a745;
+  color: white;
+}
+
+.action-btn.small {
+  padding: 4px 8px;
+  font-size: 12px;
+  min-width: auto;
+}
+
+.action-btn.scoring-btn {
+  border-color: #6f42c1;
+  color: #6f42c1;
+}
+
+.action-btn.scoring-btn:hover:not(:disabled) {
+  background: #6f42c1;
+  color: white;
+}
+
+.table-container {
+  background: white;
+  border-radius: 8px;
+  overflow: hidden;
+  box-shadow: 0 2px 4px rgba(0, 0, 0, 0.1);
+  margin-bottom: 20px;
+}
+
+.data-table {
+  width: 100%;
+  border-collapse: collapse;
+  font-size: 13px;
+}
+
+.data-table th {
+  background: #f8f9fa;
+  padding: 12px 8px;
+  text-align: left;
+  font-weight: 600;
+  color: #333;
+  border-bottom: 2px solid #dee2e6;
+  white-space: nowrap;
+}
+
+.data-table td {
+  padding: 10px 8px;
+  border-bottom: 1px solid #dee2e6;
+  vertical-align: top;
+}
+
+.data-table tr:hover {
+  background: #f8f9fa;
+}
+
+.deleted-row {
+  opacity: 0.6;
+  background: #fff3cd !important;
+}
+
+.deleted-row:hover {
+  background: #ffeaa7 !important;
+}
+
+/* 列宽控制 */
+.checkbox-col {
+  width: 40px;
+  text-align: center;
+}
+
+.id-col {
+  width: 80px;
+  text-align: center;
+}
+
+.title-col,
+.answer-col,
+.text-col {
+  min-width: 200px;
+  max-width: 300px;
+}
+
+.author-col,
+.source-col {
+  width: 120px;
+}
+
+.votes-col,
+.views-col,
+.version-col {
+  width: 80px;
+  text-align: center;
+}
+
+.date-col {
+  width: 140px;
+}
+
+.tags-col {
+  width: 150px;
+}
+
+.actions-col {
+  width: 120px;
+  text-align: center;
+}
+
+.cell-content {
+  max-height: 60px;
+  overflow: hidden;
+}
+
+.text-content {
+  display: block;
+  line-height: 1.4;
+  word-break: break-word;
+}
+
+.tags-content {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 4px;
+}
+
+.tag {
+  background: #e9ecef;
+  color: #495057;
+  padding: 2px 6px;
+  border-radius: 3px;
+  font-size: 11px;
+}
+
+.row-actions {
+  display: flex;
+  gap: 5px;
+  justify-content: center;
+}
+
+.pagination {
+  display: flex;
+  justify-content: center;
+  align-items: center;
+  gap: 10px;
+  padding: 20px;
+  background: white;
+  border-radius: 8px;
+  box-shadow: 0 2px 4px rgba(0, 0, 0, 0.1);
+}
+
+.page-btn {
+  padding: 8px 12px;
+  border: 1px solid #ddd;
+  border-radius: 4px;
+  background: white;
+  cursor: pointer;
+  font-size: 14px;
+}
+
+.page-btn:hover:not(:disabled) {
+  background: #f8f9fa;
+}
+
+.page-btn:disabled {
+  opacity: 0.5;
+  cursor: not-allowed;
+}
+
+.page-info {
+  margin: 0 20px;
+  font-size: 14px;
+  color: #666;
+}
+
+.no-data,
+.loading {
+  text-align: center;
+  padding: 40px;
+  color: #666;
+}
+
+/* 弹窗样式 */
+.modal-overlay {
+  position: fixed;
+  top: 0;
+  left: 0;
+  right: 0;
+  bottom: 0;
+  background: rgba(0, 0, 0, 0.5);
+  display: flex;
+  justify-content: center;
+  align-items: center;
+  z-index: 1000;
+}
+
+.detail-modal,
+.edit-modal {
+  background: white;
+  border-radius: 8px;
+  max-width: 600px;
+  max-height: 80vh;
+  width: 90%;
+  overflow: hidden;
+  box-shadow: 0 10px 30px rgba(0, 0, 0, 0.3);
+}
+
+.modal-header {
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+  padding: 20px;
+  border-bottom: 1px solid #dee2e6;
+  background: #f8f9fa;
+}
+
+.modal-header h3 {
+  margin: 0;
+  color: #333;
+}
+
+.close-btn {
+  background: none;
+  border: none;
+  font-size: 24px;
+  cursor: pointer;
+  color: #666;
+  padding: 0;
+  width: 30px;
+  height: 30px;
+}
+
+.close-btn:hover {
+  color: #333;
+}
+
+.modal-content {
+  padding: 20px;
+  max-height: 60vh;
+  overflow-y: auto;
+}
+
+.detail-content {
+  display: flex;
+  flex-direction: column;
+  gap: 15px;
+}
+
+.detail-item {
+  display: flex;
+  flex-direction: column;
+  gap: 5px;
+}
+
+.detail-value {
+  background: #f8f9fa;
+  padding: 10px;
+  border-radius: 4px;
+  word-break: break-word;
+}
+
+.detail-value.multiline {
+  white-space: pre-wrap;
+  font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, sans-serif;
+  line-height: 1.5;
+}
+
+.detail-value .text-value {
+  white-space: pre-wrap;
+  line-height: 1.5;
+}
+
+.detail-value .number-value,
+.detail-value .date-value,
+.detail-value .boolean-value,
+.detail-value .default-value {
+  font-weight: 500;
+}
+
+.edit-form {
+  display: flex;
+  flex-direction: column;
+  gap: 15px;
+}
+
+.form-group {
+  display: flex;
+  flex-direction: column;
+  gap: 5px;
+}
+
+.form-group label {
+  font-weight: 600;
+  color: #333;
+}
+
+.form-control {
+  padding: 10px;
+  border: 1px solid #ddd;
+  border-radius: 4px;
+  font-size: 14px;
+}
+
+.form-control:focus {
+  outline: none;
+  border-color: #007bff;
+  box-shadow: 0 0 0 2px rgba(0, 123, 255, 0.25);
+}
+
+.form-actions {
+  display: flex;
+  justify-content: flex-end;
+  gap: 10px;
+  margin-top: 20px;
+  padding-top: 20px;
+  border-top: 1px solid #dee2e6;
+}
+
+.cancel-btn {
+  padding: 10px 20px;
+  border: 1px solid #6c757d;
+  border-radius: 4px;
+  background: white;
+  color: #6c757d;
+  cursor: pointer;
+}
+
+.cancel-btn:hover {
+  background: #6c757d;
+  color: white;
+}
+
+.save-btn {
+  padding: 10px 20px;
+  border: none;
+  border-radius: 4px;
+  background: #007bff;
+  color: white;
+  cursor: pointer;
+}
+
+.save-btn:hover:not(:disabled) {
+  background: #0056b3;
+}
+
+.save-btn:disabled {
+  background: #6c757d;
+  cursor: not-allowed;
+}
+
+/* 消息提示 */
+.message {
+  position: fixed;
+  top: 20px;
+  right: 20px;
+  padding: 15px 20px;
+  border-radius: 4px;
+  color: white;
+  z-index: 1100;
+  animation: slideIn 0.3s ease;
+}
+
+.message.success {
+  background: #28a745;
+}
+
+.message.error {
+  background: #dc3545;
+}
+
+@keyframes slideIn {
+  from {
+    transform: translateX(100%);
+    opacity: 0;
+  }
+  to {
+    transform: translateX(0);
+    opacity: 1;
+  }
+}
+
+/* 总览表格样式 */
+.overview-info {
+  padding: 10px 15px;
+  background: #e3f2fd;
+  border-radius: 4px;
+  color: #1976d2;
+  font-weight: 500;
+}
+
+.overview-info .info-text {
+  font-size: 14px;
+}
+
+/* 总览表格内容样式 */
+.cell-content.text {
+  max-width: 300px;
+  line-height: 1.4;
+}
+
+.cell-content.text .text-content {
+  display: block;
+  white-space: pre-wrap;
+  word-break: break-word;
+}
+
+/* 响应式设计 */
+@media (max-width: 768px) {
+  .database-view {
+    padding: 10px;
+  }
+  
+  .header {
+    flex-direction: column;
+    gap: 15px;
+    align-items: stretch;
+  }
+  
+  .header-actions {
+    justify-content: center;
+  }
+  
+  .actions-bar {
+    flex-direction: column;
+    gap: 15px;
+    align-items: stretch;
+  }
+  
+  .bulk-actions,
+  .view-options {
+    justify-content: center;
+  }
+  
+  .data-table {
+    font-size: 12px;
+  }
+  
+  .data-table th,
+  .data-table td {
+    padding: 8px 4px;
+  }
+    .detail-modal,
+  .edit-modal {
+    width: 95%;
+    margin: 10px;
+  }
+}
+
+/* 详情弹窗特殊样式 */
+.detail-list {
+  display: flex;
+  flex-direction: column;
+  gap: 15px;
+  max-height: 400px;
+  overflow-y: auto;
+}
+
+.detail-box {
+  background: #f8f9fa;
+  border: 1px solid #e9ecef;
+  border-radius: 6px;
+  padding: 15px;
+  margin-bottom: 10px;
+}
+
+.detail-box-header {
+  display: flex;
+  gap: 15px;
+  margin-bottom: 10px;
+  font-size: 12px;
+  color: #666;
+  flex-wrap: wrap;
+}
+
+.detail-box-header .item-id {
+  font-weight: bold;
+  color: #007bff;
+}
+
+.detail-box-header .item-author {
+  color: #28a745;
+}
+
+.detail-box-header .item-relation {
+  color: #6c757d;
+  font-style: italic;
+}
+
+.detail-box-title {
+  font-weight: bold;
+  margin-bottom: 8px;
+  color: #333;
+  font-size: 14px;
+  line-height: 1.3;
+}
+
+.detail-box-content {
+  color: #555;
+  line-height: 1.5;
+  white-space: pre-wrap;
+  word-break: break-word;
+  max-height: 200px;
+  overflow-y: auto;
+  background: white;
+  padding: 10px;
+  border-radius: 4px;
+  border: 1px solid #e9ecef;
+}
+
+.no-data {
+  color: #6c757d;
+  font-style: italic;
+  text-align: center;
+  padding: 20px;
+  background: #f8f9fa;
+  border-radius: 4px;
+}
+
+.detail-value.multiline .text-value {
+  white-space: pre-wrap;
+  word-break: break-word;
+  line-height: 1.5;
+}
+
+/* 得分点样式 */
+.scoring-points-detail {
+  border: 1px solid #e9ecef;
+  border-radius: 6px;
+  padding: 15px;
+  background: #f8f9fa;
+}
+
+.scoring-points-summary {
+  margin-bottom: 15px;
+  padding: 10px;
+  background: #e3f2fd;
+  border-radius: 4px;
+  text-align: center;
+}
+
+.scoring-points-summary .count {
+  font-weight: bold;
+  color: #1976d2;
+  font-size: 16px;
+}
+
+.scoring-points-list {
+  display: flex;
+  flex-direction: column;
+  gap: 12px;
+  max-height: 400px;
+  overflow-y: auto;
+}
+
+.scoring-point-item {
+  background: white;
+  border: 1px solid #dee2e6;
+  border-radius: 6px;
+  padding: 15px;
+  transition: box-shadow 0.2s ease;
+}
+
+.scoring-point-item:hover {
+  box-shadow: 0 2px 8px rgba(0, 0, 0, 0.1);
+}
+
+.scoring-point-header {
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+  margin-bottom: 10px;
+  padding-bottom: 8px;
+  border-bottom: 1px solid #e9ecef;
+}
+
+.scoring-point-header .point-number {
+  font-weight: bold;
+  color: #007bff;
+  font-size: 14px;
+}
+
+.scoring-point-header .point-order {
+  color: #6c757d;
+  font-size: 12px;
+  background: #f8f9fa;
+  padding: 2px 8px;
+  border-radius: 12px;
+}
+
+.scoring-point-content {
+  color: #333;
+  line-height: 1.5;
+  white-space: pre-wrap;
+  word-break: break-word;
+}
+
+.no-scoring-points {
+  color: #6c757d;
+  font-style: italic;
+  text-align: center;
+  padding: 20px;
+  background: white;
+  border-radius: 4px;
+  border: 1px dashed #dee2e6;
+}
+
+/* 表格中得分点数量列的样式 */
+.scoring-points-count-col {
+  width: 120px;
+  text-align: center;
+}
+
+.scoring-points-count {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  gap: 2px;
+}
+
+.scoring-points-count .deleted-count {
+  font-size: 11px;
+  color: #dc3545;
+  font-style: italic;
+}
+
+/* 得分点管理弹窗样式 */
+.scoring-points-modal {
+  background: white;
+  border-radius: 8px;
+  max-width: 700px;
+  max-height: 80vh;
+  width: 90%;
+  overflow: hidden;
+  box-shadow: 0 10px 30px rgba(0, 0, 0, 0.3);
+}
+
+.scoring-points-modal .modal-content {
+  max-height: 60vh;
+}
+
+.scoring-points-modal .scoring-points-list {
+  max-height: 500px;
+}
+
+.scoring-points-modal .scoring-point-item {
+  position: relative;
+}
+
+.scoring-points-modal .point-header {
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+  margin-bottom: 10px;
+  padding-bottom: 8px;
+  border-bottom: 1px solid #e9ecef;
+}
+
+.scoring-points-modal .point-id {
+  font-weight: bold;
+  color: #007bff;
+  font-size: 14px;
+}
+
+.scoring-points-modal .point-order {
+  color: #6c757d;
+  font-size: 12px;
+  background: #f8f9fa;
+  padding: 2px 8px;
+  border-radius: 12px;
+}
+
+.scoring-points-modal .point-status {
+  padding: 2px 8px;
+  border-radius: 12px;
+  font-size: 11px;
+  font-weight: bold;
+  text-transform: uppercase;
+}
+
+.scoring-points-modal .point-status.active {
+  background: #d4edda;
+  color: #155724;
+}
+
+.scoring-points-modal .point-status.deleted {
+  background: #f8d7da;
+  color: #721c24;
+}
+
+.scoring-points-modal .point-content {
+  color: #333;
+  line-height: 1.5;
+  white-space: pre-wrap;
+  word-break: break-word;
+  margin-bottom: 10px;
+  padding: 10px;
+  background: #f8f9fa;
+  border-radius: 4px;
+}
+
+.scoring-points-modal .point-actions {
+  display: flex;
+  gap: 8px;
+  justify-content: flex-end;
+}
+</style>

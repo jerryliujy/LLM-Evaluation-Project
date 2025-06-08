@@ -86,22 +86,89 @@ def get_std_answers_paginated(db: Session, skip: int = 0, limit: int = 10, inclu
 def set_std_answer_deleted_status(db: Session, answer_id: int, deleted_status: bool) -> Optional[models.StdAnswer]:
     db_answer = db.query(models.StdAnswer).filter(models.StdAnswer.id == answer_id).first()
     if db_answer:
+        question_id = db_answer.std_question_id
         db_answer.is_valid = not deleted_status  # StdAnswer uses is_valid instead of is_deleted
+        
+        # 如果是删除操作，检查是否需要级联删除关联的标准问题
+        if deleted_status:
+            # 检查该问题是否还有其他有效的标准答案
+            remaining_answers = db.query(models.StdAnswer).filter(
+                models.StdAnswer.std_question_id == question_id,
+                models.StdAnswer.id != answer_id,
+                models.StdAnswer.is_valid == True
+            ).count()
+            
+            # 如果没有其他有效答案，同时删除标准问题
+            if remaining_answers == 0:
+                db.query(models.StdQuestion).filter(
+                    models.StdQuestion.id == question_id,
+                    models.StdQuestion.is_valid == True
+                ).update({"is_valid": False}, synchronize_session=False)
+        else:
+            # 如果是恢复操作，同时恢复关联的标准问题
+            db.query(models.StdQuestion).filter(
+                models.StdQuestion.id == question_id,
+                models.StdQuestion.is_valid == False
+            ).update({"is_valid": True}, synchronize_session=False)
+        
         db.commit()
         db.refresh(db_answer)
         return db_answer
     return None
 
 def set_multiple_std_answers_deleted_status(db: Session, answer_ids: List[int], deleted_status: bool) -> int:
+    # 获取所有要操作的答案及其关联的问题ID
+    answers = db.query(models.StdAnswer).filter(
+        models.StdAnswer.id.in_(answer_ids)
+    ).all()
+    
+    if not answers:
+        return 0
+    
+    # 收集所有涉及的问题ID
+    question_ids = set(answer.std_question_id for answer in answers)
+    
+    # 更新答案的删除状态
     affected_rows = db.query(models.StdAnswer).filter(
         models.StdAnswer.id.in_(answer_ids)
     ).update({models.StdAnswer.is_valid: not deleted_status}, synchronize_session=False)
+    
+    # 处理级联删除/恢复逻辑
+    for question_id in question_ids:
+        if deleted_status:
+            # 删除操作：检查该问题是否还有其他有效的标准答案
+            remaining_answers = db.query(models.StdAnswer).filter(
+                models.StdAnswer.std_question_id == question_id,
+                models.StdAnswer.id.in_(answer_ids),
+                models.StdAnswer.is_valid == True
+            ).count()
+            
+            # 如果没有其他有效答案，同时删除标准问题
+            if remaining_answers == 0:
+                db.query(models.StdQuestion).filter(
+                    models.StdQuestion.id == question_id,
+                    models.StdQuestion.is_valid == True
+                ).update({"is_valid": False}, synchronize_session=False)
+        else:
+            # 恢复操作：同时恢复关联的标准问题
+            db.query(models.StdQuestion).filter(
+                models.StdQuestion.id == question_id,
+                models.StdQuestion.is_valid == False
+            ).update({"is_valid": True}, synchronize_session=False)
+    
     db.commit()
     return affected_rows
 
 def force_delete_std_answer(db: Session, answer_id: int) -> bool:
     """永久删除标准答案"""
     try:
+        # 获取标准答案及其关联的问题ID
+        db_answer = db.query(models.StdAnswer).filter(models.StdAnswer.id == answer_id).first()
+        if not db_answer:
+            return False
+        
+        question_id = db_answer.std_question_id
+        
         # 首先删除相关的评分点
         db.query(models.StdAnswerScoringPoint).filter(
             models.StdAnswerScoringPoint.std_answer_id == answer_id
@@ -109,6 +176,23 @@ def force_delete_std_answer(db: Session, answer_id: int) -> bool:
         
         # 删除标准答案
         db.query(models.StdAnswer).filter(models.StdAnswer.id == answer_id).delete(synchronize_session=False)
+        
+        # 检查该问题是否还有其他标准答案
+        remaining_answers = db.query(models.StdAnswer).filter(
+            models.StdAnswer.std_question_id == question_id
+        ).count()
+        
+        # 如果没有其他答案，强制删除关联的标准问题
+        if remaining_answers == 0:
+            # 删除标准问题的相关关系记录
+            db.query(models.StdQuestionRawQuestionRecord).filter(
+                models.StdQuestionRawQuestionRecord.std_question_id == question_id
+            ).delete(synchronize_session=False)
+            
+            # 删除标准问题
+            db.query(models.StdQuestion).filter(
+                models.StdQuestion.id == question_id
+            ).delete(synchronize_session=False)
         
         db.commit()
         return True

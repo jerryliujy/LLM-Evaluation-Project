@@ -92,15 +92,49 @@ def set_std_question_deleted_status(db: Session, question_id: int, deleted_statu
     db_question = db.query(models.StdQuestion).filter(models.StdQuestion.id == question_id).first()
     if db_question:
         db_question.is_valid = not deleted_status  # StdQuestion uses is_valid instead of is_deleted
+        
+        # 级联删除/恢复关联的标准答案
+        if deleted_status:  # 删除操作 - 级联删除关联的标准答案
+            # 软删除所有关联的标准答案
+            db.query(models.StdAnswer).filter(
+                models.StdAnswer.std_question_id == question_id,
+                models.StdAnswer.is_valid == True
+            ).update({"is_valid": False}, synchronize_session=False)
+        else:  # 恢复操作 - 级联恢复关联的标准答案
+            # 恢复所有关联的标准答案
+            db.query(models.StdAnswer).filter(
+                models.StdAnswer.std_question_id == question_id,
+                models.StdAnswer.is_valid == False
+            ).update({"is_valid": True}, synchronize_session=False)
+        
         db.commit()
         db.refresh(db_question)
         return db_question
     return None
 
 def set_multiple_std_questions_deleted_status(db: Session, question_ids: List[int], deleted_status: bool) -> int:
+    if not question_ids:
+        return 0
+    
+    # 级联删除/恢复关联的标准答案
+    if deleted_status:  # 删除操作 - 级联删除关联的标准答案
+        # 软删除所有关联的标准答案
+        db.query(models.StdAnswer).filter(
+            models.StdAnswer.std_question_id.in_(question_ids),
+            models.StdAnswer.is_valid == True
+        ).update({"is_valid": False}, synchronize_session=False)
+    else:  # 恢复操作 - 级联恢复关联的标准答案
+        # 恢复所有关联的标准答案
+        db.query(models.StdAnswer).filter(
+            models.StdAnswer.std_question_id.in_(question_ids),
+            models.StdAnswer.is_valid == False
+        ).update({"is_valid": True}, synchronize_session=False)
+    
+    # 更新标准问题状态
     affected_rows = db.query(models.StdQuestion).filter(
         models.StdQuestion.id.in_(question_ids)
     ).update({models.StdQuestion.is_valid: not deleted_status}, synchronize_session=False)
+    
     db.commit()
     return affected_rows
 
