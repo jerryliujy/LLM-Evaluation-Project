@@ -3,9 +3,8 @@ from typing import Optional, List
 from datetime import datetime
 
 class StdAnswerScoringPointBase(BaseModel):
-    answer: str  # 统一字段名为answer
+    answer: str
     point_order: Optional[int] = 0
-    created_by: Optional[int] = None  # 改为int类型用户ID
 
 class StdAnswerScoringPointCreate(StdAnswerScoringPointBase):
     pass
@@ -14,7 +13,6 @@ class StdAnswerScoringPoint(StdAnswerScoringPointBase):
     id: int
     std_answer_id: int
     is_valid: bool
-    create_time: datetime
     previous_version_id: Optional[int] = None
 
     class Config:

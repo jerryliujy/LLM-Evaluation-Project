@@ -40,19 +40,45 @@ def get_std_answers_paginated(db: Session, skip: int = 0, limit: int = 10, inclu
         query = query.filter(models.StdAnswer.is_valid == False)
     elif not include_deleted:
         query = query.filter(models.StdAnswer.is_valid == True)
-    
     answers = query.offset(skip).limit(limit).all()
+    
+    # 转换为字典格式以避免序列化问题
+    answers_data = []
+    for answer in answers:
+        answer_dict = {
+            "id": answer.id,
+            "std_question_id": answer.std_question_id,
+            "answer": answer.answer,
+            "answered_by": answer.answered_by,
+            "answered_at": answer.answered_at,
+            "is_valid": answer.is_valid,
+            "std_question": {
+                "id": answer.std_question.id,
+                "body": answer.std_question.body,
+                "question_type": answer.std_question.question_type
+            } if answer.std_question else None,            
+            "scoring_points": [
+                {
+                    "id": point.id,
+                    "answer": point.answer,  # 使用answer字段而不是point_text
+                    "std_answer_id": point.std_answer_id,
+                    "point_order": point.point_order,
+                    "is_valid": point.is_valid,
+                    "previous_version_id": point.previous_version_id
+                } for point in answer.scoring_points
+            ] if answer.scoring_points else []
+        }
+        answers_data.append(answer_dict)
     
     # 计算分页信息
     current_page = (skip // limit) + 1 if limit > 0 else 1
     total_pages = (total + limit - 1) // limit if limit > 0 else 1
-    
     return PaginatedResponse(
-        data=answers,
+        data=answers_data,
         total=total,
         page=current_page,
         per_page=limit,
-        pages=total_pages,
+        total_pages=total_pages,
         has_next=skip + limit < total,
         has_prev=skip > 0
     )

@@ -361,15 +361,34 @@ const getDataTypeLabel = () => {
 const getFormatExample = () => {
   return `[
   {
-    "question": "What is the purpose of the 'vmlinux' file in the Linux kernel build process?",
-    "answer": "The 'vmlinux' file is the Linux kernel in a statically linked executable file format. It is an intermediate step in the boot procedure and is generally not directly used for booting.",
-    "question_type": "text",
+    "body": "What is the difference between COPY and ADD commands in Dockerfile?",
+    "answer": "COPY only supports basic copying of local files into the container, while ADD has additional features like URL support and tar auto-extraction. COPY is preferred for simple file copying operations.",
+    "question_type": "question",
+    "raw_question_ids": [1],
+    "raw_answer_ids": [1, 2],
+    "expert_answer_ids": [],
+    "tags": ["docker", "dockerfile", "commands"],
     "key_points": [
-      "vmlinux is a statically linked executable file format of the Linux kernel.",
-      "It serves as an intermediate step in the boot procedure.",
-      "The raw 'vmlinux' file can be useful for debugging."
+      {"answer": "COPY supports basic file copying only", "point_order": 1},
+      {"answer": "ADD has URL and tar extraction features", "point_order": 2},
+      {"answer": "COPY is preferred for simple operations", "point_order": 3}
     ]
-  }
+  },
+  {
+    "body": "Which command is recommended for simple file copying in Dockerfile?",
+    "answer": "A",
+    "question_type": "choice",
+    "raw_question_ids": [1],
+    "raw_answer_ids": [1],
+    "expert_answer_ids": [],
+    "tags": ["docker", "dockerfile", "best-practices"],
+    "options": [
+      {"text": "COPY", "is_correct": true},
+      {"text": "ADD", "is_correct": false},
+      {"text": "RUN", "is_correct": false},
+      {"text": "CMD", "is_correct": false}
+    ]
+  },
 ]`
 }
 

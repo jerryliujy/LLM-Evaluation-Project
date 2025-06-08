@@ -1,5 +1,6 @@
 from fastapi import APIRouter, Depends, HTTPException, Query
 from sqlalchemy.orm import Session, joinedload, selectinload
+from sqlalchemy import and_
 from typing import List, Optional
 from datetime import datetime
 
@@ -9,6 +10,7 @@ from app.models.raw_answer import RawAnswer
 from app.models.expert_answer import ExpertAnswer
 from app.models.std_question import StdQuestion
 from app.models.std_answer import StdAnswer
+from app.models.relationship_records import StdQuestionRawQuestionRecord
 
 router = APIRouter(prefix="/api/overview", tags=["Overview"])
 
@@ -22,13 +24,30 @@ async def get_std_questions_overview(
 ):
     """获取标准问题总览（包含关联的原始问题和标准答案）"""
     
-    # 构建查询
-    query = db.query(StdQuestion).options(
-        joinedload(StdQuestion.raw_question).selectinload(RawQuestion.raw_answers.and_(
+    # 构建基础查询 - 通过关系表关联原始问题，并只包含未删除的原始问题
+    query = db.query(StdQuestion).join(
+        StdQuestionRawQuestionRecord, 
+        StdQuestion.id == StdQuestionRawQuestionRecord.std_question_id
+    ).join(
+        RawQuestion,
+        and_(
+            StdQuestionRawQuestionRecord.raw_question_id == RawQuestion.id,
+            RawQuestion.is_deleted == False  # 只包含未删除的原始问题
+        )
+    ).options(
+        selectinload(StdQuestion.raw_question_records).selectinload(
+            StdQuestionRawQuestionRecord.raw_question
+        ).selectinload(RawQuestion.raw_answers.and_(
             RawAnswer.is_deleted == False
-        )).selectinload(RawQuestion.expert_answers.and_(
+        )),
+        selectinload(StdQuestion.raw_question_records).selectinload(
+            StdQuestionRawQuestionRecord.raw_question
+        ).selectinload(RawQuestion.expert_answers.and_(
             ExpertAnswer.is_deleted == False
-        )).selectinload(RawQuestion.tags),
+        )),
+        selectinload(StdQuestion.raw_question_records).selectinload(
+            StdQuestionRawQuestionRecord.raw_question
+        ).selectinload(RawQuestion.tags),
         selectinload(StdQuestion.std_answers.and_(
             StdAnswer.is_valid == True if not include_invalid else True
         )),
@@ -41,70 +60,97 @@ async def get_std_questions_overview(
     if dataset_id is not None:
         query = query.filter(StdQuestion.dataset_id == dataset_id)
     
-    # 只显示最新版本
-    if not include_invalid:
-        from sqlalchemy import func
-        subquery = db.query(
-            StdQuestion.raw_question_id,
-            StdQuestion.dataset_id,
-            func.max(StdQuestion.version).label('max_version')
-        ).filter(StdQuestion.is_valid == True).group_by(
-            StdQuestion.raw_question_id, StdQuestion.dataset_id
-        ).subquery()
-        
-        query = query.join(subquery, 
-            (StdQuestion.raw_question_id == subquery.c.raw_question_id) &
-            (StdQuestion.dataset_id == subquery.c.dataset_id) &
-            (StdQuestion.version == subquery.c.max_version)
-        )
+    # 去重（因为一个标准问题可能关联多个原始问题）
+    query = query.distinct()
     
-    std_questions = query.order_by(StdQuestion.id.desc()).offset(skip).limit(limit).all()
+    std_questions = query.order_by(StdQuestion.id.asc()).offset(skip).limit(limit).all()
     
     # 格式化返回数据
     result = []
     for std_q in std_questions:
+        # 获取第一个关联的原始问题作为主要原始问题
+        primary_raw_question = None
+        if std_q.raw_question_records:
+            primary_raw_question = std_q.raw_question_records[0].raw_question          # 收集所有关联的原始问题信息
+        raw_questions_list = []
+        raw_answers_list = []
+        expert_answers_list = []
+        
+        for record in std_q.raw_question_records:
+            raw_q = record.raw_question
+            if raw_q and not raw_q.is_deleted:
+                # 原始问题信息
+                raw_questions_list.append({
+                    "id": raw_q.id,
+                    "title": raw_q.title,
+                    "body": raw_q.body,
+                    "author": raw_q.author
+                })
+                
+                # 原始回答信息 - 显示完整内容
+                for raw_a in raw_q.raw_answers:
+                    if not raw_a.is_deleted:
+                        raw_answers_list.append({
+                            "id": raw_a.id,
+                            "content": raw_a.answer,
+                            "author": raw_a.answered_by,
+                            "question_id": raw_q.id,
+                            "question_title": raw_q.title
+                        })
+                
+                # 专家回答信息 - 显示完整内容
+                for expert_a in raw_q.expert_answers:
+                    if not expert_a.is_deleted:
+                        expert_answers_list.append({
+                            "id": expert_a.id,
+                            "content": expert_a.answer,
+                            "author": expert_a.answered_by,
+                            "question_id": raw_q.id,
+                            "question_title": raw_q.title
+                        })
+        
+        # 标准答案文本
+        std_answer_text = ""
+        if std_q.std_answers:
+            valid_answers = [a for a in std_q.std_answers if a.is_valid]
+            if valid_answers:
+                std_answer_text = valid_answers[0].answer
+        
         std_question_data = {
             "id": std_q.id,
-            "text": std_q.text,
+            "text": std_q.body,  # 标准问题文本
+            "answer_text": std_answer_text,  # 标准答案文本
+            "raw_questions": "; ".join([f"{q['title']}: {q['body']}" for q in raw_questions_list]) if raw_questions_list else "无关联原始问题",
+            "raw_answers": "; ".join([a['content'] for a in raw_answers_list]) if raw_answers_list else "无原始回答",
+            "expert_answers": "; ".join([a['content'] for a in expert_answers_list]) if expert_answers_list else "无专家回答",
             "question_type": std_q.question_type,
+            
+            # 详细数据（用于详情弹窗）
+            "raw_questions_detail": raw_questions_list,
+            "raw_answers_detail": raw_answers_list,
+            "expert_answers_detail": expert_answers_list,
             "dataset_id": std_q.dataset_id,
             "dataset_description": std_q.dataset.description if std_q.dataset else None,
-            "raw_question_id": std_q.raw_question_id,
-            "version": std_q.version,
-            "created_by": std_q.created_by,
             "created_at": std_q.created_at.isoformat() if std_q.created_at else None,
             "is_valid": std_q.is_valid,
             
-            # 关联的原始问题信息
-            "raw_question": {
-                "id": std_q.raw_question.id,
-                "title": std_q.raw_question.title,
-                "body": std_q.raw_question.body[:200] + "..." if std_q.raw_question.body and len(std_q.raw_question.body) > 200 else std_q.raw_question.body,
-                "author": std_q.raw_question.author,
-                "votes": std_q.raw_question.votes,
-                "views": std_q.raw_question.views,
-                "tags": [tag.label for tag in std_q.raw_question.tags] if std_q.raw_question.tags else [],
-                "raw_answers_count": len(std_q.raw_question.raw_answers) if std_q.raw_question.raw_answers else 0,
-                "expert_answers_count": len(std_q.raw_question.expert_answers) if std_q.raw_question.expert_answers else 0,
-                "is_deleted": std_q.raw_question.is_deleted
-            } if std_q.raw_question else None,
-            
-            # 标准答案
-            "std_answers_count": len(std_q.std_answers) if std_q.std_answers else 0,            "std_answers": [
-                {
-                    "id": std_a.id,
-                    "answer_text": std_a.answer[:150] + "..." if std_a.answer and len(std_a.answer) > 150 else std_a.answer,
-                    "version": std_a.version,
-                    "created_by": std_a.created_by,
-                    "is_valid": std_a.is_valid
-                }
-                for std_a in (std_q.std_answers[:3] if std_q.std_answers else [])
-            ]
+            # 额外的统计信息（用于调试）
+            "associated_raw_questions_count": len(std_q.raw_question_records),
+            "std_answers_count": len(std_q.std_answers) if std_q.std_answers else 0,
         }
         result.append(std_question_data)
+      # 获取总数 - 只计算有关联原始问题且原始问题未删除的标准问题
+    total_query = db.query(StdQuestion).join(
+        StdQuestionRawQuestionRecord, 
+        StdQuestion.id == StdQuestionRawQuestionRecord.std_question_id
+    ).join(
+        RawQuestion,
+        and_(
+            StdQuestionRawQuestionRecord.raw_question_id == RawQuestion.id,
+            RawQuestion.is_deleted == False
+        )
+    ).distinct()
     
-    # 获取总数
-    total_query = db.query(StdQuestion)
     if not include_invalid:
         total_query = total_query.filter(StdQuestion.is_valid == True)
     if dataset_id is not None:

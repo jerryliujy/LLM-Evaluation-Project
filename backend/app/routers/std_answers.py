@@ -233,7 +233,7 @@ def create_scoring_point(
 @router.get("/{std_answer_id}/scoring-points", response_model=List[StdAnswerScoringPointResponse])
 def list_scoring_points(
     std_answer_id: int,
-    is_valid: Optional[bool] = Query(True, description="Filter by validity"),
+    is_valid: Optional[bool] = Query(None, description="Filter by validity. None returns all points."),
     db: Session = Depends(get_db)
 ):
     """获取标准答案的评分点列表"""
@@ -277,8 +277,6 @@ def update_scoring_point(
         std_answer_id=current_point.std_answer_id,
         answer=answer,
         point_order=point_order if point_order is not None else current_point.point_order,
-        created_by=created_by or current_point.created_by,
-        version=current_point.version + 1,
         previous_version_id=current_point.id,
         is_valid=True
     )
@@ -302,3 +300,37 @@ def delete_scoring_point(scoring_point_id: int, db: Session = Depends(get_db)):
     db.commit()
     
     return {"message": "Scoring point marked as invalid"}
+
+@router.post("/scoring-points/{scoring_point_id}/restore")
+def restore_scoring_point(scoring_point_id: int, db: Session = Depends(get_db)):
+    """恢复评分点"""
+    scoring_point = db.query(StdAnswerScoringPoint).filter(
+        StdAnswerScoringPoint.id == scoring_point_id
+    ).first()
+    if not scoring_point:
+        raise HTTPException(status_code=404, detail="Scoring point not found")
+    
+    scoring_point.is_valid = True
+    db.commit()
+    
+    return {"message": "Scoring point restored"}
+
+@router.delete("/scoring-points/{scoring_point_id}/force-delete")
+def force_delete_scoring_point(scoring_point_id: int, db: Session = Depends(get_db)):
+    """强制删除评分点（永久删除）"""
+    scoring_point = db.query(StdAnswerScoringPoint).filter(
+        StdAnswerScoringPoint.id == scoring_point_id
+    ).first()
+    if not scoring_point:
+        raise HTTPException(status_code=404, detail="Scoring point not found")
+    
+    # 如果未被软删除，先软删除
+    if scoring_point.is_valid:
+        scoring_point.is_valid = False
+        db.commit()
+    
+    # 永久删除
+    db.delete(scoring_point)
+    db.commit()
+    
+    return {"message": "Scoring point permanently deleted"}

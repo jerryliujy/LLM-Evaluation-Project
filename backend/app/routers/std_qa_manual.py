@@ -64,7 +64,6 @@ async def create_manual_std_qa(
             dataset_id=std_qa_data.dataset_id,
             body=std_qa_data.question,
             question_type=std_qa_data.question_type,
-            version=1,
             created_by=current_user.id,
             is_valid=True
         )
@@ -89,17 +88,19 @@ async def create_manual_std_qa(
             is_valid=True
         )
         db.add(std_answer)
-        db.flush()  # 获取ID但不提交事务        # 处理关键点（如果有）
+        db.flush()  # 获取ID但不提交事务        
+        # 处理关键点（如果有）
         if std_qa_data.key_points:
             for index, point in enumerate(std_qa_data.key_points):
                 scoring_point = StdAnswerScoringPoint(
                     std_answer_id=std_answer.id,
-                    answer=point.content,  # 使用content作为answer字段值
+                    answer=point.content,  
                     point_order=index + 1,
                     is_valid=True
                 )
                 db.add(scoring_point)
-          # 处理原始答案关联（如果有）
+
+        # 处理原始答案关联（如果有）
         if std_qa_data.raw_answer_ids:
             for raw_answer_id in std_qa_data.raw_answer_ids:
                 raw_answer_record = StdAnswerRawAnswerRecord(

@@ -13,7 +13,6 @@ class StdAnswerRawAnswerRecord(Base):
     raw_answer_id = Column(Integer, ForeignKey("RawAnswer.id"), nullable=False)
     created_at = Column(DateTime, nullable=False, server_default=func.now())
     created_by = Column(String(100), nullable=True)
-    notes = Column(Text, nullable=True)
 
     # 关系
     std_answer = relationship("StdAnswer", back_populates="raw_answer_records")
@@ -28,7 +27,6 @@ class StdAnswerExpertAnswerRecord(Base):
     expert_answer_id = Column(Integer, ForeignKey("ExpertAnswer.id"), nullable=False)
     created_at = Column(DateTime, nullable=False, server_default=func.now())
     created_by = Column(String(100), nullable=True)
-    notes = Column(Text, nullable=True)
 
     # 关系
     std_answer = relationship("StdAnswer", back_populates="expert_answer_records")
@@ -43,7 +41,6 @@ class StdQuestionRawQuestionRecord(Base):
     raw_question_id = Column(Integer, ForeignKey("RawQuestion.id"), nullable=False)
     created_at = Column(DateTime, nullable=False, server_default=func.now())
     created_by = Column(String(100), nullable=True)
-    notes = Column(Text, nullable=True)
 
     # 关系
     std_question = relationship("StdQuestion", back_populates="raw_question_records")

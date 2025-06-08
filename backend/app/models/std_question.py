@@ -12,7 +12,9 @@ class StdQuestion(Base):
     is_valid = Column(Boolean, default=True, nullable=False, index=True)
     created_at = Column(DateTime(timezone=True), server_default=func.now())
     created_by = Column(Integer, ForeignKey("User.id"), nullable=True, index=True)
-    previous_version_id = Column(Integer, ForeignKey("StdQuestion.id"), nullable=True, index=True)      # Relationships
+    previous_version_id = Column(Integer, ForeignKey("StdQuestion.id"), nullable=True, index=True)      
+    
+    # Relationships
     dataset = relationship("Dataset")
     created_by_user = relationship("User", foreign_keys=[created_by])
     previous_version = relationship("StdQuestion", remote_side=[id])

@@ -362,6 +362,7 @@ import { ref, onMounted, computed, watch } from 'vue'
 import { useRoute, useRouter } from 'vue-router'
 import { datasetService } from '@/services/datasetService'
 import { databaseService } from '@/services/databaseService'
+import { apiClient } from '@/services/api'
 import { formatDate } from '@/utils/formatters'
 
 // 路由
@@ -380,10 +381,10 @@ const errorMessage = ref('')
 const stdQaForm = ref({
   question: '',
   answer: '',
-  questionType: 'choice', // 默认选择题
-  rawQuestionIds: [] as number[], // 改为数组，支持多个原始问题
-  rawAnswerIds: [] as number[], // 改为数组，支持多个原始回答
-  expertAnswerIds: [] as number[] // 改为数组，支持多个专家回答
+  questionType: 'text', 
+  rawQuestionIds: [] as number[], 
+  rawAnswerIds: [] as number[], 
+  expertAnswerIds: [] as number[]
 })
 
 const keyPointsText = ref('')
@@ -736,8 +737,9 @@ const submitStdQa = async () => {
     let finalKeyPoints = keyPoints.value.filter(point => point.content.trim()).map(point => ({
       content: point.content.trim()
     }))
-    
-    if (stdQaForm.value.questionType === 'choice') {
+      // 根据问题类型处理问题和答案格式
+    let finalQuestion = stdQaForm.value.question.trim()
+      if (stdQaForm.value.questionType === 'choice') {
       const validOptions = choiceOptions.value.filter(opt => opt.text.trim())
       if (validOptions.length < 2) {
         errorMessage.value = '选择题至少需要2个选项'
@@ -745,17 +747,22 @@ const submitStdQa = async () => {
       }
       const optionsText = validOptions.map((opt, index) => 
         `${String.fromCharCode(65 + index)}. ${opt.text.trim()}`
-      ).join('\n')
-      const correctOption = String.fromCharCode(65 + correctOptionIndex.value)
-      finalAnswer = `${optionsText}\n\n正确答案: ${correctOption}`
+      ).join('; ')
       
-      // 对于选择题，自动将所有选项设置为得分点
-      finalKeyPoints = validOptions.map(opt => ({
-        content: opt.text.trim()
-      }))
-    }    const payload = {
+      // 将选项放到问题中，添加提示文本
+      finalQuestion = `${stdQaForm.value.question.trim()}\n\nThe choices are: ${optionsText}`
+      
+      // 答案只存储正确选项
+      const correctOption = String.fromCharCode(65 + correctOptionIndex.value)
+      finalAnswer = correctOption
+      
+      // 对于选择题，不设置得分点，只有answer
+      finalKeyPoints = []
+    }    
+    
+    const payload = {
       dataset_id: parseInt(datasetId.value),
-      question: stdQaForm.value.question.trim(),
+      question: finalQuestion,
       answer: finalAnswer,
       question_type: stdQaForm.value.questionType,
       key_points: finalKeyPoints,
@@ -783,26 +790,8 @@ const submitStdQa = async () => {
 
 // 创建标准问答对的API调用
 const createStdQaPair = async (payload: any) => {
-  const response = await fetch('/api/std-qa/create', {
-    method: 'POST',
-    headers: {
-      'Content-Type': 'application/json',
-      'Authorization': `Bearer ${localStorage.getItem('token')}`
-    },
-    body: JSON.stringify(payload)
-  })
-
-  if (!response.ok) {
-    const errorData = await response.json()
-    throw new Error(errorData.detail || 'Failed to create standard QA pair')
-  }
-
-  return response.json()
-}
-
-// 清除错误消息
-const clearError = () => {
-  errorMessage.value = ''
+  const response = await apiClient.post('/std-qa/create', payload)
+  return response.data
 }
 
 // 监听错误消息，5秒后自动清除

@@ -47,16 +47,43 @@ def get_std_questions_paginated(db: Session, skip: int = 0, limit: int = 10, inc
     
     questions = query.offset(skip).limit(limit).all()
     
+    # 转换为字典格式以避免序列化问题
+    questions_data = []
+    for question in questions:
+        question_dict = {
+            "id": question.id,
+            "dataset_id": question.dataset_id,
+            "body": question.body,
+            "question_type": question.question_type,
+            "created_by": question.created_by,
+            "created_at": question.created_at,
+            "is_valid": question.is_valid,
+            "previous_version_id": question.previous_version_id,
+            "dataset": {
+                "id": question.dataset.id,
+                "name": question.dataset.name,
+                "description": question.dataset.description
+            } if question.dataset else None,
+            "std_answers": [
+                {
+                    "id": answer.id,
+                    "answer": answer.answer,
+                    "answered_by": answer.answered_by,
+                    "is_valid": answer.is_valid
+                } for answer in question.std_answers
+            ] if question.std_answers else []
+        }
+        questions_data.append(question_dict)
+    
     # 计算分页信息
     current_page = (skip // limit) + 1 if limit > 0 else 1
     total_pages = (total + limit - 1) // limit if limit > 0 else 1
-    
     return PaginatedResponse(
-        data=questions,
+        data=questions_data,
         total=total,
         page=current_page,
         per_page=limit,
-        pages=total_pages,
+        total_pages=total_pages,
         has_next=skip + limit < total,
         has_prev=skip > 0
     )

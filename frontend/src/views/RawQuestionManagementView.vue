@@ -35,14 +35,17 @@
         <span class="stat-value">{{ selectedItems.length }}</span>
       </div>
     </div>    <!-- 操作栏 -->
-    <div class="actions-bar">      <div class="bulk-actions" v-if="isNotOverviewMode">        <button 
+    <div class="actions-bar">      
+      <div class="bulk-actions" v-if="isNotOverviewMode">        
+      <button 
           @click="selectAll" 
           class="action-btn"
           :disabled="filteredQuestions.length === 0"
         >
           {{ selectedItems.length === filteredQuestions.length ? "取消全选" : "全选" }}
         </button>
-        <!-- 概览模式禁用批量删除和创建标准问答 -->        <button 
+        <!-- 概览模式禁用批量删除和创建标准问答 -->        
+        <button 
           v-if="isNotOverviewMode"
           @click="deleteSelectedQuestions" 
           class="action-btn danger"
@@ -92,7 +95,8 @@
 
     <!-- 数据表格 -->
     <div class="table-container">
-      <table class="data-table" v-if="filteredQuestions.length > 0">        <thead>
+      <table class="data-table" v-if="filteredQuestions.length > 0">        
+        <thead>
           <tr>
             <!-- 概览模式下不显示复选框 -->
             <th v-if="isNotOverviewMode" class="checkbox-col">
@@ -124,8 +128,9 @@
               <th class="actions-col">操作</th>
             </template>
           </tr>
-        </thead>        <tbody>          
-          <tr v-for="question in paginatedQuestions" :key="question.id" class="data-row">            <!-- 概览模式的简化行 -->
+        </thead>        
+        <tbody>          
+          <tr v-for="question in paginatedQuestions" :key="question.id" class="data-row">  
             <template v-if="isOverviewMode">
               <td class="id-col">{{ question.id }}</td>
               <td class="title-col">
@@ -195,7 +200,8 @@
               <td class="author-col">
                 <span class="truncate-text" :title="question.author || '匿名'">
                   {{ question.author || '匿名' }}
-                </span>              </td>
+                </span>              
+              </td>
               
               <!-- 非概览模式下显示关联问题信息 -->
               <td v-if="isRawAnswersMode || isExpertAnswersMode" class="question-col">
@@ -492,11 +498,13 @@
       v-model:visible="importDialogVisible"
       @imported="handleDataImported"
     />
-      <QuestionDetailDialog
-      v-model:visible="detailDialogVisible"
-      :question="currentQuestion"
-      :view-mode="viewMode"
-      @edit="handleDetailEdit"    />
+
+    <QuestionDetailDialog
+    v-model:visible="detailDialogVisible"
+    :question="currentQuestion"
+    :view-mode="viewMode"
+    @edit="handleDetailEdit"
+    />
   </div>
 </template>
 

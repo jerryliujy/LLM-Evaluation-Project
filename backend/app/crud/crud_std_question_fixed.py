@@ -50,13 +50,12 @@ def get_std_questions_paginated(db: Session, skip: int = 0, limit: int = 10, inc
     # 计算分页信息
     current_page = (skip // limit) + 1 if limit > 0 else 1
     total_pages = (total + limit - 1) // limit if limit > 0 else 1
-    
     return PaginatedResponse(
         data=questions,
         total=total,
         page=current_page,
         per_page=limit,
-        pages=total_pages,
+        total_pages=total_pages,
         has_next=skip + limit < total,
         has_prev=skip > 0
     )
