@@ -28,10 +28,12 @@ async def register_user(user: UserCreate, db: Session = Depends(get_db)):
     
     # 创建新用户
     hashed_password = get_password_hash(user.password)
+    invite_code = generate_invite_code(user.role) if user.role == "admin" else None
     db_user = User(
         username=user.username,
         password_hash=hashed_password,
-        role=user.role
+        role=user.role,
+        invite_code=invite_code if user.role == "admin" else None
     )
     db.add(db_user)
     db.commit()
@@ -73,13 +75,9 @@ async def get_user(
         raise HTTPException(status_code=404, detail="User not found")
     return user
 
-@router.post("/generate-invite-code")
-async def generate_invite_code(
-    db: Session = Depends(get_db),
-    current_user: User = Depends(get_current_active_user)
-):
+def generate_invite_code(role):
     """为当前用户生成邀请码（仅限admin用户）"""
-    if current_user.role != "admin":
+    if role != "admin":
         raise HTTPException(
             status_code=status.HTTP_403_FORBIDDEN,
             detail="Only admin users can generate invite codes"
@@ -88,12 +86,7 @@ async def generate_invite_code(
     # 生成新的邀请码
     invite_code = str(uuid.uuid4())
     
-    # 更新用户的邀请码
-    current_user.invite_code = invite_code
-    db.commit()
-    db.refresh(current_user)
-    
-    return {"invite_code": invite_code, "message": "Invite code generated successfully"}
+    return invite_code
 
 @router.get("/invite-code")
 async def get_my_invite_code(

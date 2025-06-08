@@ -11,12 +11,9 @@
         <h2 v-else>数据库管理</h2>
       </div>
       <div class="header-actions">        <select v-model="selectedTable" @change="loadTableData" class="table-select">
-          <option value="raw_questions">原始问题</option>
-          <option value="raw_answers">原始答案</option>
-          <option value="expert_answers">专家答案</option>
+          <option value="overview_std">标准问答总览</option>
           <option value="std_questions">标准问题</option>
           <option value="std_answers">标准答案</option>
-          <option value="overview_std">标准问题总览</option>
         </select>
         <button @click="refreshData" class="refresh-btn" :disabled="loading">
           {{ loading ? "加载中..." : "刷新" }}
@@ -328,7 +325,7 @@ interface TableConfig {
   editable: string[];
 }
 
-type TableName = 'raw_questions' | 'raw_answers' | 'expert_answers' | 'std_questions' | 'std_answers' | 'overview_std';
+type TableName = 'std_questions' | 'std_answers' | 'overview_std';
 
 interface DatabaseItem {
   id: number;
@@ -337,7 +334,7 @@ interface DatabaseItem {
 }
 
 // 响应式数据
-const selectedTable = ref<TableName>("raw_questions");
+const selectedTable = ref<TableName>("overview_std");
 const currentDatasetId = ref<number | undefined>(undefined);
 const currentDataset = ref<any>(null);
 const currentData = ref<DatabaseItem[]>([]);
@@ -362,38 +359,8 @@ const message = ref("");
 const messageType = ref<"success" | "error">("success");
 
 // 表格配置
-const tableConfigs: Record<TableName, TableConfig> = {  raw_questions: {
-    columns: [
-      { key: "id", label: "ID", type: "number", className: "id-col" },
-      { key: "title", label: "标题", type: "text", className: "title-col", multiline: true },
-      { key: "author", label: "作者", type: "text", className: "author-col" },
-      { key: "votes", label: "投票", type: "text", className: "votes-col" },
-      { key: "views", label: "浏览", type: "text", className: "views-col" },
-      { key: "tags", label: "标签", type: "tags", className: "tags-col" },
-      { key: "issued_at", label: "发布时间", type: "date", className: "date-col" },
-    ],
-    editable: ["title", "author", "votes", "views"]
-  },
-  raw_answers: {
-    columns: [
-      { key: "id", label: "ID", type: "number", className: "id-col" },
-      { key: "question_id", label: "问题ID", type: "number", className: "question-id-col" },
-      { key: "answer", label: "答案内容", type: "text", className: "answer-col", multiline: true },
-      { key: "answered_by", label: "回答者", type: "text", className: "author-col" },
-      { key: "upvotes", label: "赞同", type: "number", className: "votes-col" },
-      { key: "answered_at", label: "回答时间", type: "date", className: "date-col" },
-    ],
-    editable: ["answer", "answered_by", "upvotes"]
-  },  expert_answers: {
-    columns: [
-      { key: "id", label: "ID", type: "number", className: "id-col" },
-      { key: "question_id", label: "问题ID", type: "number", className: "question-id-col" },
-      { key: "answer", label: "专家答案", type: "text", className: "answer-col", multiline: true },
-      { key: "answered_by", label: "专家ID", type: "number", className: "author-col" },
-      { key: "answered_at", label: "回答时间", type: "date", className: "date-col" },
-    ],
-    editable: ["answer", "answered_by"]
-  },  std_questions: {
+const tableConfigs: Record<TableName, TableConfig> = {
+  std_questions: {
     columns: [
       { key: "id", label: "ID", type: "number", className: "id-col" },
       { key: "dataset_id", label: "数据集ID", type: "number", className: "dataset-col" },
@@ -405,7 +372,8 @@ const tableConfigs: Record<TableName, TableConfig> = {  raw_questions: {
       { key: "is_valid", label: "有效", type: "boolean", className: "valid-col" },
     ],
     editable: ["body", "question_type", "created_by"]
-  },  std_answers: {
+  },
+  std_answers: {
     columns: [
       { key: "id", label: "ID", type: "number", className: "id-col" },
       { key: "std_question_id", label: "标准问题ID", type: "number", className: "question-id-col" },

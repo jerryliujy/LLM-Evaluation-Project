@@ -10,8 +10,10 @@ CREATE TABLE `User` (
   `role` ENUM('admin', 'user', 'expert') NOT NULL DEFAULT 'user',
   `is_active` TINYINT(1) NOT NULL DEFAULT 1,
   `created_at` DATETIME NOT NULL DEFAULT CURRENT_TIMESTAMP,
+  `invite_code` VARCHAR(50) DEFAULT NULL, 
   PRIMARY KEY (`id`),
   UNIQUE INDEX `idx_user_username` (`username`),
+  UNIQUE INDEX `idx_user_invite_code` (`invite_code`),
   INDEX `idx_user_role` (`role`),
   INDEX `idx_user_active` (`is_active`)
 ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4;

@@ -34,6 +34,7 @@ from .routers import (
     auth,
     relationship_records,
     std_qa_management,
+    std_qa_manual,
     expert,
     evaluations
 )
@@ -47,10 +48,12 @@ app.include_router(data_import.router)
 app.include_router(datasets.router)
 app.include_router(std_questions.router)
 app.include_router(std_answers.router)
+app.include_router(std_qa_manual.router)
 app.include_router(tags.router)
 app.include_router(overview.router)
 app.include_router(relationship_records.router)
 app.include_router(std_qa_management.router)
+app.include_router(std_qa_manual.router)
 
 @app.get("/")
 def read_root():

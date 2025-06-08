@@ -17,7 +17,8 @@
     </div>
       <div class="header">
       <h2>数据库市场</h2>      <div class="header-actions">
-        <button v-if="userInfo?.role === 'admin'" @click="showCreateModal = true" class="create-btn">
+        <!-- must use click.stop to avoid handleClickOUtside -->
+        <button v-if="userInfo?.role === 'admin'" @click.stop="showCreateModal = true" class="create-btn">
           <span class="btn-icon">🏗️</span>
           <span>手动创建数据库</span>
         </button>
@@ -101,7 +102,7 @@
           
           <button 
             v-if="isDatasetOwner(dataset)"
-            @click="editDataset(dataset)"
+            @click.stop="editDataset(dataset)"
             class="action-btn edit"
           >
             编辑
@@ -305,7 +306,7 @@ const enterDataset = (dataset: DatasetWithStats) => {
   // 跳转到数据库查看页面，传递数据集ID
   router.push({
     name: "DatabaseView",
-    query: { datasetId: dataset.id.toString() }
+    params: { id: dataset.id.toString() }
   });
 };
 
@@ -412,7 +413,7 @@ const showMessage = (text: string, type: "success" | "error" = "success") => {
 
 const handleClickOutside = (event: MouseEvent) => {
   const target = event.target as HTMLElement;
-  if (!target.closest('.modal')) {
+  if (!target.closest('.create-modal') && !target.closest('.edit-modal')) {
     showCreateModal.value = false;
     showEditModal.value = false;
   }

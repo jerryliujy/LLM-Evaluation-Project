@@ -25,11 +25,7 @@
       </div>
       <div class="step" :class="{ active: currentStep === 2 }">
         <div class="step-number">2</div>
-        <div class="step-title">选择数据类型</div>
-      </div>
-      <div class="step" :class="{ active: currentStep === 3 }">
-        <div class="step-number">3</div>
-        <div class="step-title">上传数据</div>
+        <div class="step-title">上传标准问答数据</div>
       </div>
     </div>
 
@@ -111,51 +107,41 @@
       </div>
     </div>
 
-    <!-- 第二步：选择数据类型 -->
+    <!-- 第二步：选择导入方式 -->
     <div v-if="currentStep === 2" class="step-content">
-      <div class="data-type-section">
-        <h3>选择要导入的数据类型</h3>
-        <div class="data-types">
+      <div class="import-method-section">
+        <h3>选择导入方式</h3>
+        <div class="import-methods">
           <div
-            @click="selectDataType('raw-qa')"
-            class="data-type-card"
-            :class="{ selected: selectedDataType === 'raw-qa' }"
+            @click="selectImportMethod('file')"
+            class="import-method-card"
+            :class="{ selected: selectedImportMethod === 'file' }"
           >
-            <div class="type-icon">📝</div>
-            <h4>原始问答数据</h4>
-            <p>包含原始问题和对应的原始回答（一对多关系）</p>
+            <div class="method-icon">📁</div>
+            <h4>文件导入</h4>
+            <p>上传JSON格式的标准问答数据文件进行批量导入</p>
           </div>
           
           <div
-            @click="selectDataType('expert-answers')"
-            class="data-type-card"
-            :class="{ selected: selectedDataType === 'expert-answers' }"
+            @click="selectImportMethod('manual')"
+            class="import-method-card"
+            :class="{ selected: selectedImportMethod === 'manual' }"
           >
-            <div class="type-icon">👨‍🏫</div>
-            <h4>专家回答</h4>
-            <p>针对已存在问题的专家回答</p>
-          </div>
-          
-          <div
-            @click="selectDataType('std-qa')"
-            class="data-type-card"
-            :class="{ selected: selectedDataType === 'std-qa' }"
-          >
-            <div class="type-icon">✅</div>
-            <h4>标准问答对</h4>
-            <p>标准化的问题和答案对</p>
+            <div class="method-icon">✏️</div>
+            <h4>手动创建</h4>
+            <p>手动创建标准问答对，可以关联现有的原始问答和专家回答</p>
           </div>
         </div>
 
         <div class="step-actions">
           <button @click="goToStep(1)" class="prev-btn">上一步</button>
-          <button @click="goToStep(3)" :disabled="!selectedDataType" class="next-btn">下一步</button>
+          <button @click="handleNextFromMethod" :disabled="!selectedImportMethod" class="next-btn">下一步</button>
         </div>
       </div>
     </div>
 
-    <!-- 第三步：上传数据 -->
-    <div v-if="currentStep === 3" class="step-content">
+    <!-- 第三步：文件上传 -->
+    <div v-if="currentStep === 3 && selectedImportMethod === 'file'" class="step-content">
       <div class="upload-section">
         <h3>上传{{ getDataTypeLabel() }}数据</h3>
         
@@ -262,7 +248,7 @@
         </div>
 
         <div class="step-actions">
-          <button @click="goToStep(2)" class="prev-btn">上一步</button>
+          <button @click="goToStep(1)" class="prev-btn">上一步</button>
           <button @click="resetWizard" class="reset-btn">重新开始</button>
         </div>
       </div>
@@ -291,6 +277,9 @@ const uploadResult = ref<any>(null)
 const previewData = ref<any[]>([])
 const isDragOver = ref(false)
 
+// 导入方式相关
+const selectedImportMethod = ref<'file' | 'manual' | null>(null)
+
 // 数据集相关
 const datasets = ref<Dataset[]>([])
 const selectedDataset = ref<Dataset | null>(null)
@@ -300,8 +289,8 @@ const newDatasetIsPublic = ref(true)
 const creatingDataset = ref(false)
 const isCreatingNew = ref(false)
 
-// 数据类型相关
-const selectedDataType = ref<DataType | null>(null)
+// 数据类型相关 - 直接设置为标准问答
+const selectedDataType = ref<DataType>('std-qa')
 
 // 路由参数：数据集ID
 const datasetId = computed(() => route.query.datasetId as string)
@@ -341,52 +330,36 @@ const goToStep = (step: number) => {
   clearError()
 }
 
-// 数据类型选择
-const selectDataType = (type: DataType) => {
-  selectedDataType.value = type
+// 导入方式选择
+const selectImportMethod = (method: 'file' | 'manual') => {
+  selectedImportMethod.value = method
+}
+
+// 处理从方式选择到下一步
+const handleNextFromMethod = () => {
+  if (!selectedImportMethod.value) {
+    error.value = '请选择导入方式'
+    return
+  }
+  
+  if (selectedImportMethod.value === 'manual') {
+    // 跳转到手动创建界面
+    router.push({
+      name: 'ManualStdQaCreation',
+      params: { datasetId: selectedDataset.value!.id.toString() }
+    })
+  } else {
+    // 进入文件上传步骤
+    currentStep.value = 3
+  }
 }
 
 const getDataTypeLabel = () => {
-  switch (selectedDataType.value) {
-    case 'raw-qa': return '原始问答'
-    case 'expert-answers': return '专家回答'
-    case 'std-qa': return '标准问答'
-    default: return '数据'
-  }
+  return '标准问答'
 }
 
 const getFormatExample = () => {
-  switch (selectedDataType.value) {
-    case 'raw-qa':
-      return `[
-  {
-    "title": "问题标题",
-    "body": "问题详细内容",
-    "author": "提问者",
-    "tags": ["标签1", "标签2"],
-    "answers": [
-      {
-        "answer": "回答内容",
-        "answered_by": "回答者",
-        "upvotes": "10"
-      }
-    ]
-  }
-]`
-    case 'expert-answers':
-      return `[
-  {
-    "question_id": 1,
-    "expert_answers": [
-      {
-        "answer": "专家回答内容",
-        "answered_by": "专家用户ID"
-      }
-    ]
-  }
-]`
-    case 'std-qa':
-      return `[
+  return `[
   {
     "question": "What is the purpose of the 'vmlinux' file in the Linux kernel build process?",
     "answer": "The 'vmlinux' file is the Linux kernel in a statically linked executable file format. It is an intermediate step in the boot procedure and is generally not directly used for booting.",
@@ -398,9 +371,6 @@ const getFormatExample = () => {
     ]
   }
 ]`
-    default:
-      return '请选择数据类型'
-  }
 }
 
 // 消息提示
@@ -638,7 +608,7 @@ onMounted(async () => {
     const dataset = datasets.value.find(d => d.id.toString() === datasetId.value)
     if (dataset) {
       selectedDataset.value = dataset
-      // 如果指定了数据集，直接跳到数据类型选择步骤
+      // 如果指定了数据集，直接跳到上传步骤
       currentStep.value = 2
     }
   }
@@ -887,6 +857,19 @@ onMounted(async () => {
 .data-type-card.disabled {
   opacity: 0.5;
   cursor: not-allowed;
+  position: relative;
+}
+
+.disabled-overlay {
+  position: absolute;
+  top: 10px;
+  right: 10px;
+  background: #dc3545;
+  color: white;
+  padding: 4px 8px;
+  border-radius: 4px;
+  font-size: 12px;
+  font-weight: 600;
 }
 
 .type-icon {
@@ -1189,5 +1172,55 @@ onMounted(async () => {
   background: #e9ecef;
   color: #6c757d;
   cursor: not-allowed;
+}
+
+/* 导入方式选择样式 */
+.import-method-section {
+  max-width: 800px;
+  margin: 0 auto;
+}
+
+.import-methods {
+  display: grid;
+  grid-template-columns: repeat(auto-fit, minmax(300px, 1fr));
+  gap: 20px;
+  margin-bottom: 30px;
+}
+
+.import-method-card {
+  background: white;
+  border: 2px solid #dee2e6;
+  border-radius: 8px;
+  padding: 20px;
+  text-align: center;
+  cursor: pointer;
+  transition: all 0.2s ease;
+}
+
+.import-method-card:hover {
+  border-color: #007bff;
+  box-shadow: 0 4px 8px rgba(0, 123, 255, 0.1);
+}
+
+.import-method-card.selected {
+  border-color: #007bff;
+  background: #e3f2fd;
+}
+
+.method-icon {
+  font-size: 48px;
+  margin-bottom: 15px;
+}
+
+.import-method-card h4 {
+  margin: 0 0 10px 0;
+  color: #333;
+  font-size: 18px;
+}
+
+.import-method-card p {
+  margin: 0;
+  color: #666;
+  line-height: 1.5;
 }
 </style>

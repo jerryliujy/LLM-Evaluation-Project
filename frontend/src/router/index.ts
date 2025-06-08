@@ -6,6 +6,7 @@ import LoginView from "../views/LoginView.vue";
 import RawQuestionManagementView from "../views/RawQuestionManagementView.vue";
 import DataImportView from "../views/DataImportView.vue";
 import DatabaseView from "../views/DatabaseView.vue";
+import ManualStdQaCreationView from "../views/ManualStdQaCreationView.vue";
 
 const routes: Array<RouteRecordRaw> = [
   {
@@ -52,7 +53,8 @@ const routes: Array<RouteRecordRaw> = [
     path: "/database/:id",
     name: "DatabaseView",
     component: DatabaseView,
-    meta: { requiresAuth: true }
+    meta: { requiresAuth: true },
+    props: true
   },
   {
     path: "/expert-dashboard",
@@ -65,6 +67,13 @@ const routes: Array<RouteRecordRaw> = [
     name: "JoinExpert",
     component: () => import("../components/InviteCodeJoin.vue"),
     meta: { requiresAuth: true }
+  },
+  {
+    path: "/manual-std-qa-creation/:datasetId",
+    name: "ManualStdQaCreation",
+    component: ManualStdQaCreationView,
+    meta: { requiresAuth: true, role: 'admin' },
+    props: true
   },
 ];
 
