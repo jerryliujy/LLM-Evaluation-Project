@@ -5,6 +5,9 @@ from app.crud import crud_expert_answer
 from app.schemas import ExpertAnswer, Msg
 from app.schemas.common import PaginatedResponse
 from app.db.database import get_db
+from app.models.user import User
+from app.models.expert_answer import ExpertAnswer as ExpertAnswerModel
+from app.auth import get_current_active_user
 
 router = APIRouter(
     prefix="/api/expert_answers",
@@ -81,3 +84,66 @@ def restore_multiple_expert_answers_api(answer_ids: List[int] = Body(...), db: S
         return Msg(message=f"Successfully marked {num_restored} expert answers as not deleted")
     except ValueError as e:
         raise HTTPException(status_code=400, detail=str(e))
+
+@router.get("/search", response_model=dict)
+def search_expert_answers_api(
+    q: str = Query(..., description="搜索关键词"),
+    skip: int = Query(0, ge=0), 
+    limit: int = Query(20, ge=1, le=100),
+    current_user: User = Depends(get_current_active_user),
+    db: Session = Depends(get_db)
+):
+    """搜索专家答案"""
+    from sqlalchemy import or_, func
+    from sqlalchemy.orm import joinedload
+    from ..models.raw_question import RawQuestion as RawQuestionModel
+    
+    # 构建搜索查询
+    query = db.query(ExpertAnswerModel).options(
+        joinedload(ExpertAnswerModel.question)
+    )
+    
+    # 只搜索用户创建的问题的专家回答
+    query = query.join(RawQuestionModel).filter(RawQuestionModel.created_by == current_user.id)
+    
+    # 只搜索未删除的回答
+    query = query.filter(ExpertAnswerModel.is_deleted == False)
+    
+    # 搜索条件：在回答内容、回答者中搜索
+    search_filter = or_(
+        func.lower(ExpertAnswerModel.answer).contains(func.lower(q)),
+        func.lower(ExpertAnswerModel.answered_by).contains(func.lower(q))
+    )
+    query = query.filter(search_filter)
+    
+    # 获取总数
+    total = query.count()
+    
+    # 分页
+    answers = query.order_by(ExpertAnswerModel.id.asc()).offset(skip).limit(limit).all()
+    
+    # 转换为可序列化的格式
+    results = []
+    for answer in answers:
+        answer_data = {
+            "id": answer.id,
+            "answer": answer.answer,
+            "answered_by": answer.answered_by,
+            "answered_at": answer.answered_at.isoformat() if answer.answered_at else None,
+            "is_deleted": answer.is_deleted,
+            "question_id": answer.question_id,
+            "question": {
+                "id": answer.question.id,
+                "title": answer.question.title,
+                "author": answer.question.author,
+                "is_deleted": answer.question.is_deleted
+            } if answer.question else None
+        }
+        results.append(answer_data)
+    
+    return {
+        "results": results,
+        "total": total,
+        "skip": skip,
+        "limit": limit
+    }

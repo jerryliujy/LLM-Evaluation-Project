@@ -43,56 +43,115 @@
                 required
                 class="form-control"
               ></textarea>
-            </div>
-
-            <div class="form-group">
+            </div>            <div class="form-group">
               <label for="questionType">问题类型</label>
               <select id="questionType" v-model="stdQaForm.questionType" class="form-control">
-                <option value="text">文本问题</option>
-                <option value="code">代码问题</option>
-                <option value="concept">概念问题</option>
-                <option value="procedure">流程问题</option>
+                <option value="choice">选择题</option>
+                <option value="text">问答题</option>
               </select>
             </div>
 
-            <div class="form-group">
-              <label for="keyPoints">关键点 (可选)</label>
+            <!-- 动态题目内容区域 -->
+            <div v-if="stdQaForm.questionType === 'choice'" class="form-group">
+              <label>选择题选项</label>
+              <div class="choice-options">
+                <div v-for="(option, index) in choiceOptions" :key="index" class="option-input">
+                  <input 
+                    v-model="option.text" 
+                    :placeholder="`选项 ${String.fromCharCode(65 + index)}`"
+                    class="form-control option-text"
+                  />
+                  <label class="correct-option">
+                    <input 
+                      type="radio" 
+                      :value="index" 
+                      v-model="correctOptionIndex"
+                      name="correctOption"
+                    />
+                    正确答案
+                  </label>
+                  <button type="button" @click="removeOption(index)" class="remove-option-btn" v-if="choiceOptions.length > 2">
+                    ×
+                  </button>
+                </div>
+                <button type="button" @click="addOption" class="add-option-btn" v-if="choiceOptions.length < 6">
+                  + 添加选项
+                </button>
+              </div>
+            </div>            <!-- 得分点输入 - 仅对问答题显示 -->
+            <div v-if="stdQaForm.questionType === 'text'" class="form-group">
+              <label for="keyPoints">关键点/得分点 (可选)</label>
               <div class="key-points-input">
-                <textarea
-                  id="keyPoints"
-                  v-model="keyPointsText"
-                  placeholder="每行一个关键点"
-                  rows="3"
-                  class="form-control"
-                ></textarea>
-                <small class="form-hint">每行输入一个关键点，将自动转换为数组格式</small>
+                <div v-for="(point, index) in keyPoints" :key="index" class="key-point-item">
+                  <input 
+                    v-model="point.content"
+                    :placeholder="`得分点 ${index + 1}`"
+                    class="form-control point-content"
+                  />
+                  <button type="button" @click="removeKeyPoint(index)" class="remove-point-btn" v-if="keyPoints.length > 1">
+                    ×
+                  </button>
+                </div>
+                <button type="button" @click="addKeyPoint" class="add-point-btn">
+                  + 添加得分点
+                </button>
+                <small class="form-hint">每个得分点包含具体内容，顺序按添加先后排列</small>
               </div>
             </div>
 
-            <!-- 关联的原始问答 -->
+            <!-- 选择题得分点提示 -->
+            <div v-if="stdQaForm.questionType === 'choice'" class="form-group">
+              <label>得分点设置</label>
+              <div class="scoring-info">
+                <p class="info-text">
+                  <i class="info-icon">ℹ️</i>
+                  选择题不存在得分点。
+                </p>
+              </div>
+            </div><!-- 关联的原始问题（必填） -->
             <div class="form-section">
-              <h4>关联原始问答 (可选)</h4>
+              <h4>关联原始问题 *</h4>
               <div class="reference-section">
-                <div v-if="stdQaForm.rawQuestionId" class="selected-reference">
-                  <div class="reference-item">
-                    <strong>已选择原始问题:</strong>
-                    <p>{{ selectedRawQuestion?.title }}</p>
-                    <button type="button" @click="clearRawQuestion" class="clear-btn">移除</button>
+                <div v-if="stdQaForm.rawQuestionIds.length > 0" class="selected-reference">
+                  <div v-for="questionId in stdQaForm.rawQuestionIds" :key="questionId" class="reference-item">
+                    <strong>已选择原始问题 ID: {{ questionId }}</strong>
+                    <p>{{ getRawQuestionTitle(questionId) }}</p>
+                    <button type="button" @click="removeRawQuestion(questionId)" class="clear-btn">移除</button>
                   </div>
                 </div>
-                <div v-if="stdQaForm.rawAnswerId" class="selected-reference">
-                  <div class="reference-item">
-                    <strong>已选择原始回答:</strong>
-                    <p>{{ selectedRawAnswer?.answer?.substring(0, 100) }}...</p>
-                    <button type="button" @click="clearRawAnswer" class="clear-btn">移除</button>
+                <div v-else class="empty-reference">
+                  <p class="warning-text">⚠️ 标准问题必须关联至少一个原始问题</p>
+                </div>
+              </div>
+            </div>            <!-- 关联的原始回答和专家回答（可选） -->
+            <div class="form-section">
+              <h4>关联原始回答 (可选)</h4>
+              <div class="reference-section">
+                <div v-if="stdQaForm.rawAnswerIds.length > 0" class="selected-reference">
+                  <div v-for="answerId in stdQaForm.rawAnswerIds" :key="answerId" class="reference-item">
+                    <strong>已选择原始回答 ID: {{ answerId }}</strong>
+                    <p>{{ getRawAnswerContent(answerId) }}</p>
+                    <button type="button" @click="removeRawAnswer(answerId)" class="clear-btn">移除</button>
                   </div>
                 </div>
-                <div v-if="stdQaForm.expertAnswerId" class="selected-reference">
-                  <div class="reference-item">
-                    <strong>已选择专家回答:</strong>
-                    <p>{{ selectedExpertAnswer?.answer?.substring(0, 100) }}...</p>
-                    <button type="button" @click="clearExpertAnswer" class="clear-btn">移除</button>
+                <div v-else class="empty-reference">
+                  <p class="info-text">暂未选择原始回答</p>
+                </div>
+              </div>
+            </div>
+
+            <div class="form-section">
+              <h4>关联专家回答 (可选)</h4>
+              <div class="reference-section">
+                <div v-if="stdQaForm.expertAnswerIds.length > 0" class="selected-reference">
+                  <div v-for="answerId in stdQaForm.expertAnswerIds" :key="answerId" class="reference-item">
+                    <strong>已选择专家回答 ID: {{ answerId }}</strong>
+                    <p>{{ getExpertAnswerContent(answerId) }}</p>
+                    <button type="button" @click="removeExpertAnswer(answerId)" class="clear-btn">移除</button>
                   </div>
+                </div>
+                <div v-else class="empty-reference">
+                  <p class="info-text">暂未选择专家回答</p>
                 </div>
               </div>
             </div>
@@ -156,10 +215,9 @@
           <div v-else>
             <div
               v-for="question in rawQuestions"
-              :key="question.id"
-              @click="selectRawQuestion(question)"
+              :key="question.id"              @click="selectRawQuestion(question)"
               class="list-item"
-              :class="{ selected: stdQaForm.rawQuestionId === question.id }"
+              :class="{ selected: stdQaForm.rawQuestionIds.includes(question.id) }"
             >
               <div class="item-header">
                 <span class="item-id">ID: {{ question.id }}</span>
@@ -174,8 +232,7 @@
               </div>
             </div>
           </div>
-          
-          <div class="pagination">
+            <div class="pagination">
             <button
               @click="loadPreviousPage('raw-questions')"
               :disabled="currentPages.rawQuestions <= 1"
@@ -184,11 +241,11 @@
               上一页
             </button>
             <span class="page-info">
-              第 {{ currentPages.rawQuestions }} 页
+              第 {{ currentPages.rawQuestions }} 页 / 共 {{ totalPages.rawQuestions }} 页
             </span>
             <button
               @click="loadNextPage('raw-questions')"
-              :disabled="rawQuestions.length < itemsPerPage"
+              :disabled="currentPages.rawQuestions >= totalPages.rawQuestions"
               class="page-btn"
             >
               下一页
@@ -202,13 +259,12 @@
           <div v-else-if="rawAnswers.length === 0" class="empty-state">
             暂无原始回答数据
           </div>
-          <div v-else>
-            <div
+          <div v-else>            <div
               v-for="answer in rawAnswers"
               :key="answer.id"
               @click="selectRawAnswer(answer)"
               class="list-item"
-              :class="{ selected: stdQaForm.rawAnswerId === answer.id }"
+              :class="{ selected: stdQaForm.rawAnswerIds.includes(answer.id) }"
             >
               <div class="item-header">
                 <span class="item-id">ID: {{ answer.id }}</span>
@@ -221,9 +277,7 @@
                 <span>{{ formatDate(answer.answered_at) }}</span>
               </div>
             </div>
-          </div>
-
-          <div class="pagination">
+          </div>          <div class="pagination">
             <button
               @click="loadPreviousPage('raw-answers')"
               :disabled="currentPages.rawAnswers <= 1"
@@ -232,11 +286,11 @@
               上一页
             </button>
             <span class="page-info">
-              第 {{ currentPages.rawAnswers }} 页
+              第 {{ currentPages.rawAnswers }} 页 / 共 {{ totalPages.rawAnswers }} 页
             </span>
             <button
               @click="loadNextPage('raw-answers')"
-              :disabled="rawAnswers.length < itemsPerPage"
+              :disabled="currentPages.rawAnswers >= totalPages.rawAnswers"
               class="page-btn"
             >
               下一页
@@ -250,13 +304,13 @@
           <div v-else-if="expertAnswers.length === 0" class="empty-state">
             暂无专家回答数据
           </div>
-          <div v-else>
+          <div v-else>            
             <div
               v-for="answer in expertAnswers"
               :key="answer.id"
               @click="selectExpertAnswer(answer)"
               class="list-item"
-              :class="{ selected: stdQaForm.expertAnswerId === answer.id }"
+              :class="{ selected: stdQaForm.expertAnswerIds.includes(answer.id) }"
             >
               <div class="item-header">
                 <span class="item-id">ID: {{ answer.id }}</span>
@@ -268,9 +322,7 @@
                 <span>{{ formatDate(answer.answered_at) }}</span>
               </div>
             </div>
-          </div>
-
-          <div class="pagination">
+          </div>          <div class="pagination">
             <button
               @click="loadPreviousPage('expert-answers')"
               :disabled="currentPages.expertAnswers <= 1"
@@ -279,11 +331,11 @@
               上一页
             </button>
             <span class="page-info">
-              第 {{ currentPages.expertAnswers }} 页
+              第 {{ currentPages.expertAnswers }} 页 / 共 {{ totalPages.expertAnswers }} 页
             </span>
             <button
               @click="loadNextPage('expert-answers')"
-              :disabled="expertAnswers.length < itemsPerPage"
+              :disabled="currentPages.expertAnswers >= totalPages.expertAnswers"
               class="page-btn"
             >
               下一页
@@ -328,18 +380,30 @@ const errorMessage = ref('')
 const stdQaForm = ref({
   question: '',
   answer: '',
-  questionType: 'text',
-  rawQuestionId: null as number | null,
-  rawAnswerId: null as number | null,
-  expertAnswerId: null as number | null
+  questionType: 'choice', // 默认选择题
+  rawQuestionIds: [] as number[], // 改为数组，支持多个原始问题
+  rawAnswerIds: [] as number[], // 改为数组，支持多个原始回答
+  expertAnswerIds: [] as number[] // 改为数组，支持多个专家回答
 })
 
 const keyPointsText = ref('')
 
+// 得分点数据
+const keyPoints = ref([
+  { content: '' }
+])
+
+// 选择题和填空题的数据
+const choiceOptions = ref([
+  { text: '' },
+  { text: '' }
+])
+const correctOptionIndex = ref(0)
+
 // 选中的项目
-const selectedRawQuestion = ref<any>(null)
-const selectedRawAnswer = ref<any>(null)
-const selectedExpertAnswer = ref<any>(null)
+const selectedRawQuestions = ref<any[]>([]) // 改为数组
+const selectedRawAnswers = ref<any[]>([]) // 改为数组，支持多个原始回答
+const selectedExpertAnswers = ref<any[]>([]) // 改为数组，支持多个专家回答
 
 // 浏览面板
 const activeTab = ref<'raw-questions' | 'raw-answers' | 'expert-answers'>('raw-questions')
@@ -358,13 +422,24 @@ const currentPages = ref({
   expertAnswers: 1
 })
 
-// 计算属性
-const keyPointsArray = computed(() => {
-  return keyPointsText.value
-    .split('\n')
-    .map(point => point.trim())
-    .filter(point => point.length > 0)
+const totalCounts = ref({
+  rawQuestions: 0,
+  rawAnswers: 0,
+  expertAnswers: 0
 })
+
+const tabKeyMap = {
+  'raw-questions': 'rawQuestions',
+  'raw-answers':   'rawAnswers',
+  'expert-answers':'expertAnswers'
+} as const
+
+// 计算属性
+const totalPages = computed(() => ({
+  rawQuestions: Math.ceil(totalCounts.value.rawQuestions / itemsPerPage),
+  rawAnswers: Math.ceil(totalCounts.value.rawAnswers / itemsPerPage),
+  expertAnswers: Math.ceil(totalCounts.value.expertAnswers / itemsPerPage)
+}))
 
 // 生命周期
 onMounted(async () => {
@@ -438,6 +513,7 @@ const loadRawQuestions = async () => {
       )
     }
     rawQuestions.value = result.data
+    totalCounts.value.rawQuestions = result.total
   } catch (error) {
     console.error('Failed to load raw questions:', error)
   }
@@ -464,6 +540,7 @@ const loadRawAnswers = async () => {
       )
     }
     rawAnswers.value = result.data
+    totalCounts.value.rawAnswers = result.total
   } catch (error) {
     console.error('Failed to load raw answers:', error)
   }
@@ -490,60 +567,136 @@ const loadExpertAnswers = async () => {
       )
     }
     expertAnswers.value = result.data
+    totalCounts.value.expertAnswers = result.total
   } catch (error) {
     console.error('Failed to load expert answers:', error)
   }
 }
 
 const performSearch = () => {
-  currentPages.value[activeTab.value.replace('-', '') as 'rawQuestions' | 'rawAnswers' | 'expertAnswers'] = 1
-  loadTabData()
-}
-
-const loadNextPage = (tab: string) => {
-  const tabKey = tab.replace('-', '') as 'rawQuestions' | 'rawAnswers' | 'expertAnswers'
-  currentPages.value[tabKey]++
-  loadTabData()
-}
-
-const loadPreviousPage = (tab: string) => {
-  const tabKey = tab.replace('-', '') as 'rawQuestions' | 'rawAnswers' | 'expertAnswers'
-  if (currentPages.value[tabKey] > 1) {
-    currentPages.value[tabKey]--
+    const key = tabKeyMap[activeTab.value]
+    currentPages.value[key] = 1
     loadTabData()
+}
+
+const loadNextPage = (tab: keyof typeof tabKeyMap) => {
+  const key = tabKeyMap[tab]
+  currentPages.value[key]++
+
+  if (tab === 'raw-questions')   loadRawQuestions()
+  if (tab === 'raw-answers')     loadRawAnswers()
+  if (tab === 'expert-answers')  loadExpertAnswers()
+}
+
+const loadPreviousPage = (tab: keyof typeof tabKeyMap) => {
+  const key = tabKeyMap[tab]
+  if (currentPages.value[key] > 1) {
+    currentPages.value[key]--
+    if (tab === 'raw-questions')   loadRawQuestions()
+    if (tab === 'raw-answers')     loadRawAnswers()
+    if (tab === 'expert-answers')  loadExpertAnswers()
   }
 }
 
 // 选择项目
 const selectRawQuestion = (question: any) => {
-  stdQaForm.value.rawQuestionId = question.id
-  selectedRawQuestion.value = question
+  if (!stdQaForm.value.rawQuestionIds.includes(question.id)) {
+    stdQaForm.value.rawQuestionIds.push(question.id)
+    selectedRawQuestions.value.push(question)
+  }
 }
 
 const selectRawAnswer = (answer: any) => {
-  stdQaForm.value.rawAnswerId = answer.id
-  selectedRawAnswer.value = answer
+  if (!stdQaForm.value.rawAnswerIds.includes(answer.id)) {
+    stdQaForm.value.rawAnswerIds.push(answer.id)
+    selectedRawAnswers.value.push(answer)
+  }
 }
 
 const selectExpertAnswer = (answer: any) => {
-  stdQaForm.value.expertAnswerId = answer.id
-  selectedExpertAnswer.value = answer
+  if (!stdQaForm.value.expertAnswerIds.includes(answer.id)) {
+    stdQaForm.value.expertAnswerIds.push(answer.id)
+    selectedExpertAnswers.value.push(answer)
+  }
 }
 
 // 清除选择
-const clearRawQuestion = () => {
-  stdQaForm.value.rawQuestionId = null
-  selectedRawQuestion.value = null
+const removeRawQuestion = (questionId: number) => {
+  const index = stdQaForm.value.rawQuestionIds.indexOf(questionId)
+  if (index > -1) {
+    stdQaForm.value.rawQuestionIds.splice(index, 1)
+    const selectedIndex = selectedRawQuestions.value.findIndex(q => q.id === questionId)
+    if (selectedIndex > -1) {
+      selectedRawQuestions.value.splice(selectedIndex, 1)
+    }
+  }
 }
 
-const clearRawAnswer = () => {
-  stdQaForm.value.rawAnswerId = null
-  selectedRawAnswer.value = null
+const removeRawAnswer = (answerId: number) => {
+  const index = stdQaForm.value.rawAnswerIds.indexOf(answerId)
+  if (index > -1) {
+    stdQaForm.value.rawAnswerIds.splice(index, 1)
+    const selectedIndex = selectedRawAnswers.value.findIndex(a => a.id === answerId)
+    if (selectedIndex > -1) {
+      selectedRawAnswers.value.splice(selectedIndex, 1)
+    }
+  }
 }
 
-const clearExpertAnswer = () => {
-  stdQaForm.value.expertAnswerId = null
-  selectedExpertAnswer.value = null
+const removeExpertAnswer = (answerId: number) => {
+  const index = stdQaForm.value.expertAnswerIds.indexOf(answerId)
+  if (index > -1) {
+    stdQaForm.value.expertAnswerIds.splice(index, 1)
+    const selectedIndex = selectedExpertAnswers.value.findIndex(a => a.id === answerId)
+    if (selectedIndex > -1) {
+      selectedExpertAnswers.value.splice(selectedIndex, 1)
+    }
+  }
+}
+
+// 获取原始问题标题
+const getRawQuestionTitle = (questionId: number) => {
+  const question = selectedRawQuestions.value.find(q => q.id === questionId)
+  return question ? question.title || question.body?.substring(0, 50) + '...' : `问题 ID: ${questionId}`
+}
+
+// 获取原始回答内容
+const getRawAnswerContent = (answerId: number) => {
+  const answer = selectedRawAnswers.value.find(a => a.id === answerId)
+  return answer ? answer.answer?.substring(0, 100) + '...' : `回答 ID: ${answerId}`
+}
+
+// 获取专家回答内容
+const getExpertAnswerContent = (answerId: number) => {
+  const answer = selectedExpertAnswers.value.find(a => a.id === answerId)
+  return answer ? answer.answer?.substring(0, 100) + '...' : `专家回答 ID: ${answerId}`
+}
+
+// 选择题方法
+const addOption = () => {
+  if (choiceOptions.value.length < 6) {
+    choiceOptions.value.push({ text: '' })
+  }
+}
+
+const removeOption = (index: number) => {
+  if (choiceOptions.value.length > 2) {
+    choiceOptions.value.splice(index, 1)
+    if (correctOptionIndex.value >= choiceOptions.value.length) {
+      correctOptionIndex.value = 0
+    }
+  }
+}
+
+// 得分点方法
+const addKeyPoint = () => {
+  keyPoints.value.push({ content: '' })
+}
+
+const removeKeyPoint = (index: number) => {
+  if (keyPoints.value.length > 1) {
+    keyPoints.value.splice(index, 1)
+  }
 }
 
 // 表单处理
@@ -551,15 +704,19 @@ const resetForm = () => {
   stdQaForm.value = {
     question: '',
     answer: '',
-    questionType: 'text',
-    rawQuestionId: null,
-    rawAnswerId: null,
-    expertAnswerId: null
+    questionType: 'choice',
+    rawQuestionIds: [],
+    rawAnswerIds: [],
+    expertAnswerIds: []
   }
   keyPointsText.value = ''
-  clearRawQuestion()
-  clearRawAnswer()
-  clearExpertAnswer()
+  keyPoints.value = [{ content: '' }]
+  selectedRawQuestions.value = []
+  selectedRawAnswers.value = []
+  selectedExpertAnswers.value = []
+  // 重置选择题数据
+  choiceOptions.value = [{ text: '' }, { text: '' }]
+  correctOptionIndex.value = 0
 }
 
 const submitStdQa = async () => {
@@ -568,17 +725,43 @@ const submitStdQa = async () => {
     return
   }
 
+  if (stdQaForm.value.rawQuestionIds.length === 0) {
+    errorMessage.value = '标准问题必须关联至少一个原始问题'
+    return
+  }
+
   submitting.value = true
-  try {
-    const payload = {
+  try {    // 根据问题类型处理答案格式和得分点
+    let finalAnswer = stdQaForm.value.answer.trim()
+    let finalKeyPoints = keyPoints.value.filter(point => point.content.trim()).map(point => ({
+      content: point.content.trim()
+    }))
+    
+    if (stdQaForm.value.questionType === 'choice') {
+      const validOptions = choiceOptions.value.filter(opt => opt.text.trim())
+      if (validOptions.length < 2) {
+        errorMessage.value = '选择题至少需要2个选项'
+        return
+      }
+      const optionsText = validOptions.map((opt, index) => 
+        `${String.fromCharCode(65 + index)}. ${opt.text.trim()}`
+      ).join('\n')
+      const correctOption = String.fromCharCode(65 + correctOptionIndex.value)
+      finalAnswer = `${optionsText}\n\n正确答案: ${correctOption}`
+      
+      // 对于选择题，自动将所有选项设置为得分点
+      finalKeyPoints = validOptions.map(opt => ({
+        content: opt.text.trim()
+      }))
+    }    const payload = {
       dataset_id: parseInt(datasetId.value),
       question: stdQaForm.value.question.trim(),
-      answer: stdQaForm.value.answer.trim(),
+      answer: finalAnswer,
       question_type: stdQaForm.value.questionType,
-      key_points: keyPointsArray.value.length > 0 ? keyPointsArray.value : undefined,
-      raw_question_id: stdQaForm.value.rawQuestionId,
-      raw_answer_id: stdQaForm.value.rawAnswerId,
-      expert_answer_id: stdQaForm.value.expertAnswerId
+      key_points: finalKeyPoints,
+      raw_question_ids: stdQaForm.value.rawQuestionIds, // 改为复数形式
+      raw_answer_ids: stdQaForm.value.rawAnswerIds, // 改为复数形式，支持多个
+      expert_answer_ids: stdQaForm.value.expertAnswerIds // 改为复数形式，支持多个
     }
 
     // 调用API创建标准问答对
@@ -978,6 +1161,163 @@ watch(errorMessage, (newValue) => {
 .page-info {
   font-size: 14px;
   color: #666;
+}
+
+.choice-options {
+  margin-top: 10px;
+}
+
+.option-input {
+  display: flex;
+  align-items: center;
+  margin-bottom: 10px;
+  gap: 10px;
+}
+
+.option-text {
+  flex: 1;
+}
+
+.correct-option {
+  display: flex;
+  align-items: center;
+  gap: 5px;
+  color: #007bff;
+  font-size: 14px;
+  white-space: nowrap;
+}
+
+.correct-option input[type="radio"] {
+  margin: 0;
+}
+
+.remove-option-btn, .remove-blank-btn {
+  background: #dc3545;
+  color: white;
+  border: none;
+  border-radius: 50%;
+  width: 24px;
+  height: 24px;
+  cursor: pointer;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  font-size: 16px;
+  line-height: 1;
+}
+
+.remove-option-btn:hover, .remove-blank-btn:hover {
+  background: #c82333;
+}
+
+.add-option-btn, .add-blank-btn {
+  background: #28a745;
+  color: white;
+  border: none;
+  border-radius: 4px;
+  padding: 8px 16px;
+  cursor: pointer;
+  font-size: 14px;
+  margin-top: 10px;
+}
+
+.add-option-btn:hover, .add-blank-btn:hover {
+  background: #218838;
+}
+
+.fill-blank-answers {
+  margin-top: 10px;
+}
+
+.blank-input {
+  display: flex;
+  align-items: center;
+  margin-bottom: 10px;
+  gap: 10px;
+}
+
+.blank-input .form-control {
+  flex: 1;
+}
+
+.empty-reference {
+  text-align: center;
+  padding: 20px;
+}
+
+.warning-text {
+  color: #856404;
+  background: #fff3cd;
+  border: 1px solid #ffeeba;
+  padding: 10px;
+  border-radius: 4px;
+  margin: 0;
+}
+
+.key-point-item {
+  display: flex;
+  align-items: center;
+  margin-bottom: 10px;
+  gap: 10px;
+}
+
+.point-content {
+  flex: 1;
+}
+
+.remove-point-btn {
+  background: #dc3545;
+  color: white;
+  border: none;
+  border-radius: 50%;
+  width: 24px;
+  height: 24px;
+  cursor: pointer;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  font-size: 16px;
+  line-height: 1;
+}
+
+.remove-point-btn:hover {
+  background: #c82333;
+}
+
+.add-point-btn {
+  background: #17a2b8;
+  color: white;
+  border: none;
+  border-radius: 4px;
+  padding: 8px 16px;
+  cursor: pointer;
+  font-size: 14px;
+  margin-top: 10px;
+}
+
+.add-point-btn:hover {
+  background: #138496;
+}
+
+.scoring-info {
+  background: #e7f3ff;
+  border: 1px solid #b8daff;
+  border-radius: 4px;
+  padding: 12px;
+  margin-top: 8px;
+}
+
+.info-text {
+  margin: 0;
+  color: #0c5460;
+  font-size: 14px;
+  display: flex;
+  align-items: center;
+  gap: 8px;
+}
+
+.info-icon {
+  font-size: 16px;
 }
 
 .success-message {

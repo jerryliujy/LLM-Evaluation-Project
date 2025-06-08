@@ -64,7 +64,7 @@ CREATE TABLE `StdQuestion` (
   `id` INT NOT NULL AUTO_INCREMENT,
   `dataset_id` INT NOT NULL,
   `body` TEXT NOT NULL,
-  `question_type` VARCHAR(50) NOT NULL,
+  `question_type` ENUM('choice', 'question') NOT NULL DEFAULT 'question',
   `is_valid` TINYINT(1) NOT NULL DEFAULT 1,
   `created_at` DATETIME NOT NULL DEFAULT CURRENT_TIMESTAMP,
   `created_by` INT DEFAULT NULL,

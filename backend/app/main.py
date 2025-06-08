@@ -53,7 +53,6 @@ app.include_router(tags.router)
 app.include_router(overview.router)
 app.include_router(relationship_records.router)
 app.include_router(std_qa_management.router)
-app.include_router(std_qa_manual.router)
 
 @app.get("/")
 def read_root():

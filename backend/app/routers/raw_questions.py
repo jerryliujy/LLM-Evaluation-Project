@@ -349,3 +349,66 @@ def get_expert_answers_view_api(
         "skip": skip,
         "limit": limit
     }
+
+@router.get("/search", response_model=dict)
+def search_raw_questions_api(
+    q: str = Query(..., description="搜索关键词"),
+    skip: int = Query(0, ge=0), 
+    limit: int = Query(20, ge=1, le=100),
+    current_user: User = Depends(get_current_active_user),
+    db: Session = Depends(get_db)
+):
+    """搜索原始问题"""
+    from sqlalchemy import or_, func
+    
+    # 构建搜索查询
+    query = db.query(RawQuestionModel).options(
+        selectinload(RawQuestionModel.raw_answers),
+        selectinload(RawQuestionModel.expert_answers),
+        selectinload(RawQuestionModel.tags)
+    )
+    
+    # 只搜索用户创建的问题
+    query = query.filter(RawQuestionModel.created_by == current_user.id)
+    
+    # 只搜索未删除的问题
+    query = query.filter(RawQuestionModel.is_deleted == False)
+    
+    # 搜索条件：在标题、内容、作者中搜索
+    search_filter = or_(
+        func.lower(RawQuestionModel.title).contains(func.lower(q)),
+        func.lower(RawQuestionModel.body).contains(func.lower(q)),
+        func.lower(RawQuestionModel.author).contains(func.lower(q))
+    )
+    query = query.filter(search_filter)
+    
+    # 获取总数
+    total = query.count()
+    
+    # 分页
+    questions = query.order_by(RawQuestionModel.id.asc()).offset(skip).limit(limit).all()
+    
+    # 转换为可序列化的格式
+    results = []
+    for question in questions:
+        question_data = {
+            "id": question.id,
+            "title": question.title,
+            "body": question.body,
+            "author": question.author,
+            "url": question.url,
+            "votes": question.votes,
+            "views": question.views,
+            "issued_at": question.issued_at.isoformat() if question.issued_at else None,
+            "created_at": question.created_at.isoformat() if question.created_at else None,
+            "is_deleted": question.is_deleted,
+            "tags": [tag.label for tag in question.tags] if question.tags else []
+        }
+        results.append(question_data)
+    
+    return {
+        "results": results,
+        "total": total,
+        "skip": skip,
+        "limit": limit
+    }

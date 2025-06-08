@@ -30,14 +30,11 @@ class StdAnswerScoringPoint(Base):
 
     id = Column(Integer, primary_key=True, index=True)
     std_answer_id = Column(Integer, ForeignKey("StdAnswer.id"), nullable=False, index=True)
-    answer = Column(Text, nullable=False)  # 统一字段名为answer
-    point_order = Column(Integer, default=0)
+    answer = Column(Text, nullable=False)  # 得分点内容
+    point_order = Column(Integer, default=0)  # 得分点顺序
     is_valid = Column(Boolean, default=True, nullable=False, index=True)
-    created_by = Column(Integer, ForeignKey("User.id"), nullable=True, index=True)
-    create_time = Column(DateTime(timezone=True), server_default=func.now())
     previous_version_id = Column(Integer, ForeignKey("StdAnswerScoringPoint.id"), nullable=True, index=True)
 
     # Relationships
     std_answer = relationship("StdAnswer", back_populates="scoring_points")
-    created_by_user = relationship("User", foreign_keys=[created_by])
     previous_version = relationship("StdAnswerScoringPoint", remote_side=[id])
