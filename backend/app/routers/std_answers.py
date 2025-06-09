@@ -39,11 +39,23 @@ def read_std_answers_api(
     limit: int = Query(20, ge=1, le=100), 
     include_deleted: bool = Query(False),
     deleted_only: bool = Query(False),
+    dataset_id: Optional[int] = Query(None),
+    search_query: Optional[str] = Query(None),
+    std_question_filter: Optional[str] = Query(None),
+    scoring_point_filter: Optional[str] = Query(None),
     db: Session = Depends(get_db)
 ):
-    """获取分页的标准答案列表"""
+    """获取分页的标准答案列表，支持搜索和筛选"""
     result = crud_std_answer.get_std_answers_paginated(
-        db, skip=skip, limit=limit, include_deleted=include_deleted, deleted_only=deleted_only
+        db, 
+        skip=skip, 
+        limit=limit, 
+        include_deleted=include_deleted, 
+        deleted_only=deleted_only,
+        dataset_id=dataset_id,
+        search_query=search_query,
+        std_question_filter=std_question_filter,
+        scoring_point_filter=scoring_point_filter
     )
     return result
 

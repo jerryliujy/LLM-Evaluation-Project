@@ -164,6 +164,20 @@ class ExpertService {
       throw new Error(error.response?.data?.detail || '获取回答历史失败')
     }
   }
+
+  // 导入专家回答数据到特定任务
+  async importAnswersToTask(taskId: number, data: any[]): Promise<{
+    message: string;
+    imported_answers: number;
+    task_id: number;
+  }> {
+    try {
+      const response = await apiClient.post(`/expert/tasks/${taskId}/import-answers`, { data })
+      return response.data
+    } catch (error: any) {
+      throw new Error(error.response?.data?.detail || '导入数据失败')
+    }
+  }
 }
 
 export const expertService = new ExpertService()

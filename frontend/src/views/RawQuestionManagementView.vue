@@ -335,33 +335,7 @@
                           💀
                         </button>
                       </template>
-                    </template>                    <!-- 专家回答模式 -->
-                    <template v-else-if="isExpertAnswersMode">
-                      <button 
-                        v-if="!question.is_deleted"
-                        @click.stop="editExpertAnswer(question)" 
-                        class="action-btn small"
-                        title="编辑专家回答"
-                      >
-                        ✏️
-                      </button>
-                      <button 
-                        v-if="!question.is_deleted"
-                        @click.stop="deleteExpertAnswer(question)" 
-                        class="action-btn small danger"
-                        title="删除专家回答"
-                      >
-                        🗑️
-                      </button>
-                      <button 
-                        v-if="question.is_deleted"
-                        @click.stop="restoreExpertAnswer(question)" 
-                        class="action-btn small success"
-                        title="恢复专家回答"
-                      >
-                        ♻️
-                      </button>
-                    </template>
+                    </template>                   
                   </template>
                 </div>
               </td>
@@ -799,25 +773,6 @@ const viewQuestion = (question: RawQuestion) => {
   detailDialogVisible.value = true
 }
 
-const deleteQuestion = async (question: RawQuestion) => {
-  try {
-    await rawQuestionService.deleteRawQuestion(question.id)
-    
-    // 从本地数组中移除
-    const index = allQuestions.value.findIndex(q => q.id === question.id)
-    if (index !== -1) {
-      allQuestions.value.splice(index, 1)
-    }
-      // 从选中项中移除
-    selectedItems.value = selectedItems.value.filter(id => id !== question.id)
-    
-    showMessage('问题已删除', 'success')
-  } catch (error) {
-    console.error('删除问题失败:', error)
-    showMessage('删除失败', 'error')
-  }
-}
-
 // 原始回答的删除恢复函数
 const deleteRawAnswer = async (question: RawQuestion) => {
   if (!question.original_data) return
@@ -885,48 +840,6 @@ const forceDeleteRawAnswer = async (question: RawQuestion) => {
   } catch (error) {
     console.error('强制删除原始回答失败:', error)
     showMessage('强制删除原始回答失败', 'error')
-  }
-}
-
-// 专家回答的删除恢复函数
-const deleteExpertAnswer = async (question: RawQuestion) => {
-  if (!question.original_data) return
-  
-  try {
-    const answerId = question.original_data.id
-    await rawQuestionService.deleteExpertAnswer(answerId)
-    
-    // 重新加载数据以确保显示状态正确
-    await loadData()
-    
-    // 从选中项中移除
-    selectedItems.value = selectedItems.value.filter(id => id !== answerId)
-    
-    showMessage('专家回答已删除', 'success')
-  } catch (error) {
-    console.error('删除专家回答失败:', error)
-    showMessage('删除专家回答失败', 'error')
-  }
-}
-
-const restoreExpertAnswer = async (question: RawQuestion) => {
-  if (!question.original_data) return
-  
-  try {
-    const answerId = question.original_data.id
-    await rawQuestionService.restoreExpertAnswer(answerId)
-    
-    // 重新加载数据以确保显示状态正确
-    await loadData()
-    
-    // 从选中项中移除
-    selectedItems.value = selectedItems.value.filter(id => id !== answerId)
-    
-    showMessage('专家回答已恢复', 'success')
-  } catch (error: any) {
-    console.error('恢复专家回答失败:', error)
-    const errorMessage = error?.response?.data?.detail || error?.message || '恢复专家回答失败'
-    showMessage(errorMessage, 'error')
   }
 }
 

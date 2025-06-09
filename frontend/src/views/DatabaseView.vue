@@ -57,8 +57,82 @@
         >
           批量恢复 ({{ selectedItems.length }})
         </button>
+      </div>      <!-- 搜索和过滤选项 -->
+      <div class="search-filters">
+        <!-- 标准问题的搜索选项 -->
+        <template v-if="selectedTable === 'std_questions'">
+          <div class="search-input-group">
+            <span class="search-icon">🔍</span>
+            <input
+              v-model="searchQuery"
+              type="text"
+              placeholder="搜索问题内容..."
+              class="search-input"
+              @input="handleSearch"
+            />
+          </div>
+          <div class="filter-input-group">
+            <span class="filter-icon">🏷️</span>
+            <input
+              v-model="tagFilter"
+              type="text"
+              placeholder="过滤标签..."
+              class="filter-input"
+              @input="handleSearch"
+            />
+          </div>
+          <div class="select-group">
+            <select v-model="questionTypeFilter" @change="handleSearch" class="filter-select">
+              <option value="">所有问题类型</option>
+              <option value="text">文本题</option>
+              <option value="choice">选择题</option>
+            </select>
+          </div>
+          <div class="select-group">
+            <select v-model="scoringPointsFilter" @change="handleSearch" class="filter-select">
+              <option value="">得分点筛选</option>
+              <option value="has_scoring_points">有得分点</option>
+              <option value="no_scoring_points">无得分点</option>
+            </select>
+          </div>
+        </template>
+
+        <!-- 标准答案的搜索选项 -->
+        <template v-if="selectedTable === 'std_answers'">
+          <div class="search-input-group">
+            <span class="search-icon">🔍</span>
+            <input
+              v-model="searchQuery"
+              type="text"
+              placeholder="搜索答案内容..."
+              class="search-input"
+              @input="handleSearch"
+            />
+          </div>
+          <div class="filter-input-group">
+            <span class="filter-icon">❓</span>
+            <input
+              v-model="stdQuestionFilter"
+              type="text"
+              placeholder="搜索关联问题..."
+              class="filter-input"
+              @input="handleSearch"
+            />
+          </div>
+          <div class="filter-input-group">
+            <span class="filter-icon">🎯</span>
+            <input
+              v-model="scoringPointFilter"
+              type="text"
+              placeholder="搜索得分点..."
+              class="filter-input"
+              @input="handleSearch"
+            />
+          </div>
+        </template>
       </div>
-        <div class="view-options">
+        
+      <div class="view-options">
         <select v-model="viewMode" @change="handleViewModeChange" class="view-mode-select">
           <option value="active_only">仅显示未删除</option>
           <option value="deleted_only">仅显示已删除</option>
@@ -71,12 +145,40 @@
           <option value="100">100条/页</option>
         </select>
       </div>
-    </div>
-
-    <!-- 总览操作栏 -->
+    </div><!-- 总览操作栏 -->
     <div class="actions-bar" v-else>
       <div class="overview-info">
         <span class="info-text">总览模式：数据仅供查看，无法编辑</span>
+      </div>
+        <!-- 搜索和过滤选项 -->
+      <div class="search-filters">
+        <div class="search-input-group">
+          <span class="search-icon">🔍</span>
+          <input
+            v-model="searchQuery"
+            type="text"
+            placeholder="搜索问题内容或答案内容..."
+            class="search-input enhanced"
+            @input="handleSearch"
+          />
+        </div>
+        <div class="filter-input-group">
+          <span class="filter-icon">🏷️</span>
+          <input
+            v-model="tagFilter"
+            type="text"
+            placeholder="过滤标签..."
+            class="filter-input"
+            @input="handleSearch"
+          />
+        </div>
+        <div class="select-group">
+          <select v-model="questionTypeFilter" @change="handleSearch" class="filter-select">
+            <option value="">所有问题类型</option>
+            <option value="text">文本题</option>
+            <option value="choice">选择题</option>
+          </select>
+        </div>
       </div>
       
       <div class="view-options">
@@ -449,7 +551,8 @@
             </div>
           </form>
         </div>
-      </div>    </div>    <!-- 得分点管理弹窗 -->    
+      </div>    
+    </div>    <!-- 得分点管理弹窗 -->    
      <div v-if="showScoringPointsModal" class="modal-overlay" @click="closeScoringPointsModal">
       <div class="scoring-points-modal" @click.stop>
         <div class="modal-header">
@@ -557,6 +660,15 @@ const itemsPerPage = ref(20);
 const currentPage = ref(1);
 const totalItems = ref(0);
 
+// 搜索相关
+const searchQuery = ref("");
+const tagFilter = ref("");
+const questionTypeFilter = ref("");
+const stdQuestionFilter = ref(""); // 标准答案视图中搜索关联问题
+const scoringPointFilter = ref(""); // 标准答案视图中搜索得分点
+const scoringPointsFilter = ref(""); // 标准问题视图中筛选得分点
+const searchTimeout = ref<number | null>(null);
+
 // 弹窗相关
 const showDetailModal = ref(false);
 const showEditModal = ref(false);
@@ -571,18 +683,23 @@ const message = ref("");
 const messageType = ref<"success" | "error">("success");
 
 // 表格配置
-const tableConfigs: Record<TableName, TableConfig> = {  std_questions: {
+const tableConfigs: Record<TableName, TableConfig> = {    
+  std_questions: {
     columns: [
       { key: "id", label: "ID", type: "number", className: "id-col" },
       { key: "body", label: "问题文本", type: "text", className: "text-col", multiline: true },
       { key: "question_type", label: "问题类型", type: "text", className: "type-col" },
+      { key: "tags", label: "标签", type: "tags", className: "tags-col" },
+      { key: "std_answers_summary", label: "标准答案", type: "text", className: "answers-col", multiline: true },
     ],
     editable: ["body", "question_type", "created_by"]
-  },std_answers: {
+  },
+  std_answers: {
     columns: [
       { key: "id", label: "ID", type: "number", className: "id-col" },
       { key: "std_question_body", label: "标准问题", type: "text", className: "question-col", multiline: true },
       { key: "answer", label: "答案文本", type: "text", className: "answer-col", multiline: true },
+      { key: "scoring_points_summary", label: "得分点", type: "text", className: "scoring-points-col", multiline: true },
       { key: "scoring_points_count", label: "得分点数量", type: "number", className: "scoring-points-count-col" },
     ],
     editable: ["answer", "answered_by"]
@@ -592,6 +709,7 @@ const tableConfigs: Record<TableName, TableConfig> = {  std_questions: {
       { key: "id", label: "ID", type: "number", className: "id-col" },
       { key: "text", label: "标准问题", type: "text", className: "title-col", multiline: true },
       { key: "answer_text", label: "标准答案", type: "text", className: "answer-col", multiline: true },
+      { key: "tags", label: "标签", type: "tags", className: "tags-col" },
       { key: "raw_questions", label: "原始问题", type: "text", className: "title-col", multiline: true },
       { key: "raw_answers", label: "原始回答", type: "text", className: "answer-col", multiline: true },
       { key: "expert_answers", label: "专家回答", type: "text", className: "answer-col", multiline: true },
@@ -662,34 +780,66 @@ const loadTableData = async () => {
     } else if (viewMode.value === 'deleted_only') {
       includeDeleted = true;
       deletedOnly = true;
-    }
-      let result;
+    }    let result;
     if (selectedTable.value === 'overview_std') {
       result = await databaseService.getStdQuestionsOverview(
         skip,
         limit,
-        currentDatasetId.value
-      );
-    } else {
+        currentDatasetId.value,
+        searchQuery.value || undefined,
+        tagFilter.value || undefined,
+        questionTypeFilter.value || undefined
+      );    } else {
       result = await databaseService.getTableData(
         selectedTable.value,
         skip,
         limit,
         includeDeleted,
         currentDatasetId.value,
-        deletedOnly
+        deletedOnly,
+        searchQuery.value || undefined,
+        tagFilter.value || undefined,
+        questionTypeFilter.value || undefined,
+        stdQuestionFilter.value || undefined,
+        scoringPointFilter.value || undefined
       );
     }
-      currentData.value = result.data;
-    
-    // 特殊处理标准答案数据，添加 std_question_body 字段
+    currentData.value = result.data;
+      // 特殊处理标准问题数据，添加 tags、dataset_name 和答案摘要字段
+    if (selectedTable.value === 'std_questions') {
+      currentData.value = result.data.map(item => {
+        // 处理标准答案摘要
+        const stdAnswersSummary = item.std_answers && item.std_answers.length > 0 
+          ? item.std_answers.map((answer: any) => answer.answer).join('; ')
+          : '无标准答案';
+
+        return {
+          ...item,
+          tags: item.tags || [],  // 确保 tags 是数组
+          std_answers_summary: stdAnswersSummary,
+        };
+      });
+    }    
+    // 特殊处理标准答案数据，添加 std_question_body 和得分点相关字段
     if (selectedTable.value === 'std_answers') {
-      currentData.value = result.data.map(item => ({
-        ...item,
-        std_question_body: item.std_question?.body || '无关联问题'
-      }));
+      currentData.value = result.data.map(item => {
+        // 处理得分点摘要
+        const scoringPointsSummary = item.scoring_points && item.scoring_points.length > 0
+          ? item.scoring_points
+              .sort((a: any, b: any) => a.point_order - b.point_order)
+              .map((point: any) => `${point.point_order}. ${point.answer}`)
+              .join('; ')
+          : '无得分点';
+
+        return  {
+          ...item,
+          std_question_body: item.std_question?.body || '无关联问题',
+          scoring_points_summary: scoringPointsSummary,
+          scoring_points_count: item.scoring_points_count || 0
+        };
+      });
     }
-      totalItems.value = result.total;
+    totalItems.value = result.total;
     // deletedCount 是计算属性，不需要手动设置
     selectedItems.value = [];
   } catch (error) {
@@ -703,6 +853,20 @@ const loadTableData = async () => {
 const refreshData = () => {
   currentPage.value = 1;
   loadTableData();
+};
+
+// 处理搜索的防抖方法
+const handleSearch = () => {
+  // 清除之前的超时
+  if (searchTimeout.value) {
+    clearTimeout(searchTimeout.value);
+  }
+  
+  // 设置新的超时，实现防抖
+  searchTimeout.value = setTimeout(() => {
+    currentPage.value = 1; // 重置到第一页
+    loadTableData();
+  }, 300) as unknown as number; // 300ms 防抖延迟
 };
 
 const selectAll = () => {
@@ -843,22 +1007,14 @@ const forceDeleteStdItem = async (item: DatabaseItem) => {
 const manageScoringPoints = async (stdAnswer: DatabaseItem) => {
   selectedItem.value = stdAnswer;
   
-  try {
-    // 获取该标准回答的所有得分点（包含已删除的）
-    const response = await fetch(`/api/std-answers/${stdAnswer.id}/scoring-points`);
-    if (response.ok) {
-      const allPoints = await response.json();
-      scoringPointsData.value = allPoints;
-    } else {
-      scoringPointsData.value = [];
-    }
-    showScoringPointsModal.value = true;
-  } catch (error) {
-    console.error("获取得分点数据失败:", error);
-    showMessage("获取得分点数据失败", "error");
+  // 直接使用已经加载的得分点数据，无需重新调用API
+  if (stdAnswer.scoring_points && Array.isArray(stdAnswer.scoring_points)) {
+    scoringPointsData.value = stdAnswer.scoring_points;
+  } else {
     scoringPointsData.value = [];
-    showScoringPointsModal.value = true;
   }
+  
+  showScoringPointsModal.value = true;
 };
 
 const deleteScoringPoint = async (pointId: number) => {

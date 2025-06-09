@@ -10,7 +10,7 @@ from app.models.raw_answer import RawAnswer
 from app.models.expert_answer import ExpertAnswer
 from app.models.std_question import StdQuestion
 from app.models.std_answer import StdAnswer
-from app.models.relationship_records import StdQuestionRawQuestionRecord
+from app.models.relationship_records import StdQuestionRawQuestionRecord, StdAnswerExpertAnswerRecord
 
 router = APIRouter(prefix="/api/overview", tags=["Overview"])
 
@@ -20,6 +20,9 @@ async def get_std_questions_overview(
     limit: int = Query(20, ge=1, le=100),
     include_invalid: bool = Query(False),
     dataset_id: Optional[int] = Query(None),
+    search_query: Optional[str] = Query(None, description="搜索查询"),
+    tag_filter: Optional[str] = Query(None, description="标签过滤"),
+    question_type_filter: Optional[str] = Query(None, description="问题类型过滤"),
     db: Session = Depends(get_db)
 ):
     """获取标准问题总览（包含关联的原始问题和标准答案）"""
@@ -56,9 +59,31 @@ async def get_std_questions_overview(
     
     if not include_invalid:
         query = query.filter(StdQuestion.is_valid == True)
-    
     if dataset_id is not None:
         query = query.filter(StdQuestion.dataset_id == dataset_id)
+      # 添加搜索查询过滤
+    if search_query:
+        search_term = f"%{search_query}%"
+        # 需要左外连接标准答案表，以便在搜索中包含标准答案内容
+        from sqlalchemy import or_
+        query = query.outerjoin(StdAnswer, StdQuestion.id == StdAnswer.std_question_id)
+        query = query.filter(
+            or_(
+                StdQuestion.body.ilike(search_term),
+                RawQuestion.title.ilike(search_term),
+                RawQuestion.body.ilike(search_term),
+                StdAnswer.answer.ilike(search_term)
+            )
+        )
+    
+    # 添加问题类型过滤
+    if question_type_filter:
+        query = query.filter(StdQuestion.question_type.ilike(f"%{question_type_filter}%"))
+    
+    # 添加标签过滤
+    if tag_filter:
+        from app.models.tag import Tag
+        query = query.join(RawQuestion.tags).filter(Tag.label.ilike(f"%{tag_filter}%"))
     
     # 去重（因为一个标准问题可能关联多个原始问题）
     query = query.distinct()
@@ -71,20 +96,26 @@ async def get_std_questions_overview(
         # 获取第一个关联的原始问题作为主要原始问题
         primary_raw_question = None
         if std_q.raw_question_records:
-            primary_raw_question = std_q.raw_question_records[0].raw_question          # 收集所有关联的原始问题信息
+            primary_raw_question = std_q.raw_question_records[0].raw_question        # 收集所有关联的原始问题信息
         raw_questions_list = []
         raw_answers_list = []
         expert_answers_list = []
+        all_tags = set()  # 收集所有关联原始问题的标签
         
         for record in std_q.raw_question_records:
             raw_q = record.raw_question
             if raw_q and not raw_q.is_deleted:
+                # 收集标签信息
+                for tag in raw_q.tags:
+                    all_tags.add(tag.label)
+                
                 # 原始问题信息
                 raw_questions_list.append({
                     "id": raw_q.id,
                     "title": raw_q.title,
                     "body": raw_q.body,
-                    "author": raw_q.author
+                    "author": raw_q.author,
+                    "tags": [tag.label for tag in raw_q.tags]
                 })
                 
                 # 原始回答信息 - 显示完整内容
@@ -96,21 +127,33 @@ async def get_std_questions_overview(
                             "author": raw_a.answered_by,
                             "question_id": raw_q.id,
                             "question_title": raw_q.title
-                        })
-                
-                # 专家回答信息 - 显示完整内容
+                        })                # 专家回答信息 - 只显示已通过关联表正式采纳的专家回答
                 for expert_a in raw_q.expert_answers:
                     if not expert_a.is_deleted:
-                        expert_answers_list.append({
-                            "id": expert_a.id,
-                            "content": expert_a.answer,
-                            "author": expert_a.answered_by,
-                            "question_id": raw_q.id,
-                            "question_title": raw_q.title
-                        })
+                        # 检查该专家回答是否已被正式采纳（通过 StdAnswerExpertAnswerRecord 关联表）
+                        # 只有在关联表中有记录的专家回答才会显示在概览中
+                        if std_q.std_answers:
+                            for std_answer in std_q.std_answers:
+                                if std_answer.is_valid:
+                                    # 检查该专家回答是否与当前标准答案有关联记录
+                                    relation_exists = db.query(StdAnswerExpertAnswerRecord).filter(
+                                        and_(
+                                            StdAnswerExpertAnswerRecord.std_answer_id == std_answer.id,
+                                            StdAnswerExpertAnswerRecord.expert_answer_id == expert_a.id
+                                        )
+                                    ).first()
+                                    
+                                    if relation_exists:
+                                        expert_answers_list.append({
+                                            "id": expert_a.id,
+                                            "content": expert_a.answer,
+                                            "author": expert_a.answered_by,
+                                            "question_id": raw_q.id,
+                                            "question_title": raw_q.title
+                                        })
+                                        break  # 找到一个关联就足够了，避免重复添加
         
-        # 标准答案文本
-        std_answer_text = ""
+        # 标准答案文本        std_answer_text = ""
         if std_q.std_answers:
             valid_answers = [a for a in std_q.std_answers if a.is_valid]
             if valid_answers:
@@ -120,6 +163,7 @@ async def get_std_questions_overview(
             "id": std_q.id,
             "text": std_q.body,  # 标准问题文本
             "answer_text": std_answer_text,  # 标准答案文本
+            "tags": list(all_tags),  # 从关联的原始问题收集的所有标签
             "raw_questions": "; ".join([f"{q['title']}: {q['body']}" for q in raw_questions_list]) if raw_questions_list else "无关联原始问题",
             "raw_answers": "; ".join([a['content'] for a in raw_answers_list]) if raw_answers_list else "无原始回答",
             "expert_answers": "; ".join([a['content'] for a in expert_answers_list]) if expert_answers_list else "无专家回答",
@@ -138,8 +182,7 @@ async def get_std_questions_overview(
             "associated_raw_questions_count": len(std_q.raw_question_records),
             "std_answers_count": len(std_q.std_answers) if std_q.std_answers else 0,
         }
-        result.append(std_question_data)
-      # 获取总数 - 只计算有关联原始问题且原始问题未删除的标准问题
+        result.append(std_question_data)      # 获取总数 - 只计算有关联原始问题且原始问题未删除的标准问题
     total_query = db.query(StdQuestion).join(
         StdQuestionRawQuestionRecord, 
         StdQuestion.id == StdQuestionRawQuestionRecord.std_question_id
@@ -149,13 +192,34 @@ async def get_std_questions_overview(
             StdQuestionRawQuestionRecord.raw_question_id == RawQuestion.id,
             RawQuestion.is_deleted == False
         )
-    ).distinct()
+    )
     
     if not include_invalid:
         total_query = total_query.filter(StdQuestion.is_valid == True)
     if dataset_id is not None:
         total_query = total_query.filter(StdQuestion.dataset_id == dataset_id)
-    total = total_query.count()
+      # 添加与主查询相同的搜索过滤条件
+    if search_query:
+        search_term = f"%{search_query}%"
+        from sqlalchemy import or_
+        total_query = total_query.outerjoin(StdAnswer, StdQuestion.id == StdAnswer.std_question_id)
+        total_query = total_query.filter(
+            or_(
+                StdQuestion.body.ilike(search_term),
+                RawQuestion.title.ilike(search_term),
+                RawQuestion.body.ilike(search_term),
+                StdAnswer.answer_text.ilike(search_term)
+            )
+        )
+    
+    if question_type_filter:
+        total_query = total_query.filter(StdQuestion.question_type.ilike(f"%{question_type_filter}%"))
+    
+    if tag_filter:
+        from app.models.tag import Tag
+        total_query = total_query.join(RawQuestion.tags).filter(Tag.label.ilike(f"%{tag_filter}%"))
+    
+    total = total_query.distinct().count()
     
     return {
         "data": result,

@@ -17,14 +17,21 @@ interface OverviewStatistics {
   avg_expert_answers_per_question: number;
 }
 
-export const databaseService = {  // 获取表格数据
+export const databaseService = {
+  // 获取表格数据
   async getTableData(
     tableName: string,
     skip = 0,
     limit = 20,
     includeDeleted = false,
     datasetId?: number,
-    deletedOnly = false
+    deletedOnly = false,
+    searchQuery?: string,
+    tagFilter?: string,
+    questionTypeFilter?: string,
+    stdQuestionFilter?: string,
+    scoringPointFilter?: string,
+    scoringPointsFilter?: string
   ): Promise<TableDataResult> {
     const endpoint = this.getTableEndpoint(tableName);
     const params: any = {
@@ -42,6 +49,19 @@ export const databaseService = {  // 获取表格数据
 
     if (datasetId) {
       params.dataset_id = datasetId.toString();
+    }    // 标准问题的搜索参数
+    if (tableName === 'std_questions') {
+      if (searchQuery) params.search_query = searchQuery;
+      if (tagFilter) params.tag_filter = tagFilter;
+      if (questionTypeFilter) params.question_type_filter = questionTypeFilter;
+      if (scoringPointsFilter) params.scoring_points_filter = scoringPointsFilter;
+    }
+
+    // 标准答案的搜索参数
+    if (tableName === 'std_answers') {
+      if (searchQuery) params.search_query = searchQuery;
+      if (stdQuestionFilter) params.std_question_filter = stdQuestionFilter;
+      if (scoringPointFilter) params.scoring_point_filter = scoringPointFilter;
     }
 
     try {
@@ -181,12 +201,14 @@ export const databaseService = {  // 获取表格数据
       throw new Error("Failed to fetch raw questions overview");
     }
   },
-
   // 获取标准问题总览
   async getStdQuestionsOverview(
     skip = 0,
     limit = 20,
-    datasetId?: number
+    datasetId?: number,
+    searchQuery?: string,
+    tagFilter?: string,
+    questionTypeFilter?: string
   ): Promise<TableDataResult> {
     const params: any = {
       skip: skip.toString(),
@@ -195,6 +217,18 @@ export const databaseService = {  // 获取表格数据
 
     if (datasetId) {
       params.dataset_id = datasetId.toString();
+    }
+
+    if (searchQuery) {
+      params.search_query = searchQuery;
+    }
+
+    if (tagFilter) {
+      params.tag_filter = tagFilter;
+    }
+
+    if (questionTypeFilter) {
+      params.question_type_filter = questionTypeFilter;
     }
 
     try {

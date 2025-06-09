@@ -4,14 +4,26 @@ from typing import List
 from app.db.database import get_db
 from app.models.user import User
 from app.models.expert_task import ExpertTask as ExpertTaskModel
+from app.models.expert_answer import ExpertAnswer as ExpertAnswerModel
+from app.models.raw_question import RawQuestion as RawQuestionModel
 from app.auth import get_current_active_user
 from app.schemas.expert_task import ExpertTask, ExpertTaskCreate, ExpertTaskUpdate, InviteCodeRequest
 from app.schemas.raw_question import RawQuestion
 from app.schemas.expert_answer import ExpertAnswerCreate, ExpertAnswer
 from app.crud import crud_expert_task, crud_raw_question, crud_expert_answer
+from pydantic import BaseModel
+from datetime import datetime
 import uuid
 
 router = APIRouter(prefix="/api/expert", tags=["expert"])
+
+class ExpertDataImport(BaseModel):
+    data: List[dict]
+
+class DataImportResult(BaseModel):
+    message: str
+    imported_answers: int
+    task_id: int
 
 @router.post("/tasks", response_model=ExpertTask)
 async def join_task_by_invite_code(
@@ -252,3 +264,98 @@ async def get_invite_code_info(
         "admin_id": admin.id,
         "invite_code": invite_code
     }
+
+@router.post("/tasks/{task_id}/import-answers", response_model=DataImportResult)
+async def import_expert_answers_to_task(
+    task_id: int,
+    import_data: ExpertDataImport,
+    current_user: User = Depends(get_current_active_user),
+    db: Session = Depends(get_db)
+):
+    """专家向特定任务导入回答数据"""
+    if current_user.role != "expert":
+        raise HTTPException(
+            status_code=status.HTTP_403_FORBIDDEN,
+            detail="只有专家用户可以导入数据"
+        )
+      # 验证任务是否属于当前专家，并确保加载关联的管理员信息
+    from sqlalchemy.orm import joinedload
+    task = db.query(ExpertTaskModel).options(
+        joinedload(ExpertTaskModel.admin)
+    ).filter(
+        ExpertTaskModel.id == task_id,
+        ExpertTaskModel.expert_id == current_user.id,
+        ExpertTaskModel.is_active == True
+    ).first()
+    
+    if not task:
+        raise HTTPException(
+            status_code=status.HTTP_404_NOT_FOUND,
+            detail="任务不存在或您没有权限"
+        )
+    
+    try:
+        data = import_data.data
+        imported_answers = 0
+        
+        for item in data:
+            question_id = item.get('question_id')
+            answer_text = item.get('answer')
+            referenced_raw_answer_ids = item.get('referenced_raw_answer_ids', [])
+            
+            if not question_id or not answer_text:
+                continue
+                
+            # 验证问题是否属于该任务的管理员
+            question = db.query(RawQuestionModel).filter(
+                RawQuestionModel.id == question_id,
+                RawQuestionModel.created_by == task.admin_id
+            ).first()
+            
+            if not question:
+                continue  # 跳过不属于该管理员的问题
+            
+            # 检查是否已经存在该专家对该问题的回答
+            existing_answer = db.query(ExpertAnswerModel).filter(
+                ExpertAnswerModel.question_id == question_id,
+                ExpertAnswerModel.answered_by == current_user.id,
+                ExpertAnswerModel.is_deleted == False
+            ).first()
+            
+            if existing_answer:
+                # 更新现有回答
+                existing_answer.answer = answer_text
+                existing_answer.answered_at = datetime.now()
+                # 注意：referenced_raw_answer_ids 在当前模型中可能需要额外处理
+            else:                # 创建新回答
+                expert_answer = ExpertAnswerModel(
+                    question_id=question_id,
+                    answer=answer_text,
+                    answered_by=current_user.id,
+                    answered_at=datetime.now(),
+                    is_deleted=False
+                )
+                db.add(expert_answer)
+                
+            imported_answers += 1
+        
+        db.commit()
+        
+        # 获取管理员用户名用于返回消息
+        try:
+            admin_username = task.admin.username if hasattr(task, 'admin') and task.admin else f"管理员 {task.admin_id}"
+        except Exception:
+            admin_username = f"管理员 {task.admin_id}"
+        
+        return DataImportResult(
+            message=f"成功导入 {imported_answers} 条专家回答到任务 {admin_username}",
+            imported_answers=imported_answers,
+            task_id=task_id
+        )
+        
+    except Exception as e:
+        db.rollback()
+        raise HTTPException(
+            status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
+            detail=f"导入数据时发生错误: {str(e)}"
+        )

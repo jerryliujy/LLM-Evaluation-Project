@@ -89,12 +89,17 @@
     <div v-if="selectedPool" class="questions-section">
       <div class="section-header">
         <h2>{{ selectedPool.admin_username }} 的问题</h2>
-        <div class="question-filter">
-          <select v-model="questionFilter" @change="filterQuestions">
-            <option value="all">全部问题</option>
-            <option value="unanswered">未回答</option>
-            <option value="answered">已回答</option>
-          </select>
+        <div class="section-actions">
+          <button class="btn-import" @click="showDataImportDialog = true">
+            📁 导入专家回答数据
+          </button>
+          <div class="question-filter">
+            <select v-model="questionFilter" @change="filterQuestions">
+              <option value="all">全部问题</option>
+              <option value="unanswered">未回答</option>
+              <option value="answered">已回答</option>
+            </select>
+          </div>
         </div>
       </div>
       
@@ -175,6 +180,142 @@
       </div>
     </div>
 
+    <!-- 数据导入对话框 -->
+    <div v-if="showDataImportDialog" class="modal-overlay" @click="closeDataImportDialog">
+      <div class="modal-content data-import-modal" @click.stop>
+        <div class="modal-header">
+          <h3>导入专家回答数据</h3>
+          <button class="modal-close" @click="closeDataImportDialog">&times;</button>
+        </div>
+        <div class="modal-body">
+          <div class="import-info">
+            <p><strong>目标管理员:</strong> {{ selectedPool?.admin_username }}</p>
+            <p><strong>数据格式:</strong> 专家回答数据 JSON 格式</p>
+          </div>
+          
+          <div class="import-step" v-if="importStep === 'select'">
+            <h4>选择数据文件</h4>
+            <div class="file-upload-area">
+              <input
+                type="file"
+                id="dataFile"
+                accept=".json"
+                @change="handleFileSelect"
+                class="file-input"
+              />
+              <label for="dataFile" class="file-upload-label">
+                <div class="upload-icon">📁</div>
+                <div class="upload-text">
+                  <p>点击选择 JSON 文件</p>
+                  <p class="upload-hint">支持 .json 格式</p>
+                </div>
+              </label>
+            </div>
+            
+            <div class="data-format-help">
+              <h5>数据格式示例：</h5>
+              <pre class="format-example">[
+  {
+    "question_id": 1,
+    "answer": "专家回答内容...",
+    "referenced_raw_answer_ids": [1, 2]
+  }
+]</pre>
+            </div>
+          </div>
+
+          <div class="import-step" v-if="importStep === 'preview'">
+            <h4>数据预览</h4>
+            <div class="preview-stats">
+              <span class="stat-item">
+                <strong>总记录数:</strong> {{ importData.length }}
+              </span>
+              <span class="stat-item">
+                <strong>有效记录:</strong> {{ validRecords }}
+              </span>
+            </div>
+            
+            <div class="preview-data" v-if="previewData.length > 0">
+              <div v-for="(item, index) in previewData" :key="index" class="preview-item">
+                <div class="preview-header">
+                  <span class="preview-id">问题ID: {{ item.question_id }}</span>
+                  <span class="preview-status" :class="{ 
+                    valid: item.question_id && item.answer,
+                    invalid: !item.question_id || !item.answer
+                  }">
+                    {{ item.question_id && item.answer ? '✓ 有效' : '✗ 无效' }}
+                  </span>
+                </div>
+                <div class="preview-answer">
+                  {{ truncateText(item.answer || '无回答内容', 100) }}
+                </div>
+              </div>
+            </div>
+
+            <div class="validation-errors" v-if="validationErrors.length > 0">
+              <h5>验证错误：</h5>
+              <ul>
+                <li v-for="error in validationErrors" :key="error">{{ error }}</li>
+              </ul>
+            </div>
+          </div>
+
+          <div class="import-step" v-if="importStep === 'importing'">
+            <div class="importing-status">
+              <div class="loading-spinner"></div>
+              <p>正在导入数据，请稍候...</p>
+            </div>
+          </div>
+
+          <div class="import-step" v-if="importStep === 'result'">
+            <div class="import-result">
+              <div class="result-icon" :class="{ success: importSuccess, error: !importSuccess }">
+                {{ importSuccess ? '✅' : '❌' }}
+              </div>
+              <h4>{{ importSuccess ? '导入成功' : '导入失败' }}</h4>
+              <p v-if="importSuccess">
+                成功导入 {{ importResult?.imported_answers || 0 }} 条专家回答
+              </p>
+              <p v-else class="error-text">
+                {{ importErrorMessage }}
+              </p>
+            </div>
+          </div>
+
+          <div class="form-actions">
+            <button type="button" class="btn-secondary" @click="closeDataImportDialog">
+              {{ importStep === 'result' ? '关闭' : '取消' }}
+            </button>
+            <button 
+              v-if="importStep === 'select'" 
+              type="button" 
+              class="btn-primary" 
+              @click="loadTestData"
+            >
+              加载测试数据
+            </button>
+            <button 
+              v-if="importStep === 'preview'" 
+              type="button" 
+              class="btn-primary" 
+              :disabled="validRecords === 0 || importing"
+              @click="startImport"
+            >
+              {{ importing ? '导入中...' : '开始导入' }}
+            </button>
+            <button 
+              v-if="importStep === 'result' && importSuccess" 
+              type="button" 
+              class="btn-primary" 
+              @click="closeDataImportDialog"
+            >
+              完成
+            </button>
+          </div>
+        </div>
+      </div>
+    </div>
+
     <!-- 成功提示 -->
     <div v-if="successMessage" class="success-toast">
       {{ successMessage }}
@@ -222,7 +363,17 @@ const answers = ref<ExpertAnswer[]>([])
 // 对话框状态
 const showJoinDialog = ref(false)
 const showAnswerEditor = ref(false)
+const showDataImportDialog = ref(false)
 const inviteCodeInput = ref('')
+
+// 数据导入相关
+const importStep = ref<'select' | 'preview' | 'importing' | 'result'>('select')
+const importing = ref(false)
+const importData = ref<any[]>([])
+const importSuccess = ref(false)
+const importResult = ref<{ imported_answers: number } | null>(null)
+const importErrorMessage = ref('')
+const validationErrors = ref<string[]>([])
 
 // 答案编辑器
 const currentQuestion = ref<RawQuestion | null>(null)
@@ -260,6 +411,15 @@ const filteredQuestions = computed(() => {
     return questions.value.filter(q => !hasAnswer(q.id))
   }
   return questions.value
+})
+
+// 数据导入相关计算属性
+const validRecords = computed(() => {
+  return importData.value.filter(item => item.question_id && item.answer).length
+})
+
+const previewData = computed(() => {
+  return importData.value.slice(0, 3) // 显示前3条记录
 })
 
 // 生命周期
@@ -410,6 +570,109 @@ async function logout() {
     router.push({ name: 'Login' })
   } catch (error) {
     console.error('退出登录失败:', error)
+  }
+}
+
+// 数据导入相关方法
+function closeDataImportDialog() {
+  showDataImportDialog.value = false
+  resetImportState()
+}
+
+function resetImportState() {
+  importStep.value = 'select'
+  importing.value = false
+  importData.value = []
+  importSuccess.value = false
+  importResult.value = null
+  importErrorMessage.value = ''
+  validationErrors.value = []
+}
+
+function handleFileSelect(event: Event) {
+  const file = (event.target as HTMLInputElement).files?.[0]
+  if (!file) return
+
+  const reader = new FileReader()
+  reader.onload = (e) => {
+    try {
+      const data = JSON.parse(e.target?.result as string)
+      if (Array.isArray(data)) {
+        importData.value = data
+        validateImportData(data)
+        importStep.value = 'preview'
+      } else {
+        showError('文件格式错误：应该是JSON数组格式')
+      }
+    } catch (error) {
+      showError('文件解析失败：请确保是有效的JSON文件')
+    }
+  }
+  reader.readAsText(file)
+}
+
+function validateImportData(data: any[]) {
+  const errors: string[] = []
+  
+  data.forEach((item, index) => {
+    if (!item.question_id) {
+      errors.push(`第${index + 1}项缺少question_id字段`)
+    }
+    if (!item.answer) {
+      errors.push(`第${index + 1}项缺少answer字段`)
+    }
+  })
+  
+  validationErrors.value = errors
+}
+
+async function loadTestData() {
+  try {
+    // 加载测试数据
+    const response = await fetch('/test_data/expert_answers_data.json')
+    if (!response.ok) {
+      throw new Error('加载测试数据失败')
+    }
+    const data = await response.json()
+    
+    if (Array.isArray(data)) {
+      importData.value = data
+      validateImportData(data)
+      importStep.value = 'preview'
+    } else {
+      showError('测试数据格式错误')
+    }
+  } catch (error) {
+    showError('加载测试数据失败，请检查测试文件是否存在')
+  }
+}
+
+async function startImport() {
+  if (!selectedPool.value || validRecords.value === 0) return
+  
+  importing.value = true
+  importStep.value = 'importing'
+  
+  try {
+    const result = await expertService.importAnswersToTask(
+      selectedPool.value.task_id,
+      importData.value.filter(item => item.question_id && item.answer)
+    )
+    
+    importSuccess.value = true
+    importResult.value = result
+    importStep.value = 'result'
+    
+    // 重新加载数据
+    await loadAnswers()
+    await loadAdminPools()
+    
+  } catch (error: any) {
+    importSuccess.value = false
+    importErrorMessage.value = error.message || '导入失败'
+    importStep.value = 'result'
+  } finally {
+    importing.value = false
   }
 }
 </script>
@@ -824,6 +1087,227 @@ async function logout() {
   border-radius: 4px;
   box-shadow: 0 4px 8px rgba(0, 0, 0, 0.1);
   z-index: 1100;
+}
+
+/* 数据导入相关样式 */
+.section-actions {
+  display: flex;
+  align-items: center;
+  gap: 15px;
+}
+
+.btn-import {
+  background: linear-gradient(135deg, #28a745 0%, #20c997 100%);
+  color: white;
+  border: none;
+  padding: 10px 20px;
+  border-radius: 6px;
+  cursor: pointer;
+  font-weight: 500;
+  transition: all 0.3s ease;
+  display: flex;
+  align-items: center;
+  gap: 8px;
+}
+
+.btn-import:hover {
+  transform: translateY(-2px);
+  box-shadow: 0 6px 20px rgba(40, 167, 69, 0.3);
+}
+
+.data-import-modal {
+  max-width: 600px;
+  max-height: 80vh;
+  overflow-y: auto;
+}
+
+.import-info {
+  background: #f8f9fa;
+  padding: 15px;
+  border-radius: 6px;
+  margin-bottom: 20px;
+}
+
+.import-info p {
+  margin: 5px 0;
+  color: #495057;
+}
+
+.import-step {
+  margin-bottom: 20px;
+}
+
+.file-upload-area {
+  position: relative;
+  margin: 15px 0;
+}
+
+.file-input {
+  display: none;
+}
+
+.file-upload-label {
+  display: flex;
+  align-items: center;
+  gap: 15px;
+  padding: 20px;
+  border: 2px dashed #dee2e6;
+  border-radius: 8px;
+  cursor: pointer;
+  transition: all 0.3s ease;
+  text-align: left;
+}
+
+.file-upload-label:hover {
+  border-color: #007bff;
+  background-color: #f8f9fa;
+}
+
+.upload-icon {
+  font-size: 24px;
+}
+
+.upload-text p {
+  margin: 0;
+}
+
+.upload-hint {
+  font-size: 0.9em;
+  color: #6c757d;
+}
+
+.data-format-help {
+  margin-top: 20px;
+  background: #e9ecef;
+  padding: 15px;
+  border-radius: 6px;
+}
+
+.format-example {
+  background: #f8f9fa;
+  padding: 10px;
+  border-radius: 4px;
+  font-size: 0.9em;
+  overflow-x: auto;
+}
+
+.preview-stats {
+  display: flex;
+  gap: 20px;
+  margin-bottom: 15px;
+}
+
+.stat-item {
+  padding: 8px 12px;
+  background: #e9ecef;
+  border-radius: 4px;
+  font-size: 0.9em;
+}
+
+.preview-data {
+  max-height: 300px;
+  overflow-y: auto;
+  border: 1px solid #dee2e6;
+  border-radius: 6px;
+}
+
+.preview-item {
+  padding: 15px;
+  border-bottom: 1px solid #e9ecef;
+}
+
+.preview-item:last-child {
+  border-bottom: none;
+}
+
+.preview-header {
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+  margin-bottom: 8px;
+}
+
+.preview-id {
+  font-weight: 500;
+  color: #495057;
+}
+
+.preview-status {
+  padding: 4px 8px;
+  border-radius: 4px;
+  font-size: 0.8em;
+  font-weight: 500;
+}
+
+.preview-status.valid {
+  background: #d4edda;
+  color: #155724;
+}
+
+.preview-status.invalid {
+  background: #f8d7da;
+  color: #721c24;
+}
+
+.preview-answer {
+  color: #6c757d;
+  font-size: 0.9em;
+  line-height: 1.4;
+}
+
+.validation-errors {
+  margin-top: 15px;
+  padding: 15px;
+  background: #f8d7da;
+  border-radius: 6px;
+  color: #721c24;
+}
+
+.validation-errors ul {
+  margin: 10px 0 0 0;
+  padding-left: 20px;
+}
+
+.importing-status {
+  text-align: center;
+  padding: 40px;
+}
+
+.loading-spinner {
+  width: 40px;
+  height: 40px;
+  border: 4px solid #f3f3f3;
+  border-top: 4px solid #007bff;
+  border-radius: 50%;
+  animation: spin 1s linear infinite;
+  margin: 0 auto 20px;
+}
+
+@keyframes spin {
+  0% { transform: rotate(0deg); }
+  100% { transform: rotate(360deg); }
+}
+
+.import-result {
+  text-align: center;
+  padding: 30px;
+}
+
+.result-icon {
+  font-size: 48px;
+  margin-bottom: 15px;
+}
+
+.result-icon.success {
+  color: #28a745;
+}
+
+.result-icon.error {
+  color: #dc3545;
+}
+
+.error-text {
+  color: #dc3545;
 }
 
 @media (max-width: 768px) {

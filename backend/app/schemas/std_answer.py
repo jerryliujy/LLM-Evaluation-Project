@@ -63,5 +63,6 @@ class StdAnswerScoringPointResponse(StdAnswerScoringPoint):
 
 class StdAnswerResponse(StdAnswerWithScoringPoints):
     """标准答案响应模型"""
+    std_question: Optional[dict] = None  # 添加关联的标准问题信息
     class Config:
         from_attributes = True

@@ -29,5 +29,6 @@ class StdQuestion(StdQuestionBase):
 class StdQuestionResponse(StdQuestion):
     dataset: Optional[dict] = None
     std_answers: Optional[Any] = None  # 修正关系名称 
+    tags: Optional[List[str]] = None  # 添加 tags 字段
     class Config:        
         from_attributes = True

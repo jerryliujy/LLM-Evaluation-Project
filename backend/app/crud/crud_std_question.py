@@ -26,28 +26,82 @@ def get_std_questions_count(db: Session, include_deleted: bool = False, deleted_
     
     return query.count()
 
-def get_std_questions_paginated(db: Session, skip: int = 0, limit: int = 10, include_deleted: bool = False, deleted_only: bool = False):
-    """获取分页的标准问题数据和元数据"""
+def get_std_questions_paginated(
+    db: Session, 
+    skip: int = 0, 
+    limit: int = 10, 
+    include_deleted: bool = False, 
+    deleted_only: bool = False,
+    dataset_id: Optional[int] = None,
+    search_query: Optional[str] = None,
+    tag_filter: Optional[str] = None,
+    question_type_filter: Optional[str] = None,
+    scoring_points_filter: Optional[str] = None
+):
+    """获取分页的标准问题数据和元数据，支持搜索和筛选"""
     from ..schemas.common import PaginatedResponse
+    from sqlalchemy import and_, or_
     
-    # 获取总数
-    total = get_std_questions_count(db, include_deleted, deleted_only)
-    
-    # 获取数据
+    # 构建基础查询
     query = db.query(models.StdQuestion).options(
         selectinload(models.StdQuestion.dataset),
         selectinload(models.StdQuestion.std_answers.and_(models.StdAnswer.is_valid == True)),
         selectinload(models.StdQuestion.tags)
-    ).order_by(models.StdQuestion.id.asc())
+    )
     
+    # 应用删除状态过滤
     if deleted_only:
         query = query.filter(models.StdQuestion.is_valid == False)
     elif not include_deleted:
         query = query.filter(models.StdQuestion.is_valid == True)
     
-    questions = query.offset(skip).limit(limit).all()
+    # 应用数据集过滤
+    if dataset_id is not None:
+        query = query.filter(models.StdQuestion.dataset_id == dataset_id)
     
-    # 转换为字典格式以避免序列化问题
+    # 应用搜索查询
+    if search_query:
+        search_term = f"%{search_query}%"
+        query = query.filter(models.StdQuestion.body.ilike(search_term))
+    
+    # 应用标签过滤
+    if tag_filter:
+        from ..models.tag import Tag
+        query = query.join(models.StdQuestion.tags).filter(Tag.label.ilike(f"%{tag_filter}%"))
+      # 应用问题类型过滤
+    if question_type_filter:
+        query = query.filter(models.StdQuestion.question_type == question_type_filter)
+    
+    # 应用得分点筛选
+    if scoring_points_filter:
+        if scoring_points_filter == "has_scoring_points":
+            # 筛选有得分点的问题：标准问题有标准答案，且标准答案有有效的得分点
+            query = query.join(models.StdAnswer).join(models.StdAnswerScoringPoint).filter(
+                and_(
+                    models.StdAnswer.is_valid == True,
+                    models.StdAnswerScoringPoint.is_valid == True
+                )
+            )
+        elif scoring_points_filter == "no_scoring_points":
+            # 筛选无得分点的问题：要么没有标准答案，要么标准答案没有有效的得分点
+            subquery = db.query(models.StdQuestion.id).join(models.StdAnswer).join(models.StdAnswerScoringPoint).filter(
+                and_(
+                    models.StdAnswer.is_valid == True,
+                    models.StdAnswerScoringPoint.is_valid == True
+                )
+            ).subquery()
+            query = query.filter(~models.StdQuestion.id.in_(subquery))
+    
+    # 去重（如果有标签联接或得分点联接的话）
+    if tag_filter or scoring_points_filter == "has_scoring_points":
+        query = query.distinct()
+    
+    # 获取总数
+    total = query.count()
+    
+    # 获取分页数据
+    questions = query.order_by(models.StdQuestion.id.asc()).offset(skip).limit(limit).all()
+      # 转换为字典格式以避免序列化问题
     questions_data = []
     for question in questions:
         question_dict = {
@@ -64,13 +118,22 @@ def get_std_questions_paginated(db: Session, skip: int = 0, limit: int = 10, inc
                 "name": question.dataset.name,
                 "description": question.dataset.description
             } if question.dataset else None,
+            "tags": [tag.label for tag in question.tags] if question.tags else [],            
             "std_answers": [
                 {
                     "id": answer.id,
                     "answer": answer.answer,
                     "answered_by": answer.answered_by,
-                    "is_valid": answer.is_valid
-                } for answer in question.std_answers
+                    "is_valid": answer.is_valid,
+                    "scoring_points": [
+                        {
+                            "id": sp.id,
+                            "answer": sp.answer,
+                            "point_order": sp.point_order,
+                            "is_valid": sp.is_valid
+                        } for sp in answer.scoring_points if sp.is_valid
+                    ] if answer.scoring_points else []
+                } for answer in question.std_answers if answer.is_valid
             ] if question.std_answers else []
         }
         questions_data.append(question_dict)

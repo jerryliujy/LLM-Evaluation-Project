@@ -36,11 +36,24 @@ def read_std_questions_api(
     limit: int = Query(20, ge=1, le=100), 
     include_deleted: bool = Query(False),
     deleted_only: bool = Query(False),
+    dataset_id: Optional[int] = Query(None),    search_query: Optional[str] = Query(None),
+    tag_filter: Optional[str] = Query(None),
+    question_type_filter: Optional[str] = Query(None),
+    scoring_points_filter: Optional[str] = Query(None, description="得分点筛选：has_scoring_points 或 no_scoring_points"),
     db: Session = Depends(get_db)
 ):
-    """获取分页的标准问题列表"""
+    """获取分页的标准问题列表，支持搜索和筛选"""
     result = crud_std_question.get_std_questions_paginated(
-        db, skip=skip, limit=limit, include_deleted=include_deleted, deleted_only=deleted_only
+        db, 
+        skip=skip, 
+        limit=limit, 
+        include_deleted=include_deleted, 
+        deleted_only=deleted_only,
+        dataset_id=dataset_id,
+        search_query=search_query,
+        tag_filter=tag_filter,
+        question_type_filter=question_type_filter,
+        scoring_points_filter=scoring_points_filter
     )
     return result
 

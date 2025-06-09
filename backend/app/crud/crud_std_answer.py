@@ -25,26 +25,78 @@ def get_std_answers_count(db: Session, include_deleted: bool = False, deleted_on
     
     return query.count()
 
-def get_std_answers_paginated(db: Session, skip: int = 0, limit: int = 10, include_deleted: bool = False, deleted_only: bool = False):
-    """获取分页的标准答案数据和元数据"""
+def get_std_answers_paginated(
+    db: Session, 
+    skip: int = 0, 
+    limit: int = 10, 
+    include_deleted: bool = False, 
+    deleted_only: bool = False,
+    dataset_id: Optional[int] = None,
+    search_query: Optional[str] = None,
+    std_question_filter: Optional[str] = None,
+    scoring_point_filter: Optional[str] = None
+):
+    """获取分页的标准答案数据和元数据，支持搜索和筛选"""
     from ..schemas.common import PaginatedResponse
+    from sqlalchemy import and_, or_
     
-    # 获取总数
-    total = get_std_answers_count(db, include_deleted, deleted_only)    # 获取数据
+    # 构建基础查询
     query = db.query(models.StdAnswer).options(
         selectinload(models.StdAnswer.std_question),
         selectinload(models.StdAnswer.scoring_points.and_(models.StdAnswerScoringPoint.is_valid == True)),
-    ).order_by(models.StdAnswer.id.asc())
+    )
     
+    # 应用删除状态过滤
     if deleted_only:
         query = query.filter(models.StdAnswer.is_valid == False)
     elif not include_deleted:
         query = query.filter(models.StdAnswer.is_valid == True)
-    answers = query.offset(skip).limit(limit).all()
     
-    # 转换为字典格式以避免序列化问题
+    # 应用数据集过滤（通过关联的标准问题）
+    if dataset_id is not None:
+        query = query.join(models.StdQuestion).filter(models.StdQuestion.dataset_id == dataset_id)
+    
+    # 应用搜索查询（搜索答案内容）
+    if search_query:
+        search_term = f"%{search_query}%"
+        query = query.filter(models.StdAnswer.answer.ilike(search_term))
+    
+    # 应用标准问题过滤
+    if std_question_filter:
+        search_term = f"%{std_question_filter}%"
+        if not any(['join' in str(query).lower(), 'stdquestion' in str(query).lower()]):
+            query = query.join(models.StdQuestion)
+        query = query.filter(models.StdQuestion.body.ilike(search_term))
+    
+    # 应用得分点过滤
+    if scoring_point_filter:
+        search_term = f"%{scoring_point_filter}%"
+        query = query.join(models.StdAnswerScoringPoint).filter(
+            and_(
+                models.StdAnswerScoringPoint.answer.ilike(search_term),
+                models.StdAnswerScoringPoint.is_valid == True
+            )
+        )
+    
+    # 去重（如果有联接的话）
+    if std_question_filter or scoring_point_filter:
+        query = query.distinct()
+    
+    # 获取总数
+    total = query.count()
+    
+    # 获取分页数据
+    answers = query.order_by(models.StdAnswer.id.asc()).offset(skip).limit(limit).all()
+      # 转换为字典格式以避免序列化问题
     answers_data = []
     for answer in answers:
+        # 获取得分点列表文本
+        scoring_points_list = []
+        if answer.scoring_points:
+            for point in answer.scoring_points:
+                if point.is_valid:  
+                    scoring_points_list.append(point.answer)
+        
         answer_dict = {
             "id": answer.id,
             "std_question_id": answer.std_question_id,
@@ -56,11 +108,12 @@ def get_std_answers_paginated(db: Session, skip: int = 0, limit: int = 10, inclu
                 "id": answer.std_question.id,
                 "body": answer.std_question.body,
                 "question_type": answer.std_question.question_type
-            } if answer.std_question else None,            
+            } if answer.std_question else None,
+            "scoring_points_count": len(scoring_points_list),  # 新增：得分点数量
             "scoring_points": [
                 {
                     "id": point.id,
-                    "answer": point.answer,  # 使用answer字段而不是point_text
+                    "answer": point.answer,  
                     "std_answer_id": point.std_answer_id,
                     "point_order": point.point_order,
                     "is_valid": point.is_valid,
