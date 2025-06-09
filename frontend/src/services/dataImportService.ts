@@ -109,10 +109,12 @@ export const dataImportService = {
       case 'std-qa':
         // 验证标准Q&A数据格式
         data.forEach((item, index) => {
-          if (!item.question) {
-            errors.push(`第${index + 1}项缺少问题(question)字段`);
+          if (!item.body) {
+            errors.push(`第${index + 1}项缺少问题内容(body)字段`);
           }
-          if (!item.answer) {
+          // 对于选择题，答案可以为空（会根据选项自动生成）
+          // 对于问答题，答案必须存在
+          if (item.question_type !== 'choice' && !item.answer) {
             errors.push(`第${index + 1}项缺少回答(answer)字段`);
           }
         });

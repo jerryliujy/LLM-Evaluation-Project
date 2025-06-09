@@ -108,7 +108,53 @@
                   选择题不存在得分点。
                 </p>
               </div>
-            </div><!-- 关联的原始问题（必填） -->
+            </div>            <!-- 标签管理 -->
+            <div class="form-group">
+              <label for="tags">标签</label>
+              <div class="tags-section">
+                <!-- 显示从关联原始问题获取的标签 -->
+                <div v-if="inheritedTags.length > 0" class="inherited-tags">
+                  <h5>从关联原始问题获取的标签：</h5>
+                  <div class="tag-list">
+                    <span v-for="tag in inheritedTags" :key="tag" class="tag inherited-tag">
+                      {{ tag }}
+                    </span>
+                  </div>
+                </div>
+                
+                <!-- 用户额外添加的标签 -->
+                <div class="custom-tags">
+                  <h5>额外标签：</h5>
+                  <div class="tag-input-section">
+                    <input
+                      v-model="newTag"
+                      @keyup.enter="addTag"
+                      placeholder="输入标签后按回车添加"
+                      class="form-control tag-input"
+                    />
+                    <button type="button" @click="addTag" class="add-tag-btn">添加标签</button>
+                  </div>
+                  <div v-if="stdQaForm.customTags.length > 0" class="tag-list">
+                    <span v-for="(tag, index) in stdQaForm.customTags" :key="index" class="tag custom-tag">
+                      {{ tag }}
+                      <button type="button" @click="removeTag(index)" class="remove-tag-btn">×</button>
+                    </span>
+                  </div>
+                </div>
+                
+                <!-- 最终标签预览 -->
+                <div v-if="allTags.length > 0" class="final-tags-preview">
+                  <h5>最终标签（包含继承 + 自定义）：</h5>
+                  <div class="tag-list">
+                    <span v-for="tag in allTags" :key="tag" class="tag final-tag">
+                      {{ tag }}
+                    </span>
+                  </div>
+                </div>
+              </div>
+            </div>
+
+            <!-- 关联的原始问题（必填） -->
             <div class="form-section">
               <h4>关联原始问题 *</h4>
               <div class="reference-section">
@@ -123,7 +169,7 @@
                   <p class="warning-text">⚠️ 标准问题必须关联至少一个原始问题</p>
                 </div>
               </div>
-            </div>            <!-- 关联的原始回答和专家回答（可选） -->
+            </div><!-- 关联的原始回答和专家回答（可选） -->
             <div class="form-section">
               <h4>关联原始回答 (可选)</h4>
               <div class="reference-section">
@@ -384,7 +430,18 @@ const stdQaForm = ref({
   questionType: 'text', 
   rawQuestionIds: [] as number[], 
   rawAnswerIds: [] as number[], 
-  expertAnswerIds: [] as number[]
+  expertAnswerIds: [] as number[],
+  customTags: [] as string[] // 用户自定义的额外标签
+})
+
+// 标签相关数据
+const newTag = ref('')
+const inheritedTags = ref<string[]>([]) // 从关联原始问题继承的标签
+
+// 计算所有标签（继承的 + 自定义的）
+const allTags = computed(() => {
+  const combined = [...inheritedTags.value, ...stdQaForm.value.customTags]
+  return [...new Set(combined)] // 去重
 })
 
 const keyPointsText = ref('')
@@ -604,6 +661,8 @@ const selectRawQuestion = (question: any) => {
   if (!stdQaForm.value.rawQuestionIds.includes(question.id)) {
     stdQaForm.value.rawQuestionIds.push(question.id)
     selectedRawQuestions.value.push(question)
+    // 更新继承的标签
+    updateInheritedTags()
   }
 }
 
@@ -630,6 +689,8 @@ const removeRawQuestion = (questionId: number) => {
     if (selectedIndex > -1) {
       selectedRawQuestions.value.splice(selectedIndex, 1)
     }
+    // 更新继承的标签
+    updateInheritedTags()
   }
 }
 
@@ -700,24 +761,65 @@ const removeKeyPoint = (index: number) => {
   }
 }
 
+// 标签管理方法
+const addTag = () => {
+  const tag = newTag.value.trim()
+  if (tag && !stdQaForm.value.customTags.includes(tag) && !inheritedTags.value.includes(tag)) {
+    stdQaForm.value.customTags.push(tag)
+    newTag.value = ''
+  }
+}
+
+const removeTag = (index: number) => {
+  stdQaForm.value.customTags.splice(index, 1)
+}
+
+// 更新继承的标签（当选择原始问题时调用）
+const updateInheritedTags = async () => {
+  const tagSet = new Set<string>()
+  
+  for (const questionId of stdQaForm.value.rawQuestionIds) {
+    try {
+      const question = selectedRawQuestions.value.find(q => q.id === questionId)
+      if (question && question.tags) {
+        question.tags.forEach((tag: string) => tagSet.add(tag))
+      }
+    } catch (error) {
+      console.error(`Error getting tags for question ${questionId}:`, error)
+    }
+  }
+  
+  inheritedTags.value = Array.from(tagSet)
+}
+
 // 表单处理
 const resetForm = () => {
   stdQaForm.value = {
     question: '',
     answer: '',
-    questionType: 'choice',
+    questionType: 'text', // 默认为问答题
     rawQuestionIds: [],
     rawAnswerIds: [],
-    expertAnswerIds: []
+    expertAnswerIds: [],
+    customTags: [] // 重置自定义标签
   }
   keyPointsText.value = ''
   keyPoints.value = [{ content: '' }]
   selectedRawQuestions.value = []
   selectedRawAnswers.value = []
   selectedExpertAnswers.value = []
+  
   // 重置选择题数据
   choiceOptions.value = [{ text: '' }, { text: '' }]
   correctOptionIndex.value = 0
+  
+  // 重置标签相关数据
+  newTag.value = ''
+  inheritedTags.value = []
+  
+  // 重置消息
+  successMessage.value = ''
+  errorMessage.value = ''
 }
 
 const submitStdQa = async () => {
@@ -758,7 +860,7 @@ const submitStdQa = async () => {
       
       // 对于选择题，不设置得分点，只有answer
       finalKeyPoints = []
-    }    
+    }        
     
     const payload = {
       dataset_id: parseInt(datasetId.value),
@@ -766,9 +868,10 @@ const submitStdQa = async () => {
       answer: finalAnswer,
       question_type: stdQaForm.value.questionType,
       key_points: finalKeyPoints,
-      raw_question_ids: stdQaForm.value.rawQuestionIds, // 改为复数形式
-      raw_answer_ids: stdQaForm.value.rawAnswerIds, // 改为复数形式，支持多个
-      expert_answer_ids: stdQaForm.value.expertAnswerIds // 改为复数形式，支持多个
+      raw_question_ids: stdQaForm.value.rawQuestionIds, 
+      raw_answer_ids: stdQaForm.value.rawAnswerIds, 
+      expert_answer_ids: stdQaForm.value.expertAnswerIds, 
+      tags: stdQaForm.value.customTags 
     }
 
     // 调用API创建标准问答对

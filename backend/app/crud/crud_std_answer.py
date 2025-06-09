@@ -139,7 +139,6 @@ def set_multiple_std_answers_deleted_status(db: Session, answer_ids: List[int], 
             # 删除操作：检查该问题是否还有其他有效的标准答案
             remaining_answers = db.query(models.StdAnswer).filter(
                 models.StdAnswer.std_question_id == question_id,
-                models.StdAnswer.id.in_(answer_ids),
                 models.StdAnswer.is_valid == True
             ).count()
             

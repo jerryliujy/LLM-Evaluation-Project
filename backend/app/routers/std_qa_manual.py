@@ -4,6 +4,7 @@ from app.models.user import User
 from app.models.std_question import StdQuestion
 from app.models.std_answer import StdAnswer, StdAnswerScoringPoint
 from app.models.dataset import Dataset
+from app.models.tag import Tag
 from app.models.relationship_records import StdAnswerRawAnswerRecord, StdAnswerExpertAnswerRecord, StdQuestionRawQuestionRecord
 from app.schemas.std_question import StdQuestionCreate
 from app.schemas.std_answer import StdAnswerCreate
@@ -26,6 +27,7 @@ class ManualStdQaCreate(BaseModel):
     raw_question_ids: Optional[List[int]] = None  # 改为支持多个原始问题
     raw_answer_ids: Optional[List[int]] = None  # 改为支持多个原始回答
     expert_answer_ids: Optional[List[int]] = None  # 改为支持多个专家回答
+    tags: Optional[List[str]] = None  # 用户指定的额外标签
 
 @router.post("/create")
 async def create_manual_std_qa(
@@ -68,9 +70,7 @@ async def create_manual_std_qa(
             is_valid=True
         )
         db.add(std_question)
-        db.flush()  # 获取ID但不提交事务
-
-        # 创建标准问题与原始问题的关系记录
+        db.flush()  # 获取ID但不提交事务        # 创建标准问题与原始问题的关系记录
         if std_qa_data.raw_question_ids:
             for raw_question_id in std_qa_data.raw_question_ids:                
                 question_relation = StdQuestionRawQuestionRecord(
@@ -79,6 +79,34 @@ async def create_manual_std_qa(
                     created_by=current_user.id
                 )
                 db.add(question_relation)
+
+        # 处理标签：包含原始问题的标签和用户指定的标签
+        all_tags = set()
+        
+        # 1. 从关联的原始问题获取标签
+        if std_qa_data.raw_question_ids:
+            from app.models.raw_question import RawQuestion
+            for raw_question_id in std_qa_data.raw_question_ids:
+                raw_question = db.query(RawQuestion).filter(RawQuestion.id == raw_question_id).first()
+                if raw_question and raw_question.tags:
+                    for tag in raw_question.tags:
+                        all_tags.add(tag.label)
+        
+        # 2. 添加用户指定的标签
+        if std_qa_data.tags:
+            for tag_label in std_qa_data.tags:
+                all_tags.add(tag_label)
+        
+        # 3. 创建或获取所有标签并关联到标准问题
+        for tag_label in all_tags:
+            tag = db.query(Tag).filter(Tag.label == tag_label).first()
+            if not tag:
+                tag = Tag(label=tag_label)
+                db.add(tag)
+                db.flush()
+            
+            if tag not in std_question.tags:
+                std_question.tags.append(tag)
 
         # 创建标准答案
         std_answer = StdAnswer(

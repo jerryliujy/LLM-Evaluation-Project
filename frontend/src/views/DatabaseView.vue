@@ -1,9 +1,6 @@
 <template>
   <div class="database-view">    <div class="header">
       <div class="header-left">
-        <button @click="goBackToMarketplace" class="back-btn">
-          ← 返回数据库市场
-        </button>
         <div class="dataset-info" v-if="currentDataset">
           <h2>{{ currentDataset.name }}</h2>
           <p class="dataset-description">{{ currentDataset.description }}</p>
@@ -165,7 +162,8 @@
                   👁️
                 </button>
                 <template v-if="!isOverviewTable">
-                  <!-- 标准问题和标准答案绑定删除恢复逻辑 -->                  <template v-if="selectedTable === 'std_questions' || selectedTable === 'std_answers'">
+                  <!-- 标准问题和标准答案绑定删除恢复逻辑 -->                 
+                  <template v-if="selectedTable === 'std_questions' || selectedTable === 'std_answers'">
                     <button 
                       v-if="item.is_valid"
                       @click="editItem(item)" 
@@ -578,7 +576,6 @@ const tableConfigs: Record<TableName, TableConfig> = {  std_questions: {
       { key: "id", label: "ID", type: "number", className: "id-col" },
       { key: "body", label: "问题文本", type: "text", className: "text-col", multiline: true },
       { key: "question_type", label: "问题类型", type: "text", className: "type-col" },
-      { key: "scoring_points_count", label: "得分点数量", type: "number", className: "scoring-points-count-col" },
     ],
     editable: ["body", "question_type", "created_by"]
   },std_answers: {
@@ -638,11 +635,6 @@ const selectedDeletedItems = computed(() => {
 const deletedCount = computed(() => {
   return currentData.value.filter(item => !item.is_valid).length;
 });
-
-// 方法
-const goBackToMarketplace = () => {
-  router.push('/');
-};
 
 const loadDataset = async () => {
   if (!currentDatasetId.value) return;
@@ -1211,27 +1203,53 @@ onMounted(async () => {
 /* 美化下拉框样式 */
 .view-mode-select,
 .per-page-select {
-  padding: 8px 12px;
-  border: 1px solid #dcdfe6;
-  border-radius: 6px;
+  padding: 10px 16px;
+  border: 2px solid #e1e5e9;
+  border-radius: 8px;
   font-size: 14px;
-  background-color: white;
+  font-weight: 500;
+  background: linear-gradient(145deg, #ffffff 0%, #f8f9fa 100%);
+  color: #495057;
   cursor: pointer;
-  transition: all 0.3s ease;
+  transition: all 0.3s cubic-bezier(0.4, 0, 0.2, 1);
   outline: none;
-  min-width: 130px;
+  min-width: 140px;
+  box-shadow: 0 2px 4px rgba(0, 0, 0, 0.05);
+  position: relative;
+}
+
+.view-mode-select::after,
+.per-page-select::after {
+  content: '▼';
+  position: absolute;
+  right: 12px;
+  top: 50%;
+  transform: translateY(-50%);
+  color: #6c757d;
+  font-size: 10px;
+  pointer-events: none;
 }
 
 .view-mode-select:hover,
 .per-page-select:hover {
-  border-color: #409eff;
-  box-shadow: 0 0 0 2px rgba(64, 158, 255, 0.1);
+  border-color: #007bff;
+  background: linear-gradient(145deg, #f8f9fa 0%, #e9ecef 100%);
+  box-shadow: 0 4px 12px rgba(0, 123, 255, 0.15);
+  transform: translateY(-1px);
 }
 
 .view-mode-select:focus,
 .per-page-select:focus {
-  border-color: #409eff;
-  box-shadow: 0 0 0 3px rgba(64, 158, 255, 0.2);
+  border-color: #007bff;
+  background: white;
+  box-shadow: 0 0 0 4px rgba(0, 123, 255, 0.1), 0 4px 12px rgba(0, 123, 255, 0.15);
+  transform: translateY(-1px);
+}
+
+.view-mode-select:active,
+.per-page-select:active {
+  transform: translateY(0);
+  box-shadow: 0 2px 4px rgba(0, 0, 0, 0.1);
 }
 
 .action-btn {

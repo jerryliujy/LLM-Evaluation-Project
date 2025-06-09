@@ -298,21 +298,22 @@ async def upload_std_qa_data(
     try:
         from ..models.std_question import StdQuestion
         from ..models.std_answer import StdAnswer, StdAnswerScoringPoint
-        
+        from ..models.relationship_records import StdQuestionRawQuestionRecord, StdAnswerRawAnswerRecord, StdAnswerExpertAnswerRecord
         data = json_data.data
         imported_questions = 0
         imported_answers = 0
         imported_scoring_points = 0
+        imported_relationships = 0
         
         for item in data:
             # 验证必需字段
-            if not item.get('question'):
+            if not item.get('body'):
                 continue
-                
+            
             # 创建标准问题
             std_question = StdQuestion(
                 dataset_id=dataset_id,
-                body=item.get('question', ''),
+                body=item.get('body', ''),
                 question_type=item.get('question_type', 'text'),
                 created_by=current_user.id,
                 is_valid=True
@@ -320,13 +321,65 @@ async def upload_std_qa_data(
             
             db.add(std_question)
             db.flush()  # 获取问题ID
-            imported_questions += 1
+            imported_questions += 1           
+            all_tags = set()  # set意味着标签不重复
             
-            # 创建标准答案
-            if item.get('answer'):
+            # 1. 从关联的原始问题获取标签
+            if item.get('raw_question_ids') and isinstance(item['raw_question_ids'], list):
+                for raw_question_id in item['raw_question_ids']:
+                    raw_question = db.query(RawQuestion).filter(RawQuestion.id == raw_question_id).first()
+                    if raw_question and raw_question.tags:
+                        for tag in raw_question.tags:
+                            all_tags.add(tag.label)
+            
+            # 2. 添加用户指定的标签
+            if item.get('tags') and isinstance(item['tags'], list):
+                for tag_label in item['tags']:
+                    all_tags.add(tag_label)
+            
+            # 3. 创建或获取所有标签并关联到标准问题
+            for tag_label in all_tags:
+                tag = db.query(Tag).filter(Tag.label == tag_label).first()
+                if not tag:
+                    tag = Tag(label=tag_label)
+                    db.add(tag)
+                    db.flush()
+                
+                if tag not in std_question.tags:
+                    std_question.tags.append(tag)
+            
+            # 处理选择题答案逻辑
+            answer_text = item.get('answer', '')
+            if item.get('question_type') == 'choice' and item.get('options'):
+                if not answer_text:
+                    # 如果没有提供答案，从选项中自动生成答案（找到正确选项对应的字母）
+                    correct_options = []
+                    for i, option in enumerate(item['options']):
+                        if option.get('is_correct', False):
+                            correct_options.append(chr(65 + i))  # A, B, C, D...
+                    answer_text = ', '.join(correct_options) if correct_options else 'A'
+                else:
+                    # 如果提供了答案，验证答案与选项的一致性
+                    provided_answers = [ans.strip().upper() for ans in answer_text.split(',')]
+                    correct_options = []
+                    for i, option in enumerate(item['options']):
+                        if option.get('is_correct', False):
+                            correct_options.append(chr(65 + i))  # A, B, C, D...
+                    
+                    # 如果提供的答案与选项不一致，记录警告但使用提供的答案
+                    if set(provided_answers) != set(correct_options):
+                        print(f"Warning: Provided answer '{answer_text}' doesn't match is_correct flags {correct_options} for question: {item.get('body', '')[:50]}...")
+            
+            # 对于问答题，直接使用提供的答案
+            elif item.get('question_type') != 'choice':
+                if not answer_text:
+                    print(f"Warning: No answer provided for question: {item.get('body', '')[:50]}...")
+                    continue  # 跳过没有答案的问答题
+            
+            if answer_text:
                 std_answer = StdAnswer(
                     std_question_id=std_question.id,
-                    answer=item.get('answer', ''),
+                    answer=answer_text,
                     answered_by=current_user.id,
                     is_valid=True
                 )
@@ -334,28 +387,60 @@ async def upload_std_qa_data(
                 db.add(std_answer)
                 db.flush()  # 获取答案ID
                 imported_answers += 1
-                
-                # 创建评分点（如果有key_points）
+                  # 创建评分点（如果有key_points）
                 if item.get('key_points') and isinstance(item['key_points'], list):
-                    for idx, key_point in enumerate(item['key_points']):
-                        scoring_point = StdAnswerScoringPoint(
-                            std_answer_id=std_answer.id,
-                            answer=key_point,  # 使用key_point作为评分点内容
-                            point_order=idx + 1,
-                            created_by=current_user.id,
-                            is_valid=True
-                        )
+                    for key_point_data in item['key_points']:
+                        if isinstance(key_point_data, dict):
+                            scoring_point = StdAnswerScoringPoint(
+                                std_answer_id=std_answer.id,
+                                answer=key_point_data.get('answer', ''),
+                                point_order=key_point_data.get('point_order', 1),
+                                is_valid=True
+                            )
                         
                         db.add(scoring_point)
                         imported_scoring_points += 1
-        
+                
+                # 处理原始回答关联
+                if item.get('raw_answer_ids') and isinstance(item['raw_answer_ids'], list):
+                    for raw_answer_id in item['raw_answer_ids']:
+                        relationship = StdAnswerRawAnswerRecord(
+                            std_answer_id=std_answer.id,
+                            raw_answer_id=raw_answer_id,
+                            created_by=current_user.id
+                        )
+                        db.add(relationship)
+                        imported_relationships += 1
+                
+                # 处理专家回答关联
+                if item.get('expert_answer_ids') and isinstance(item['expert_answer_ids'], list):
+                    for expert_answer_id in item['expert_answer_ids']:
+                        relationship = StdAnswerExpertAnswerRecord(
+                            std_answer_id=std_answer.id,
+                            expert_answer_id=expert_answer_id,
+                            created_by=current_user.id
+                        )
+                        db.add(relationship)
+                        imported_relationships += 1
+            
+            # 处理原始问题关联
+            if item.get('raw_question_ids') and isinstance(item['raw_question_ids'], list):
+                for raw_question_id in item['raw_question_ids']:
+                    relationship = StdQuestionRawQuestionRecord(
+                        std_question_id=std_question.id,
+                        raw_question_id=raw_question_id,
+                        created_by=current_user.id
+                    )
+                    db.add(relationship)
+                    imported_relationships += 1
         db.commit()
         return {
             "message": f"Standard Q&A data imported successfully to dataset {dataset.name}",
             "dataset_id": dataset_id,
             "imported_questions": imported_questions,
             "imported_answers": imported_answers,
-            "imported_scoring_points": imported_scoring_points
+            "imported_scoring_points": imported_scoring_points,
+            "imported_relationships": imported_relationships
         }
         
     except Exception as e:

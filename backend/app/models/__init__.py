@@ -9,3 +9,4 @@ from .std_question import StdQuestion
 from .std_answer import StdAnswer, StdAnswerScoringPoint
 from .tag import Tag
 from .evaluation import Evaluation
+from .relationship_records import StdQuestionRawQuestionRecord, StdAnswerExpertAnswerRecord

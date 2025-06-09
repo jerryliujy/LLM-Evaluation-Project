@@ -1,0 +1,47 @@
+{
+  "data": [
+    {
+      "body": "What is the difference between COPY and ADD commands in Dockerfile?",
+      "answer": "COPY only supports basic copying of local files into the container, while ADD has additional features like URL support and tar auto-extraction. COPY is preferred for simple file copying operations.",
+      "question_type": "question",
+      "raw_question_ids": [1],
+      "raw_answer_ids": [1, 2],
+      "expert_answer_ids": [],
+      "tags": ["docker", "dockerfile", "commands"],
+      "key_points": [
+        {"answer": "COPY supports basic file copying only", "point_order": 1},
+        {"answer": "ADD has URL and tar extraction features", "point_order": 2},
+        {"answer": "COPY is preferred for simple operations", "point_order": 3}
+      ]
+    },
+    {
+      "body": "Which command is recommended for simple file copying in Dockerfile?",
+      "answer": "A",
+      "question_type": "choice",
+      "raw_question_ids": [1],
+      "raw_answer_ids": [1],
+      "expert_answer_ids": [],
+      "tags": ["docker", "dockerfile", "best-practices"],
+      "options": [
+        {"text": "COPY", "is_correct": true},
+        {"text": "ADD", "is_correct": false},
+        {"text": "RUN", "is_correct": false},
+        {"text": "CMD", "is_correct": false}
+      ]
+    },
+    {
+      "body": "What are the main differences between Docker and virtual machines?",
+      "question_type": "choice",
+      "raw_question_ids": [2],
+      "raw_answer_ids": [3],
+      "expert_answer_ids": [],
+      "tags": ["docker", "virtualization", "containers"],
+      "options": [
+        {"text": "Docker uses containerization while VMs use hardware virtualization", "is_correct": true},
+        {"text": "Docker is slower than VMs", "is_correct": false},
+        {"text": "VMs use less resources than Docker", "is_correct": false},
+        {"text": "There is no difference", "is_correct": false}
+      ]
+    }
+  ]
+}
