@@ -240,14 +240,16 @@
           </button>
         </div>
 
-        <div class="search-section">
-          <div class="search-controls">
-            <input
-              v-model="searchQuery"
-              @input="performSearch"
-              placeholder="搜索内容..."
-              class="search-input"
-            />
+        <div class="search-section">          <div class="search-controls">
+            <div class="search-input-group">
+              <span class="search-icon">🔍</span>
+              <input
+                v-model="searchQuery"
+                @input="performSearch"
+                placeholder="搜索内容..."
+                class="search-input"
+              />
+            </div>
             <button @click="performSearch" class="search-btn">搜索</button>
           </div>
         </div>
@@ -1135,28 +1137,95 @@ watch(errorMessage, (newValue) => {
 
 .search-controls {
   display: flex;
-  gap: 10px;
+  gap: 12px;
+  align-items: center;
+}
+
+/* 搜索输入组样式 */
+.search-input-group {
+  position: relative;
+  display: flex;
+  align-items: center;
+  background: linear-gradient(135deg, #fff 0%, #f8f9fb 100%);
+  border: 1px solid #e4e7ed;
+  border-radius: 12px;
+  box-shadow: 0 2px 8px rgba(0, 0, 0, 0.04);
+  transition: all 0.3s cubic-bezier(0.4, 0, 0.2, 1);
+  overflow: hidden;
+  flex: 1;
+  height: 40px;
+  max-width: 300px;
+}
+
+.search-input-group:hover {
+  border-color: #c6e2ff;
+  box-shadow: 0 4px 12px rgba(64, 158, 255, 0.15);
+  transform: translateY(-1px);
+}
+
+.search-input-group:focus-within {
+  border-color: #409eff;
+  box-shadow: 0 4px 16px rgba(64, 158, 255, 0.25);
+  transform: translateY(-1px);
+  background: linear-gradient(135deg, #fff 0%, #ecf5ff 100%);
+}
+
+.search-icon {
+  position: absolute;
+  left: 12px;
+  font-size: 16px;
+  color: #909399;
+  transition: all 0.3s ease;
+  z-index: 2;
+  pointer-events: none;
+}
+
+.search-input-group:focus-within .search-icon {
+  color: #409eff;
+  transform: scale(1.1);
 }
 
 .search-input {
-  flex: 1;
-  padding: 8px 12px;
-  border: 1px solid #ddd;
-  border-radius: 4px;
+  width: 100%;
+  padding: 10px 16px 10px 40px;
+  border: none;
+  outline: none;
+  background: transparent;
   font-size: 14px;
+  color: #303133;
+  transition: all 0.3s ease;
+  font-weight: 400;
+}
+
+.search-input::placeholder {
+  color: #c0c4cc;
+  transition: all 0.3s ease;
+}
+
+.search-input:focus::placeholder {
+  color: #b3d8ff;
+  transform: translateX(2px);
 }
 
 .search-btn {
-  padding: 8px 16px;
-  background: #007bff;
+  padding: 10px 20px;
+  background: linear-gradient(135deg, #409eff 0%, #337ecc 100%);
   color: white;
   border: none;
-  border-radius: 4px;
+  border-radius: 8px;
   cursor: pointer;
+  font-size: 14px;
+  font-weight: 500;
+  transition: all 0.3s cubic-bezier(0.4, 0, 0.2, 1);
+  box-shadow: 0 2px 8px rgba(64, 158, 255, 0.3);
+  min-width: 80px;
+  height: 40px;
 }
 
 .search-btn:hover {
-  background: #0056b3;
+  background: linear-gradient(135deg, #337ecc 0%, #2b6cb0 100%);
+  transform: translateY(-1px);
+  box-shadow: 0 4px 12px rgba(64, 158, 255, 0.4);
 }
 
 .content-list {

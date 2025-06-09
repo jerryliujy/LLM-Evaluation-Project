@@ -43,6 +43,7 @@ def read_std_answers_api(
     search_query: Optional[str] = Query(None),
     std_question_filter: Optional[str] = Query(None),
     scoring_point_filter: Optional[str] = Query(None),
+    scoring_points_filter: Optional[str] = Query(None),
     db: Session = Depends(get_db)
 ):
     """获取分页的标准答案列表，支持搜索和筛选"""
@@ -55,7 +56,8 @@ def read_std_answers_api(
         dataset_id=dataset_id,
         search_query=search_query,
         std_question_filter=std_question_filter,
-        scoring_point_filter=scoring_point_filter
+        scoring_point_filter=scoring_point_filter,
+        scoring_points_filter=scoring_points_filter
     )
     return result
 

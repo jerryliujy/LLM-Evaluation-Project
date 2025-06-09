@@ -58,8 +58,7 @@
           批量恢复 ({{ selectedItems.length }})
         </button>
       </div>      <!-- 搜索和过滤选项 -->
-      <div class="search-filters">
-        <!-- 标准问题的搜索选项 -->
+      <div class="search-filters">        <!-- 标准问题的搜索选项 -->
         <template v-if="selectedTable === 'std_questions'">
           <div class="search-input-group">
             <span class="search-icon">🔍</span>
@@ -86,13 +85,6 @@
               <option value="">所有问题类型</option>
               <option value="text">文本题</option>
               <option value="choice">选择题</option>
-            </select>
-          </div>
-          <div class="select-group">
-            <select v-model="scoringPointsFilter" @change="handleSearch" class="filter-select">
-              <option value="">得分点筛选</option>
-              <option value="has_scoring_points">有得分点</option>
-              <option value="no_scoring_points">无得分点</option>
             </select>
           </div>
         </template>
@@ -128,6 +120,13 @@
               class="filter-input"
               @input="handleSearch"
             />
+          </div>
+          <div class="select-group">
+            <select v-model="scoringPointsFilter" @change="handleSearch" class="filter-select">
+              <option value="">得分点筛选</option>
+              <option value="has_scoring_points">有得分点</option>
+              <option value="no_scoring_points">无得分点</option>
+            </select>
           </div>
         </template>
       </div>
@@ -229,12 +228,12 @@
                     {{ formatCellValue(item[column.key], column) }}
                   </template>
                 </span>                <span v-else-if="column.type === 'number' && column.key === 'scoring_points_count'" class="number-content">
-                  <span class="scoring-points-count">
-                    {{ getScoringPointsCount(item) }}
-                    <span v-if="getDeletedScoringPointsCount(item) > 0" class="deleted-count">
-                      ({{ getDeletedScoringPointsCount(item) }} 已删除)
+                  <div class="scoring-points-count">
+                    <span class="valid-count">{{ getScoringPointsCount(item) }}</span>
+                    <span v-if="getDeletedScoringPointsCount(item) > 0" class="deleted-count" title="已删除的得分点">
+                      + <span class="deleted-number">{{ getDeletedScoringPointsCount(item) }}</span> 已删除
                     </span>
-                  </span>
+                  </div>
                 </span>
                 <span v-else-if="column.type === 'number'" class="number-content">
                   {{ item[column.key] || 0 }}
@@ -564,16 +563,16 @@
           <div v-if="scoringPointsData.length === 0" class="no-data">
             暂无得分点
           </div>
-          <div v-else class="scoring-points-list">
-            <div v-for="point in scoringPointsData" :key="point.id" class="scoring-point-item">
+          <div v-else class="scoring-points-list">            <div v-for="point in scoringPointsData" :key="point.id" 
+                 :class="['scoring-point-item', { 'deleted-point': !point.is_valid }]">
               <div class="point-header">
-                <span class="point-id">得分点 #{{ point.id }}</span>
+                <span :class="['point-id', { 'deleted-text': !point.is_valid }]">得分点 #{{ point.id }}</span>
                 <span class="point-order">顺序: {{ point.point_order }}</span>
                 <span :class="['point-status', point.is_valid ? 'active' : 'deleted']">
                   {{ point.is_valid ? '有效' : '已删除' }}
                 </span>
               </div>
-              <div class="point-content">{{ point.answer }}</div>
+              <div :class="['point-content', { 'deleted-text': !point.is_valid }]">{{ point.answer }}</div>
               <div class="point-actions">
                 <template v-if="point.is_valid">
                   <button 
@@ -619,6 +618,7 @@ import { ref, computed, onMounted } from "vue";
 import { useRoute, useRouter } from "vue-router";
 import { databaseService } from "@/services/databaseService";
 import { datasetService } from "@/services/datasetService";
+import { apiClient } from "@/services/api";
 import { formatDate, formatTags } from "@/utils/formatters";
 
 // 路由
@@ -801,7 +801,8 @@ const loadTableData = async () => {
         tagFilter.value || undefined,
         questionTypeFilter.value || undefined,
         stdQuestionFilter.value || undefined,
-        scoringPointFilter.value || undefined
+        scoringPointFilter.value || undefined,
+        scoringPointsFilter.value || undefined
       );
     }
     currentData.value = result.data;
@@ -1003,14 +1004,33 @@ const forceDeleteStdItem = async (item: DatabaseItem) => {
   }
 };
 
-// 得分点管理
+// // 得分点管理
+// const manageScoringPoints = async (stdAnswer: DatabaseItem) => {
+//   selectedItem.value = stdAnswer;
+  
+//   try {
+//     // 调用API获取所有得分点（包括已删除的）
+//     const response = await apiClient.get(`/api/std-answers/${stdAnswer.id}/scoring-points`);
+//     scoringPointsData.value = response.data;
+//   } catch (error) {
+//     console.error('Load scoring points error:', error);
+//     showMessage("加载得分点失败", "error");
+//     scoringPointsData.value = [];
+//   }
+  
+//   showScoringPointsModal.value = true;
+// };
+
 const manageScoringPoints = async (stdAnswer: DatabaseItem) => {
   selectedItem.value = stdAnswer;
   
-  // 直接使用已经加载的得分点数据，无需重新调用API
-  if (stdAnswer.scoring_points && Array.isArray(stdAnswer.scoring_points)) {
-    scoringPointsData.value = stdAnswer.scoring_points;
-  } else {
+  try {
+    // 调用API获取所有得分点（包括已删除的）
+    const response = await apiClient.get(`/std-answers/${stdAnswer.id}/scoring-points`);
+    scoringPointsData.value = response.data;
+  } catch (error) {
+    console.error('Load scoring points error:', error);
+    showMessage("加载得分点失败", "error");
     scoringPointsData.value = [];
   }
   
@@ -1021,9 +1041,7 @@ const deleteScoringPoint = async (pointId: number) => {
   if (!confirm("确定要删除这个得分点吗？")) return;
   
   try {
-    await fetch(`/api/std-answers/scoring-points/${pointId}`, {
-      method: 'DELETE'
-    });
+    await apiClient.delete(`/std-answers/scoring-points/${pointId}`);
     showMessage("得分点删除成功", "success");
     
     // 刷新得分点数据
@@ -1033,15 +1051,14 @@ const deleteScoringPoint = async (pointId: number) => {
     // 同时刷新主表数据以更新得分点计数
     loadTableData();
   } catch (error) {
+    console.error('Delete scoring point error:', error);
     showMessage("得分点删除失败", "error");
   }
 };
 
 const restoreScoringPoint = async (pointId: number) => {
   try {
-    await fetch(`/api/std-answers/scoring-points/${pointId}/restore`, {
-      method: 'POST'
-    });
+    await apiClient.post(`/std-answers/scoring-points/${pointId}/restore`);
     showMessage("得分点恢复成功", "success");
     
     // 刷新得分点数据
@@ -1051,6 +1068,7 @@ const restoreScoringPoint = async (pointId: number) => {
     // 同时刷新主表数据以更新得分点计数
     loadTableData();
   } catch (error) {
+    console.error('Restore scoring point error:', error);
     showMessage("得分点恢复失败", "error");
   }
 };
@@ -1059,9 +1077,7 @@ const forceDeleteScoringPoint = async (pointId: number) => {
   if (!confirm("确定要永久删除这个得分点吗？此操作不可恢复！")) return;
   
   try {
-    await fetch(`/api/std-answers/scoring-points/${pointId}/force-delete`, {
-      method: 'DELETE'
-    });
+    await apiClient.delete(`/std-answers/scoring-points/${pointId}/force-delete`);
     showMessage("得分点永久删除成功", "success");
     
     // 刷新得分点数据
@@ -1071,6 +1087,7 @@ const forceDeleteScoringPoint = async (pointId: number) => {
     // 同时刷新主表数据以更新得分点计数
     loadTableData();
   } catch (error) {
+    console.error('Force delete scoring point error:', error);
     showMessage("得分点永久删除失败", "error");
   }
 };
@@ -1356,7 +1373,146 @@ onMounted(async () => {
   font-size: 14px;
 }
 
-/* 美化下拉框样式 */
+/* 搜索和筛选区域样式 */
+.search-filters {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 12px;
+  align-items: center;
+  background: linear-gradient(145deg, #f8f9fa 0%, #ffffff 100%);
+  padding: 20px;
+  border-radius: 12px;
+  box-shadow: 0 2px 8px rgba(0, 0, 0, 0.05);
+  border: 1px solid #e9ecef;
+  margin-bottom: 8px;
+}
+
+.search-input-group,
+.filter-input-group,
+.select-group {
+  position: relative;
+  display: flex;
+  align-items: center;
+  min-width: 200px;
+  flex: 1;
+}
+
+.search-input-group {
+  min-width: 280px;
+}
+
+.filter-input-group {
+  min-width: 220px;
+}
+
+.select-group {
+  min-width: 180px;
+}
+
+.search-icon,
+.filter-icon {
+  position: absolute;
+  left: 12px;
+  z-index: 2;
+  font-size: 16px;
+  color: #6c757d;
+  pointer-events: none;
+  transition: all 0.3s ease;
+}
+
+.search-input,
+.filter-input {
+  width: 100%;
+  padding: 12px 16px 12px 40px;
+  border: 2px solid #e1e5e9;
+  border-radius: 10px;
+  font-size: 14px;
+  font-weight: 500;
+  background: white;
+  color: #495057;
+  transition: all 0.3s cubic-bezier(0.4, 0, 0.2, 1);
+  outline: none;
+  box-shadow: 0 2px 4px rgba(0, 0, 0, 0.05);
+}
+
+.search-input.enhanced {
+  background: linear-gradient(145deg, #ffffff 0%, #f8f9fa 100%);
+  border-color: #007bff;
+  box-shadow: 0 4px 12px rgba(0, 123, 255, 0.15);
+}
+
+.search-input:focus,
+.filter-input:focus {
+  border-color: #007bff;
+  background: white;
+  box-shadow: 0 0 0 4px rgba(0, 123, 255, 0.1), 0 4px 12px rgba(0, 123, 255, 0.15);
+  transform: translateY(-1px);
+}
+
+.search-input:focus + .search-icon,
+.filter-input:focus + .filter-icon {
+  color: #007bff;
+  transform: scale(1.1);
+}
+
+.search-input::placeholder,
+.filter-input::placeholder {
+  color: #adb5bd;
+  font-weight: 400;
+}
+
+.filter-select {
+  width: 100%;
+  padding: 12px 16px;
+  border: 2px solid #e1e5e9;
+  border-radius: 10px;
+  font-size: 14px;
+  font-weight: 500;
+  background: linear-gradient(145deg, #ffffff 0%, #f8f9fa 100%);
+  color: #495057;
+  cursor: pointer;
+  transition: all 0.3s cubic-bezier(0.4, 0, 0.2, 1);
+  outline: none;
+  box-shadow: 0 2px 4px rgba(0, 0, 0, 0.05);
+  appearance: none;
+  background-image: url("data:image/svg+xml;charset=UTF-8,%3csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 24 24' fill='none' stroke='%236c757d' stroke-width='2' stroke-linecap='round' stroke-linejoin='round'%3e%3cpolyline points='6,9 12,15 18,9'%3e%3c/polyline%3e%3c/svg%3e");
+  background-repeat: no-repeat;
+  background-position: right 12px center;
+  background-size: 16px;
+  padding-right: 40px;
+}
+
+.filter-select:hover {
+  border-color: #007bff;
+  background: linear-gradient(145deg, #f8f9fa 0%, #e9ecef 100%);
+  box-shadow: 0 4px 12px rgba(0, 123, 255, 0.15);
+  transform: translateY(-1px);
+}
+
+.filter-select:focus {
+  border-color: #007bff;
+  background: white;
+  box-shadow: 0 0 0 4px rgba(0, 123, 255, 0.1), 0 4px 12px rgba(0, 123, 255, 0.15);
+  transform: translateY(-1px);
+}
+
+.filter-select:active {
+  transform: translateY(0);
+  box-shadow: 0 2px 4px rgba(0, 0, 0, 0.1);
+}
+
+/* 总览操作栏 */
+.actions-bar {
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+  margin-bottom: 15px;
+  padding: 15px;
+  background: white;
+  border-radius: 6px;
+  box-shadow: 0 1px 3px rgba(0, 0, 0, 0.1);
+}
+
 .view-mode-select,
 .per-page-select {
   padding: 10px 16px;
@@ -1463,6 +1619,19 @@ onMounted(async () => {
   color: white;
 }
 
+.overview-info {
+  padding: 10px 15px;
+  background: #e3f2fd;
+  border-radius: 4px;
+  color: #1976d2;
+  font-weight: 500;
+}
+
+.overview-info .info-text {
+  font-size: 14px;
+}
+
+/* 数据表格样式 */
 .table-container {
   background: white;
   border-radius: 8px;
@@ -1572,6 +1741,34 @@ onMounted(async () => {
   padding: 2px 6px;
   border-radius: 3px;
   font-size: 11px;
+}
+
+/* 得分点计数样式 */
+.scoring-points-count {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  gap: 2px;
+}
+
+.valid-count {
+  font-weight: bold;
+  color: #28a745;
+  font-size: 14px;
+}
+
+.deleted-count {
+  font-size: 11px;
+  color: #dc3545;
+  font-weight: 500;
+  background: rgba(220, 53, 69, 0.1);
+  padding: 1px 4px;
+  border-radius: 3px;
+  border: 1px solid rgba(220, 53, 69, 0.2);
+}
+
+.deleted-number {
+  font-weight: bold;
 }
 
 .row-actions {
@@ -2006,6 +2203,22 @@ onMounted(async () => {
   box-shadow: 0 2px 8px rgba(0, 0, 0, 0.1);
 }
 
+.scoring-point-item.deleted-point {
+  opacity: 0.7;
+  border-left: 4px solid #dc3545;
+  background: #fff5f5;
+}
+
+.deleted-text {
+  color: #dc3545 !important;
+  font-weight: bold;
+  text-decoration: line-through;
+}
+
+.scoring-points-modal .deleted-text {
+  opacity: 0.8;
+}
+
 .scoring-point-header {
   display: flex;
   justify-content: space-between;
@@ -2138,11 +2351,30 @@ onMounted(async () => {
   padding: 10px;
   background: #f8f9fa;
   border-radius: 4px;
+  border: 1px solid #e9ecef;
 }
 
 .scoring-points-modal .point-actions {
   display: flex;
   gap: 8px;
   justify-content: flex-end;
+}
+
+/* 删除状态的视觉样式 */
+.scoring-points-modal .deleted-point {
+  background: #fff5f5 !important;
+  border: 1px solid #fed7d7 !important;
+  opacity: 0.7;
+}
+
+.scoring-points-modal .deleted-text {
+  color: #e53e3e !important;
+  font-weight: bold;
+  text-decoration: line-through;
+}
+
+.scoring-points-modal .deleted-point .point-content {
+  background: #fed7d7 !important;
+  color: #742a2a !important;
 }
 </style>

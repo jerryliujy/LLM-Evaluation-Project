@@ -78,13 +78,16 @@
           <option value="deleted_only">仅显示已删除</option>
           <option value="all">显示全部</option>
         </select>
+          <div class="search-input-group">
+          <span class="search-icon">🔍</span>
+          <input
+            v-model="searchQuery"
+            type="text"
+            placeholder="搜索问题..."
+            class="search-input"
+          />
+        </div>
         
-        <input
-          v-model="searchQuery"
-          type="text"
-          placeholder="搜索问题..."
-          class="search-input"
-        />        
         <select v-model="itemsPerPage" @change="() => loadData()" class="per-page-select">
           <option value="20">20条/页</option>
           <option value="50">50条/页</option>
@@ -1237,17 +1240,93 @@ onMounted(() => {
   font-style: italic;
 }
 
-.search-input {
-  padding: 8px 12px;
-  border: 1px solid #dcdfe6;
-  border-radius: 6px;
-  font-size: 14px;
-  min-width: 200px;
+/* 搜索输入组样式 */
+.search-input-group {
+  position: relative;
+  display: flex;
+  align-items: center;
+  background: linear-gradient(135deg, #fff 0%, #f8f9fb 100%);
+  border: 1px solid #e4e7ed;
+  border-radius: 12px;
+  box-shadow: 0 2px 8px rgba(0, 0, 0, 0.04);
+  transition: all 0.3s cubic-bezier(0.4, 0, 0.2, 1);
+  overflow: hidden;
+  min-width: 240px;
+  height: 40px;
 }
 
-.search-input:focus {
-  outline: none;
+.search-input-group:hover {
+  border-color: #c6e2ff;
+  box-shadow: 0 4px 12px rgba(64, 158, 255, 0.15);
+  transform: translateY(-1px);
+}
+
+.search-input-group:focus-within {
   border-color: #409eff;
+  box-shadow: 0 4px 16px rgba(64, 158, 255, 0.25);
+  transform: translateY(-1px);
+  background: linear-gradient(135deg, #fff 0%, #ecf5ff 100%);
+}
+
+.search-icon {
+  position: absolute;
+  left: 12px;
+  font-size: 16px;
+  color: #909399;
+  transition: all 0.3s ease;
+  z-index: 2;
+  pointer-events: none;
+}
+
+.search-input-group:focus-within .search-icon {
+  color: #409eff;
+  transform: scale(1.1);
+}
+
+.search-input {
+  width: 100%;
+  padding: 10px 16px 10px 40px;
+  border: none;
+  outline: none;
+  background: transparent;
+  font-size: 14px;
+  color: #303133;
+  transition: all 0.3s ease;
+  font-weight: 400;
+}
+
+.search-input::placeholder {
+  color: #c0c4cc;
+  transition: all 0.3s ease;
+}
+
+.search-input:focus::placeholder {
+  color: #b3d8ff;
+  transform: translateX(2px);
+}
+
+/* 响应式设计 */
+@media (max-width: 1200px) {
+  .search-input-group {
+    min-width: 200px;
+  }
+}
+
+@media (max-width: 768px) {
+  .search-input-group {
+    min-width: 180px;
+    height: 36px;
+  }
+  
+  .search-input {
+    padding: 8px 14px 8px 36px;
+    font-size: 13px;
+  }
+  
+  .search-icon {
+    left: 10px;
+    font-size: 14px;
+  }
 }
 
 .per-page-select {

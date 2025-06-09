@@ -6,7 +6,7 @@ from datetime import datetime
 def get_std_answer(db: Session, answer_id: int, include_deleted: bool = False) -> Optional[models.StdAnswer]:
     query = db.query(models.StdAnswer).options(
         selectinload(models.StdAnswer.std_question),
-        selectinload(models.StdAnswer.scoring_points.and_(models.StdAnswerScoringPoint.is_valid == True)),
+        selectinload(models.StdAnswer.scoring_points),  # 加载所有得分点，包括已删除的
     ).filter(models.StdAnswer.id == answer_id)
     
     if not include_deleted:
@@ -34,16 +34,16 @@ def get_std_answers_paginated(
     dataset_id: Optional[int] = None,
     search_query: Optional[str] = None,
     std_question_filter: Optional[str] = None,
-    scoring_point_filter: Optional[str] = None
+    scoring_point_filter: Optional[str] = None,
+    scoring_points_filter: Optional[str] = None
 ):
     """获取分页的标准答案数据和元数据，支持搜索和筛选"""
     from ..schemas.common import PaginatedResponse
-    from sqlalchemy import and_, or_
-    
-    # 构建基础查询
+    from sqlalchemy import and_, or_, exists
+      # 构建基础查询
     query = db.query(models.StdAnswer).options(
         selectinload(models.StdAnswer.std_question),
-        selectinload(models.StdAnswer.scoring_points.and_(models.StdAnswerScoringPoint.is_valid == True)),
+        selectinload(models.StdAnswer.scoring_points),  # 加载所有得分点，包括已删除的
     )
     
     # 应用删除状态过滤
@@ -68,7 +68,7 @@ def get_std_answers_paginated(
             query = query.join(models.StdQuestion)
         query = query.filter(models.StdQuestion.body.ilike(search_term))
     
-    # 应用得分点过滤
+    # 应用得分点内容搜索过滤
     if scoring_point_filter:
         search_term = f"%{scoring_point_filter}%"
         query = query.join(models.StdAnswerScoringPoint).filter(
@@ -77,6 +77,29 @@ def get_std_answers_paginated(
                 models.StdAnswerScoringPoint.is_valid == True
             )
         )
+    
+    # 应用得分点筛选（有得分点或无得分点）
+    if scoring_points_filter:
+        if scoring_points_filter == "has_scoring_points":
+            # 筛选有得分点的答案
+            query = query.filter(
+                exists().where(
+                    and_(
+                        models.StdAnswerScoringPoint.std_answer_id == models.StdAnswer.id,
+                        models.StdAnswerScoringPoint.is_valid == True
+                    )
+                )
+            )
+        elif scoring_points_filter == "no_scoring_points":
+            # 筛选无得分点的答案
+            query = query.filter(
+                ~exists().where(
+                    and_(
+                        models.StdAnswerScoringPoint.std_answer_id == models.StdAnswer.id,
+                        models.StdAnswerScoringPoint.is_valid == True
+                    )
+                )
+            )
     
     # 去重（如果有联接的话）
     if std_question_filter or scoring_point_filter:

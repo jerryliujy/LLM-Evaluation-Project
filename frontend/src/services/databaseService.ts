@@ -55,13 +55,12 @@ export const databaseService = {
       if (tagFilter) params.tag_filter = tagFilter;
       if (questionTypeFilter) params.question_type_filter = questionTypeFilter;
       if (scoringPointsFilter) params.scoring_points_filter = scoringPointsFilter;
-    }
-
-    // 标准答案的搜索参数
+    }    // 标准答案的搜索参数
     if (tableName === 'std_answers') {
       if (searchQuery) params.search_query = searchQuery;
       if (stdQuestionFilter) params.std_question_filter = stdQuestionFilter;
       if (scoringPointFilter) params.scoring_point_filter = scoringPointFilter;
+      if (scoringPointsFilter) params.scoring_points_filter = scoringPointsFilter;
     }
 
     try {
