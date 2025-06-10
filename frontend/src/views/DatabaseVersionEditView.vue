@@ -454,6 +454,12 @@ const loadStdQuestions = async () => {
   try {
     // 加载版本中的标准问答对
     stdQuestions.value = await versionService.getVersionQuestions(Number(versionId.value));
+    
+    // 初始化修改项列表 - 检查哪些问题已经被修改
+    modifiedItems.value = stdQuestions.value
+      .filter(question => question.is_modified)
+      .map(question => question.id);
+      
   } catch (error) {
     showMessage('加载问答对失败', 'error');
     console.error('Load std questions error:', error);
@@ -537,10 +543,15 @@ const createNewQA = async () => {
       },
       answer: {
         answer: createForm.value.answer
-      }
-    });
+      }    });
     
     stdQuestions.value.push(newQuestion);
+    
+    // 新创建的问答对也算作修改项
+    if (newQuestion.id && !modifiedItems.value.includes(newQuestion.id)) {
+      modifiedItems.value.push(newQuestion.id);
+    }
+    
     showMessage('创建成功', 'success');
     closeCreateModal();
   } catch (error) {

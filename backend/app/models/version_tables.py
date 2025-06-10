@@ -3,6 +3,26 @@ from sqlalchemy.orm import relationship
 from sqlalchemy.sql import func
 from ..db.database import Base
 
+class VersionTag(Base):
+    """版本工作表中的标签 - 记录版本中问题的标签状态"""
+    __tablename__ = "VersionTag"
+    
+    id = Column(Integer, primary_key=True, index=True)
+    version_id = Column(Integer, ForeignKey("DatasetVersion.id"), nullable=False, index=True)
+    version_question_id = Column(Integer, ForeignKey("VersionStdQuestion.id"), nullable=False, index=True)
+    tag_label = Column(String(100), ForeignKey("Tag.label"), nullable=False, index=True)
+    is_deleted = Column(Boolean, default=False, nullable=False)  # 是否被删除
+    is_new = Column(Boolean, default=False, nullable=False)  # 是否是新增的标签
+    
+    created_at = Column(DateTime(timezone=True), server_default=func.now())
+    
+    # 关系
+    version_question = relationship("VersionStdQuestion", back_populates="version_tags")
+    tag = relationship("Tag")
+    
+    class Config:
+        from_attributes = True
+
 class VersionStdQuestion(Base):
     """版本工作表中的标准问题 - 只记录修改状态"""
     __tablename__ = "VersionStdQuestion"
@@ -23,6 +43,7 @@ class VersionStdQuestion(Base):
     version = relationship("DatasetVersion")
     original_question = relationship("StdQuestion")
     version_answers = relationship("VersionStdAnswer", back_populates="version_question", cascade="all, delete-orphan")
+    version_tags = relationship("VersionTag", back_populates="version_question", cascade="all, delete-orphan")
     
     class Config:
         from_attributes = True

@@ -83,16 +83,34 @@
           <div class="creation-time">
             创建时间: {{ formatDate(dataset.create_time) }}
           </div>
-        </div>
-
-        <div class="card-actions">
+        </div>        <div class="card-actions">
           <button 
             @click="enterDataset(dataset)"
             class="action-btn primary"
           >
             进入查看
           </button>
-            <button 
+          
+          <!-- LLM评测功能 - 对所有用户可见 -->
+          <button 
+            v-if="userInfo?.role === 'user'"
+            @click="goToLLMEvaluation(dataset)"
+            class="action-btn llm-eval"
+          >
+            🤖 LLM评测
+          </button>
+          
+          <!-- 下载数据集 - 对所有用户可见 -->
+          <button 
+            @click="downloadDataset(dataset)"
+            class="action-btn download"
+            :disabled="downloadingId === dataset.id"
+          >
+            {{ downloadingId === dataset.id ? '下载中...' : '📥 下载JSON' }}
+          </button>
+          
+          <!-- 管理功能 - 仅数据集拥有者可见 -->
+          <button 
             v-if="isDatasetOwner(dataset)"
             @click="goToDataImport(dataset)"
             class="action-btn secondary"
@@ -248,6 +266,7 @@ import { ref, computed, onMounted, onUnmounted } from "vue";
 import { useRouter, useRoute } from "vue-router";
 import { datasetService, type DatasetWithStats, type DatasetCreate } from "@/services/datasetService";
 import { authService, type User } from "@/services/authService";
+import { llmEvaluationService } from "@/services/llmEvaluationService";
 
 // 路由
 const router = useRouter();
@@ -279,6 +298,9 @@ const editForm = ref<Partial<DatasetCreate> & { id?: number }>({});
 // 消息提示
 const message = ref("");
 const messageType = ref<"success" | "error">("success");
+
+// 下载状态
+const downloadingId = ref<number | null>(null);
 
 // 方法
 const refreshDatasets = async () => {
@@ -323,6 +345,44 @@ const goToDataImportForNew = () => {
   router.push({
     name: "DataImport"
   });
+};
+
+const goToLLMEvaluation = (dataset: DatasetWithStats) => {
+  // 跳转到LLM评测页面，传递数据集ID
+  router.push({
+    name: "LLMEvaluation",
+    params: { datasetId: dataset.id.toString() }
+  });
+};
+
+const downloadDataset = async (dataset: DatasetWithStats) => {
+  if (downloadingId.value) return;
+  
+  downloadingId.value = dataset.id;
+  try {
+    // 调用LLM评测服务的下载API
+    const response = await llmEvaluationService.downloadDataset(dataset.id);
+    
+    // 创建下载链接
+    const blob = new Blob([JSON.stringify(response, null, 2)], {
+      type: 'application/json'
+    });
+    const url = window.URL.createObjectURL(blob);
+    const link = document.createElement('a');
+    link.href = url;
+    link.download = `${dataset.name}_dataset.json`;
+    document.body.appendChild(link);
+    link.click();
+    document.body.removeChild(link);
+    window.URL.revokeObjectURL(url);
+    
+    showMessage('数据集下载成功', 'success');
+  } catch (error) {
+    console.error('下载数据集失败:', error);
+    showMessage('下载数据集失败', 'error');
+  } finally {
+    downloadingId.value = null;
+  }
 };
 
 const createDataset = async () => {
@@ -796,6 +856,29 @@ const isDatasetOwner = (dataset: DatasetWithStats) => {
 
 .action-btn.primary:hover {
   background-color: #0056b3;
+}
+
+.action-btn.llm-eval {
+  background-color: #6f42c1;
+  color: white;
+}
+
+.action-btn.llm-eval:hover {
+  background-color: #5a32a3;
+}
+
+.action-btn.download {
+  background-color: #17a2b8;
+  color: white;
+}
+
+.action-btn.download:hover {
+  background-color: #138496;
+}
+
+.action-btn.download:disabled {
+  background-color: #6c757d;
+  cursor: not-allowed;
 }
 
 .action-btn.secondary {

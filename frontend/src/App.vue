@@ -3,6 +3,7 @@
     <div class="nav-section">
       <router-link to="/">首页</router-link>
       <router-link to="/marketplace">数据库市场</router-link>
+      <router-link to="/llm-marketplace">LLM评测</router-link>
       <router-link to="/raw-question-management">原始问题池</router-link>
     </div>
   </nav>

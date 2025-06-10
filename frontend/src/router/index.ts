@@ -89,6 +89,19 @@ const routes: Array<RouteRecordRaw> = [
     meta: { requiresAuth: true, role: 'admin' },
     props: true
   },
+  {
+    path: "/llm-marketplace",
+    name: "LLMMarketplace",
+    component: () => import("../views/LLMMarketplaceView.vue"),
+    meta: { requiresAuth: true, role: 'user' }
+  },
+  {
+    path: "/llm-evaluation/:datasetId?",
+    name: "LLMEvaluation", 
+    component: () => import("../views/LLMEvaluationView.vue"),
+    meta: { requiresAuth: true, role: 'user' },
+    props: true
+  },
 ];
 
 const router = createRouter({

@@ -11,7 +11,8 @@ from ..models.dataset_version import DatasetVersion
 from ..models.version_tables import (
     VersionStdQuestion, 
     VersionStdAnswer, 
-    VersionScoringPoint
+    VersionScoringPoint,
+    VersionTag
 )
 from ..models.std_question import StdQuestion
 from ..models.std_answer import StdAnswer, StdAnswerScoringPoint
@@ -37,12 +38,11 @@ def get_version_question_data(db: Session, version_question: VersionStdQuestion)
     else:
         question_body = version_question.original_question.body
         question_type = version_question.original_question.question_type
-    
     question_data = {
         "id": version_question.id,
         "body": question_body,
         "question_type": question_type,
-        "tags": [tag.tag_name for tag in version_question.version_tags],
+        "tags": [version_tag.tag_label for version_tag in version_question.version_tags if not version_tag.is_deleted],
         "std_answers": [],
         "is_modified": version_question.is_modified
     }
@@ -117,7 +117,16 @@ def copy_dataset_to_version_tables(db: Session, dataset_id: int, version_id: int
         db.add(version_question)
         db.flush()  # 获取版本问题的ID
         
-        # 注意：标签在版本系统中不单独存储，它们作为原始问题的一部分
+        # 复制标签到版本表
+        for tag in source_question.tags:
+            version_tag = VersionTag(
+                version_id=version_id,
+                version_question_id=version_question.id,
+                tag_label=tag.label,
+                is_deleted=False,
+                is_new=False
+            )
+            db.add(version_tag)
         
         # 为每个答案创建版本记录
         for source_answer in source_question.std_answers:
@@ -204,10 +213,10 @@ def get_version_std_qa(version_id: int, db: Session = Depends(get_db)):
     version = db.query(DatasetVersion).filter(DatasetVersion.id == version_id).first()
     if not version:
         raise HTTPException(status_code=404, detail="Version not found")
-    
-    # 获取版本工作表中的问答对
+      # 获取版本工作表中的问答对
     version_questions = db.query(VersionStdQuestion).options(
         joinedload(VersionStdQuestion.version_answers).joinedload(VersionStdAnswer.version_scoring_points),
+        joinedload(VersionStdQuestion.version_tags),
         joinedload(VersionStdQuestion.original_question).joinedload(StdQuestion.std_answers).joinedload(StdAnswer.scoring_points),
         joinedload(VersionStdQuestion.original_question).joinedload(StdQuestion.tags)
     ).filter(
@@ -224,11 +233,11 @@ def get_version_std_qa(version_id: int, db: Session = Depends(get_db)):
         else:
             question_body = version_question.original_question.body
             question_type = version_question.original_question.question_type
-        
         question_data = {
             "id": version_question.id,  # 使用版本表的ID
             "body": question_body,
             "question_type": question_type,
+            "tags": [version_tag.tag_label for version_tag in version_question.version_tags if not version_tag.is_deleted],
             "std_answers": [],
             "is_modified": version_question.is_modified
         }
@@ -307,14 +316,40 @@ def update_version_question(
     version_question.is_modified = True
     version_question.modified_body = question_data.get("body")
     version_question.modified_question_type = question_data.get("question_type")
-    
-    # 更新标签
+      # 更新标签
     if "tags" in question_data:
         # 删除现有标签
-        for tag in version_question.version_tags:
-            db.delete(tag)
+        for version_tag in version_question.version_tags:
+            version_tag.is_deleted = True
         
-        # 标签在版本系统中不单独存储，通过原始问题获取
+        # 添加新标签
+        for tag_label in question_data["tags"]:
+            # 确保标签存在于Tag表中
+            tag = db.query(Tag).filter(Tag.label == tag_label).first()
+            if not tag:
+                tag = Tag(label=tag_label)
+                db.add(tag)
+                db.flush()
+            
+            # 检查是否已存在该标签的版本记录
+            existing_version_tag = next(
+                (vt for vt in version_question.version_tags if vt.tag_label == tag_label), 
+                None
+            )
+            
+            if existing_version_tag:
+                # 恢复已删除的标签
+                existing_version_tag.is_deleted = False
+            else:
+                # 创建新的版本标签记录
+                new_version_tag = VersionTag(
+                    version_id=version_id,
+                    version_question_id=version_question.id,
+                    tag_label=tag_label,
+                    is_deleted=False,
+                    is_new=True
+                )
+                db.add(new_version_tag)
     
     # 更新答案
     if "std_answers" in question_data:
@@ -339,7 +374,6 @@ def update_version_question(
                 # 处理得分点
                 for point in existing_answer.version_scoring_points:
                     point.is_deleted = True
-                
                 for point_data in answer_data.get("scoring_points", []):
                     if "id" in point_data and not point_data.get("is_new", False):
                         # 修改现有得分点
@@ -352,6 +386,7 @@ def update_version_question(
                     else:
                         # 新增得分点
                         new_point = VersionScoringPoint(
+                            version_id=version_id,
                             version_answer_id=existing_answer.id,
                             is_new=True,
                             is_modified=False,
@@ -436,8 +471,7 @@ def create_version_qa(
     version = db.query(DatasetVersion).filter(DatasetVersion.id == version_id).first()
     if not version:
         raise HTTPException(status_code=404, detail="Version not found")
-    
-    # 创建新的版本问题（新增的问题直接设置为修改状态）
+      # 创建新的版本问题（新增的问题直接设置为修改状态）
     new_question = VersionStdQuestion(
         version_id=version_id,
         is_modified=True,  # 新增的问题标记为已修改
@@ -448,7 +482,24 @@ def create_version_qa(
     db.add(new_question)
     db.flush()
     
-    # 标签在版本系统中不单独存储
+    # 添加标签
+    for tag_label in qa_data["question"].get("tags", []):
+        # 确保标签存在于Tag表中
+        tag = db.query(Tag).filter(Tag.label == tag_label).first()
+        if not tag:
+            tag = Tag(label=tag_label)
+            db.add(tag)
+            db.flush()
+        
+        # 创建版本标签记录
+        version_tag = VersionTag(
+            version_id=version_id,
+            version_question_id=new_question.id,
+            tag_label=tag_label,
+            is_deleted=False,
+            is_new=True
+        )
+        db.add(version_tag)
     
     # 创建答案
     answer_data = qa_data["answer"]
@@ -501,10 +552,9 @@ def commit_version(
         original_dataset = db.query(Dataset).filter(Dataset.id == version.dataset_id).first()
         if not original_dataset:
             raise HTTPException(status_code=404, detail="Original dataset not found")
-        
-        # 2. 创建新的数据集版本
+          # 2. 创建新的数据集版本
         new_dataset = Dataset(
-            name=f"{original_dataset.name}_v{version.version_number}",
+            name=original_dataset.name,  # 保持数据集名称一致
             description=f"{original_dataset.description} - 版本 {version.version_number}: {version.description}",
             is_public=publish_data.is_public,
             created_by=original_dataset.created_by
@@ -550,15 +600,15 @@ def commit_version(
                 
                 db.add(new_question)
                 db.flush()
-                
-                # 处理标签
+                  # 处理标签
                 for version_tag in version_question.version_tags:
-                    tag = db.query(Tag).filter(Tag.name == version_tag.tag_name).first()
-                    if not tag:
-                        tag = Tag(name=version_tag.tag_name)
-                        db.add(tag)
-                        db.flush()
-                    new_question.tags.append(tag)
+                    if not version_tag.is_deleted:
+                        tag = db.query(Tag).filter(Tag.label == version_tag.tag_label).first()
+                        if not tag:
+                            tag = Tag(label=version_tag.tag_label)
+                            db.add(tag)
+                            db.flush()
+                        new_question.tags.append(tag)
                 
                 # 处理答案
                 for version_answer in version_question.version_answers:
@@ -639,7 +689,6 @@ def import_data_to_version(
     version = db.query(DatasetVersion).filter(DatasetVersion.id == version_id).first()
     if not version:
         raise HTTPException(status_code=404, detail="Version not found")
-    
     try:
         data_list = import_data.get("data", [])
         imported_count = 0
@@ -656,7 +705,24 @@ def import_data_to_version(
             db.add(new_question)
             db.flush()
             
-            # 标签在版本系统中不单独存储
+            # 添加标签
+            for tag_label in item.get("tags", []):
+                # 确保标签存在于Tag表中
+                tag = db.query(Tag).filter(Tag.label == tag_label).first()
+                if not tag:
+                    tag = Tag(label=tag_label)
+                    db.add(tag)
+                    db.flush()
+                
+                # 创建版本标签记录
+                version_tag = VersionTag(
+                    version_id=version_id,
+                    version_question_id=new_question.id,
+                    tag_label=tag_label,
+                    is_deleted=False,
+                    is_new=True
+                )
+                db.add(version_tag)
             
             # 创建答案
             if item.get("answer"):

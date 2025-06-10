@@ -219,7 +219,7 @@ async def get_std_questions_overview(
                 StdQuestion.body.ilike(search_term),
                 RawQuestion.title.ilike(search_term),
                 RawQuestion.body.ilike(search_term),
-                StdAnswer.answer_text.ilike(search_term)
+                StdAnswer.answer.ilike(search_term)
             )
         )
     
