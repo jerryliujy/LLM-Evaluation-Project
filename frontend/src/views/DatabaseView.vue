@@ -6,12 +6,14 @@
           <p class="dataset-description">{{ currentDataset.description }}</p>
         </div>
         <h2 v-else>数据库管理</h2>
-      </div>
-      <div class="header-actions">        <select v-model="selectedTable" @change="loadTableData" class="table-select">
+      </div>      <div class="header-actions">        <select v-model="selectedTable" @change="loadTableData" class="table-select">
           <option value="overview_std">标准问答总览</option>
           <option value="std_questions">标准问题</option>
           <option value="std_answers">标准答案</option>
         </select>
+        <button @click="createNewVersion" class="create-version-btn">
+          创建新版本
+        </button>
         <button @click="refreshData" class="refresh-btn" :disabled="loading">
           {{ loading ? "加载中..." : "刷新" }}
         </button>
@@ -936,6 +938,24 @@ const refreshData = () => {
   loadTableData();
 };
 
+// 创建新版本
+const createNewVersion = () => {
+  console.log('currentDatasetId:', currentDatasetId.value);
+  console.log('route.params:', route.params);
+  console.log('route.query:', route.query);
+  
+  if (!currentDatasetId.value) {
+    showMessage("请先选择一个数据集", "error");
+    return;
+  }
+  
+  // 跳转到版本编辑页面
+  router.push({
+    name: 'DatabaseVersionEdit',
+    params: { datasetId: currentDatasetId.value.toString() }
+  });
+};
+
 // 处理搜索的防抖方法
 const handleSearch = () => {
   // 清除之前的超时
@@ -1394,7 +1414,7 @@ const removeScoringPoint = (index: number) => {
 // 生命周期
 onMounted(async () => {
   // 从路由参数获取数据集ID
-  const datasetId = route.query.dataset;
+  const datasetId = route.params.id || route.query.dataset;
   if (datasetId && !isNaN(Number(datasetId))) {
     currentDatasetId.value = Number(datasetId);
     await loadDataset();
@@ -1458,6 +1478,25 @@ onMounted(async () => {
 .refresh-btn:disabled {
   background: #6c757d;
   cursor: not-allowed;
+}
+
+.create-version-btn {
+  padding: 8px 16px;
+  background: linear-gradient(135deg, #28a745 0%, #20c997 100%);
+  color: white;
+  border: none;
+  border-radius: 6px;
+  cursor: pointer;
+  font-size: 14px;
+  font-weight: 500;
+  transition: all 0.3s ease;
+  box-shadow: 0 2px 4px rgba(40, 167, 69, 0.2);
+}
+
+.create-version-btn:hover {
+  background: linear-gradient(135deg, #218838 0%, #1abc9c 100%);
+  transform: translateY(-1px);
+  box-shadow: 0 4px 8px rgba(40, 167, 69, 0.3);
 }
 
 .stats-bar {

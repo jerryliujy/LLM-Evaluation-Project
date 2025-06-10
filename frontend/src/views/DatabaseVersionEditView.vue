@@ -1,0 +1,1411 @@
+<template>
+  <div class="version-edit-container">
+    <div class="header">
+      <div class="header-left">
+        <button @click="goBackToDatabase" class="back-btn">
+          ← 返回数据库管理
+        </button>
+        <div class="title-section">
+          <h2>创建新版本</h2>
+          <p class="subtitle" v-if="currentDataset">
+            数据库: {{ currentDataset.name }}
+          </p>
+        </div>
+      </div>
+      <div class="header-actions">
+        <button @click="saveVersion" class="save-version-btn" :disabled="saving || !hasChanges">
+          {{ saving ? "保存中..." : "保存版本" }}
+        </button>
+      </div>
+    </div>
+
+    <!-- 版本描述输入 -->
+    <div class="version-description-section" v-if="!versionCreated">
+      <div class="description-card">
+        <h3>版本信息</h3>
+        <div class="form-group">
+          <label for="version-description">版本描述：</label>
+          <textarea
+            id="version-description"
+            v-model="versionDescription"
+            placeholder="请输入这个版本的描述信息，说明本次更新的内容..."
+            rows="3"
+            class="form-control"
+            required
+          ></textarea>
+        </div>
+        <button @click="createVersionAndEnterEdit" class="start-edit-btn" :disabled="!versionDescription.trim()">
+          开始编辑
+        </button>
+      </div>
+    </div>
+
+    <!-- 编辑界面 -->
+    <div v-if="versionCreated" class="edit-interface">
+      <!-- 工具栏 -->
+      <div class="toolbar">
+        <div class="toolbar-left">
+          <div class="stats">
+            <span class="stat-item">
+              <span class="stat-label">总计:</span>
+              <span class="stat-value">{{ stdQuestions.length }}</span>
+            </span>
+            <span class="stat-item">
+              <span class="stat-label">已修改:</span>
+              <span class="stat-value modified">{{ modifiedItems.length }}</span>
+            </span>
+          </div>
+        </div>
+        <div class="toolbar-right">
+          <button @click="showImportModal = true" class="import-btn">
+            📁 导入数据
+          </button>
+          <button @click="showCreateModal = true" class="create-btn">
+            ➕ 创建问答对
+          </button>
+        </div>
+      </div>
+
+      <!-- 标准问答对列表 -->
+      <div class="qa-list">
+        <div 
+          v-for="question in stdQuestions" 
+          :key="question.id"
+          class="qa-item"
+          :class="{ 'modified': modifiedItems.includes(question.id) }"
+        >
+          <div class="qa-header">
+            <div class="qa-info">
+              <span class="qa-id">#{{ question.id }}</span>
+              <span v-if="modifiedItems.includes(question.id)" class="modified-badge">已修改</span>
+            </div>
+            <div class="qa-actions">
+              <button @click="editQuestion(question)" class="edit-btn">
+                ✏️ 编辑
+              </button>
+              <button @click="deleteQuestion(question.id)" class="delete-btn">
+                🗑️ 删除
+              </button>
+            </div>
+          </div>
+
+          <div class="qa-content">
+            <div class="question-section">
+              <h4>问题</h4>
+              <div class="question-text">{{ question.body }}</div>
+              <div class="question-meta">
+                <span class="question-type">类型: {{ question.question_type === 'text' ? '文本题' : '选择题' }}</span>
+                <div class="tags" v-if="question.tags && question.tags.length > 0">
+                  <span v-for="tag in question.tags" :key="tag" class="tag">{{ tag }}</span>
+                </div>
+              </div>
+            </div>
+
+            <div class="answers-section" v-if="question.std_answers && question.std_answers.length > 0">
+              <h4>标准答案</h4>
+              <div v-for="answer in question.std_answers" :key="answer.id" class="answer-item">
+                <div class="answer-text">{{ answer.answer }}</div>
+                <div class="answer-meta">
+                  <span v-if="answer.answered_by">回答者: {{ answer.answered_by }}</span>
+                  <span v-if="answer.scoring_points && answer.scoring_points.length > 0">
+                    得分点: {{ answer.scoring_points.length }}个
+                  </span>
+                </div>
+              </div>
+            </div>
+          </div>
+        </div>
+      </div>
+    </div>
+
+    <!-- 编辑弹窗 -->
+    <div v-if="showEditModal" class="modal-overlay" @click="closeEditModal">
+      <div class="edit-modal" @click.stop>
+        <div class="modal-header">
+          <h3>编辑标准问答对</h3>
+          <button @click="closeEditModal" class="close-btn">×</button>
+        </div>
+        <div class="modal-content">
+          <form @submit.prevent="saveEdit" class="edit-form">
+            <!-- 问题编辑 -->
+            <div class="form-group">
+              <label for="edit-question">问题内容：</label>
+              <textarea
+                id="edit-question"
+                v-model="editForm.body"
+                rows="3"
+                class="form-control"
+                required
+              ></textarea>
+            </div>
+
+            <div class="form-group">
+              <label for="edit-question-type">问题类型：</label>
+              <select id="edit-question-type" v-model="editForm.question_type" class="form-control">
+                <option value="text">文本题</option>
+                <option value="choice">选择题</option>
+              </select>
+            </div>
+
+            <!-- 标签编辑 -->
+            <div class="form-group">
+              <label>标签：</label>
+              <div class="tags-editor">
+                <div class="current-tags">
+                  <span v-for="(tag, index) in editForm.tags" :key="index" class="tag-item">
+                    {{ tag }}
+                    <button type="button" @click="removeTag(index)" class="remove-tag-btn">×</button>
+                  </span>
+                </div>
+                <div class="add-tag">
+                  <input 
+                    v-model="newTag"
+                    type="text" 
+                    placeholder="输入新标签后按回车添加"
+                    @keyup.enter="addTag"
+                    class="form-control"
+                  />
+                  <button type="button" @click="addTag" class="add-tag-btn" :disabled="!newTag.trim()">
+                    添加
+                  </button>
+                </div>
+              </div>
+            </div>
+
+            <!-- 答案编辑 -->
+            <div class="form-group">
+              <label>标准答案：</label>
+              <div class="answers-editor">
+                <div v-for="(answer, index) in editForm.std_answers" :key="index" class="answer-edit-item">
+                  <div class="answer-header">
+                    <label>答案 {{ index + 1 }}:</label>
+                    <button type="button" @click="removeAnswer(index)" class="remove-answer-btn">删除</button>
+                  </div>
+                  <textarea
+                    v-model="answer.answer"
+                    placeholder="输入答案内容..."
+                    rows="3"
+                    class="form-control"
+                  ></textarea>
+                  <div class="answer-meta-edit">
+                    <input
+                      v-model="answer.answered_by"
+                      type="text"
+                      placeholder="回答者"
+                      class="form-control small"
+                    />
+                  </div>
+                  
+                  <!-- 得分点编辑 -->
+                  <div class="scoring-points-section">
+                    <label>得分点：</label>
+                    <div class="scoring-points-list">
+                      <div v-for="(point, pointIndex) in answer.scoring_points" :key="pointIndex" class="scoring-point-item">
+                        <textarea
+                          v-model="point.answer"
+                          placeholder="输入得分点内容..."
+                          rows="2"
+                          class="form-control"
+                        ></textarea>
+                        <div class="point-controls">
+                          <input
+                            v-model.number="point.point_order"
+                            type="number"
+                            min="1"
+                            placeholder="顺序"
+                            class="form-control small"
+                          />
+                          <button type="button" @click="removeScoringPoint(index, pointIndex)" class="remove-point-btn">删除</button>
+                        </div>
+                      </div>
+                    </div>
+                    <button type="button" @click="addScoringPoint(index)" class="add-point-btn">添加得分点</button>
+                  </div>
+                </div>
+                <button type="button" @click="addAnswer" class="add-answer-btn">添加答案</button>
+              </div>
+            </div>
+
+            <div class="form-actions">
+              <button type="button" @click="closeEditModal" class="cancel-btn">取消</button>
+              <button type="submit" class="save-btn" :disabled="editSaving">
+                {{ editSaving ? "保存中..." : "保存" }}
+              </button>
+            </div>
+          </form>
+        </div>
+      </div>
+    </div>
+
+    <!-- 创建问答对弹窗 -->
+    <div v-if="showCreateModal" class="modal-overlay" @click="closeCreateModal">
+      <div class="create-modal" @click.stop>
+        <div class="modal-header">
+          <h3>创建新的标准问答对</h3>
+          <button @click="closeCreateModal" class="close-btn">×</button>
+        </div>
+        <div class="modal-content">
+          <form @submit.prevent="createNewQA" class="create-form">
+            <div class="form-group">
+              <label for="new-question">问题内容：</label>
+              <textarea
+                id="new-question"
+                v-model="createForm.body"
+                rows="3"
+                class="form-control"
+                required
+              ></textarea>
+            </div>
+
+            <div class="form-group">
+              <label for="new-question-type">问题类型：</label>
+              <select id="new-question-type" v-model="createForm.question_type" class="form-control">
+                <option value="text">文本题</option>
+                <option value="choice">选择题</option>
+              </select>
+            </div>
+
+            <div class="form-group">
+              <label for="new-answer">答案内容：</label>
+              <textarea
+                id="new-answer"
+                v-model="createForm.answer"
+                rows="3"
+                class="form-control"
+                required
+              ></textarea>
+            </div>
+
+            <div class="form-actions">
+              <button type="button" @click="closeCreateModal" class="cancel-btn">取消</button>
+              <button type="submit" class="save-btn" :disabled="createSaving">
+                {{ createSaving ? "创建中..." : "创建" }}
+              </button>
+            </div>
+          </form>
+        </div>
+      </div>
+    </div>
+
+    <!-- 导入数据弹窗 -->
+    <div v-if="showImportModal" class="modal-overlay" @click="closeImportModal">
+      <div class="import-modal" @click.stop>
+        <div class="modal-header">
+          <h3>导入标准问答数据</h3>
+          <button @click="closeImportModal" class="close-btn">×</button>
+        </div>
+        <div class="modal-content">
+          <!-- 文件上传区域 -->
+          <div 
+            class="upload-area" 
+            @drop="handleDrop" 
+            @dragover.prevent 
+            @dragenter.prevent
+            :class="{ 'drag-over': isDragOver }"
+          >
+            <div class="upload-content">
+              <div class="upload-icon">📁</div>
+              <p>拖拽JSON文件到此处，或点击选择文件</p>
+              <input
+                ref="fileInput"
+                type="file"
+                accept=".json"
+                @change="handleFileSelect"
+                style="display: none"
+              />
+              <button @click="$refs.fileInput.click()" class="select-file-btn">选择文件</button>
+            </div>
+          </div>
+
+          <!-- 预览和导入 -->
+          <div v-if="importPreviewData.length > 0" class="import-preview">
+            <h4>数据预览</h4>
+            <p>共 {{ importPreviewData.length }} 条记录</p>
+            <div class="preview-actions">
+              <button @click="clearImportPreview" class="clear-btn">清除</button>
+              <button @click="confirmImport" class="import-confirm-btn" :disabled="importing">
+                {{ importing ? "导入中..." : "确认导入" }}
+              </button>
+            </div>
+          </div>
+
+          <div v-if="importError" class="error-message">
+            {{ importError }}
+          </div>
+        </div>
+      </div>
+    </div>
+
+    <!-- 消息提示 -->
+    <div v-if="message" class="message" :class="messageType">
+      {{ message }}
+    </div>
+  </div>
+</template>
+
+<script setup lang="ts">
+import { ref, computed, onMounted } from 'vue';
+import { useRoute, useRouter } from 'vue-router';
+import { datasetService } from '@/services/datasetService';
+import { apiClient } from '@/services/api';
+
+// 路由
+const route = useRoute();
+const router = useRouter();
+
+// 响应式数据
+const datasetId = computed(() => route.params.datasetId as string);
+const currentDataset = ref<any>(null);
+const versionDescription = ref('');
+const versionCreated = ref(false);
+const currentVersion = ref<any>(null);
+
+// 编辑相关
+const stdQuestions = ref<any[]>([]);
+const modifiedItems = ref<number[]>([]);
+const saving = ref(false);
+const hasChanges = computed(() => modifiedItems.value.length > 0);
+
+// 弹窗控制
+const showEditModal = ref(false);
+const showCreateModal = ref(false);
+const showImportModal = ref(false);
+
+// 编辑表单
+const editForm = ref<any>({});
+const editSaving = ref(false);
+const selectedQuestion = ref<any>(null);
+const newTag = ref('');
+
+// 创建表单
+const createForm = ref({
+  body: '',
+  question_type: 'text',
+  answer: ''
+});
+const createSaving = ref(false);
+
+// 导入相关
+const fileInput = ref<HTMLInputElement>();
+const importPreviewData = ref<any[]>([]);
+const isDragOver = ref(false);
+const importing = ref(false);
+const importError = ref('');
+
+// 消息提示
+const message = ref('');
+const messageType = ref<'success' | 'error'>('success');
+
+// 方法
+const goBackToDatabase = () => {
+  router.push({
+    name: 'DatabaseView',
+    query: { dataset: datasetId.value }
+  });
+};
+
+const showMessage = (msg: string, type: 'success' | 'error' = 'success') => {
+  message.value = msg;
+  messageType.value = type;
+  setTimeout(() => {
+    message.value = '';
+  }, 3000);
+};
+
+const loadDataset = async () => {
+  try {
+    currentDataset.value = await datasetService.getDataset(Number(datasetId.value));
+  } catch (error) {
+    showMessage('加载数据集信息失败', 'error');
+    console.error('Load dataset error:', error);
+  }
+};
+
+const createVersionAndEnterEdit = async () => {
+  if (!versionDescription.value.trim()) {
+    showMessage('请输入版本描述', 'error');
+    return;
+  }
+
+  try {
+    // 创建新版本（这里需要实现后端API）
+    const response = await apiClient.post(`/datasets/${datasetId.value}/versions`, {
+      description: versionDescription.value
+    });
+    
+    currentVersion.value = response.data;
+    versionCreated.value = true;
+    
+    // 加载标准问答对数据
+    await loadStdQuestions();
+    
+    showMessage('版本创建成功，开始编辑', 'success');
+  } catch (error) {
+    showMessage('创建版本失败', 'error');
+    console.error('Create version error:', error);
+  }
+};
+
+const loadStdQuestions = async () => {
+  try {
+    const response = await apiClient.get(`/datasets/${datasetId.value}/std-questions-with-answers`);
+    stdQuestions.value = response.data;
+  } catch (error) {
+    showMessage('加载问答对失败', 'error');
+    console.error('Load std questions error:', error);
+  }
+};
+
+const editQuestion = (question: any) => {
+  selectedQuestion.value = question;
+  editForm.value = {
+    id: question.id,
+    body: question.body,
+    question_type: question.question_type,
+    tags: question.tags ? [...question.tags] : [],
+    std_answers: question.std_answers ? question.std_answers.map((answer: any) => ({
+      id: answer.id,
+      answer: answer.answer,
+      answered_by: answer.answered_by,
+      scoring_points: answer.scoring_points ? answer.scoring_points.map((point: any) => ({
+        id: point.id,
+        answer: point.answer,
+        point_order: point.point_order
+      })) : []
+    })) : []
+  };
+  showEditModal.value = true;
+};
+
+const saveEdit = async () => {
+  editSaving.value = true;
+  try {
+    // 这里实现保存编辑的逻辑，需要后端支持版本管理
+    await apiClient.put(`/versions/${currentVersion.value.id}/std-questions/${editForm.value.id}`, editForm.value);
+    
+    // 更新本地数据
+    const index = stdQuestions.value.findIndex(q => q.id === editForm.value.id);
+    if (index !== -1) {
+      stdQuestions.value[index] = { ...editForm.value };
+    }
+    
+    // 添加到修改列表
+    if (!modifiedItems.value.includes(editForm.value.id)) {
+      modifiedItems.value.push(editForm.value.id);
+    }
+    
+    showMessage('保存成功', 'success');
+    closeEditModal();
+  } catch (error) {
+    showMessage('保存失败', 'error');
+    console.error('Save edit error:', error);
+  } finally {
+    editSaving.value = false;
+  }
+};
+
+const deleteQuestion = async (questionId: number) => {
+  if (!confirm('确定要删除这个问答对吗？')) return;
+  
+  try {
+    await apiClient.delete(`/versions/${currentVersion.value.id}/std-questions/${questionId}`);
+    stdQuestions.value = stdQuestions.value.filter(q => q.id !== questionId);
+    modifiedItems.value = modifiedItems.value.filter(id => id !== questionId);
+    showMessage('删除成功', 'success');
+  } catch (error) {
+    showMessage('删除失败', 'error');
+    console.error('Delete question error:', error);
+  }
+};
+
+const createNewQA = async () => {
+  createSaving.value = true;
+  try {
+    const response = await apiClient.post(`/versions/${currentVersion.value.id}/std-qa`, {
+      question: createForm.value,
+      answer: {
+        answer: createForm.value.answer
+      }
+    });
+    
+    stdQuestions.value.push(response.data);
+    showMessage('创建成功', 'success');
+    closeCreateModal();
+  } catch (error) {
+    showMessage('创建失败', 'error');
+    console.error('Create QA error:', error);
+  } finally {
+    createSaving.value = false;
+  }
+};
+
+const saveVersion = async () => {
+  if (!hasChanges.value) {
+    showMessage('没有修改需要保存', 'error');
+    return;
+  }
+  
+  saving.value = true;
+  try {
+    await apiClient.post(`/versions/${currentVersion.value.id}/commit`);
+    showMessage('版本保存成功', 'success');
+    
+    // 跳转回数据库管理
+    setTimeout(() => {
+      goBackToDatabase();
+    }, 1500);
+  } catch (error) {
+    showMessage('版本保存失败', 'error');
+    console.error('Save version error:', error);
+  } finally {
+    saving.value = false;
+  }
+};
+
+// 标签编辑
+const addTag = () => {
+  const tag = newTag.value.trim();
+  if (tag && !editForm.value.tags.includes(tag)) {
+    editForm.value.tags.push(tag);
+    newTag.value = '';
+  }
+};
+
+const removeTag = (index: number) => {
+  editForm.value.tags.splice(index, 1);
+};
+
+// 答案编辑
+const addAnswer = () => {
+  editForm.value.std_answers.push({
+    answer: '',
+    answered_by: '',
+    scoring_points: []
+  });
+};
+
+const removeAnswer = (index: number) => {
+  editForm.value.std_answers.splice(index, 1);
+};
+
+const addScoringPoint = (answerIndex: number) => {
+  const answer = editForm.value.std_answers[answerIndex];
+  answer.scoring_points.push({
+    answer: '',
+    point_order: answer.scoring_points.length + 1
+  });
+};
+
+const removeScoringPoint = (answerIndex: number, pointIndex: number) => {
+  editForm.value.std_answers[answerIndex].scoring_points.splice(pointIndex, 1);
+};
+
+// 弹窗控制
+const closeEditModal = () => {
+  showEditModal.value = false;
+  editForm.value = {};
+  selectedQuestion.value = null;
+  newTag.value = '';
+};
+
+const closeCreateModal = () => {
+  showCreateModal.value = false;
+  createForm.value = {
+    body: '',
+    question_type: 'text',
+    answer: ''
+  };
+};
+
+const closeImportModal = () => {
+  showImportModal.value = false;
+  clearImportPreview();
+};
+
+// 文件导入
+const handleDrop = (e: DragEvent) => {
+  e.preventDefault();
+  isDragOver.value = false;
+  const files = e.dataTransfer?.files;
+  if (files && files.length > 0) {
+    handleFile(files[0]);
+  }
+};
+
+const handleFileSelect = (e: Event) => {
+  const target = e.target as HTMLInputElement;
+  const files = target.files;
+  if (files && files.length > 0) {
+    handleFile(files[0]);
+  }
+};
+
+const handleFile = async (file: File) => {
+  importError.value = '';
+  try {
+    const text = await file.text();
+    const data = JSON.parse(text);
+    
+    if (Array.isArray(data)) {
+      importPreviewData.value = data;
+    } else {
+      importError.value = 'JSON文件应该包含一个数组';
+    }
+  } catch (error) {
+    importError.value = '文件格式错误，请检查JSON格式是否正确';
+  }
+};
+
+const clearImportPreview = () => {
+  importPreviewData.value = [];
+  importError.value = '';
+  if (fileInput.value) {
+    fileInput.value.value = '';
+  }
+};
+
+const confirmImport = async () => {
+  importing.value = true;
+  try {
+    const response = await apiClient.post(`/versions/${currentVersion.value.id}/import`, {
+      data: importPreviewData.value
+    });
+    
+    // 重新加载数据
+    await loadStdQuestions();
+    showMessage(`成功导入 ${response.data.imported} 条记录`, 'success');
+    closeImportModal();
+  } catch (error) {
+    showMessage('导入失败', 'error');
+    console.error('Import error:', error);
+  } finally {
+    importing.value = false;
+  }
+};
+
+// 生命周期
+onMounted(async () => {
+  await loadDataset();
+});
+</script>
+
+<style scoped>
+.version-edit-container {
+  max-width: 1400px;
+  margin: 0 auto;
+  padding: 20px;
+}
+
+.header {
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+  margin-bottom: 20px;
+  padding: 20px;
+  background: white;
+  border-radius: 8px;
+  box-shadow: 0 2px 4px rgba(0, 0, 0, 0.1);
+}
+
+.header-left {
+  display: flex;
+  align-items: center;
+  gap: 20px;
+}
+
+.back-btn {
+  padding: 8px 16px;
+  background: #6c757d;
+  color: white;
+  border: none;
+  border-radius: 4px;
+  cursor: pointer;
+  font-size: 14px;
+  text-decoration: none;
+}
+
+.back-btn:hover {
+  background: #5a6268;
+}
+
+.title-section h2 {
+  margin: 0;
+  color: #333;
+}
+
+.subtitle {
+  margin: 5px 0 0 0;
+  color: #666;
+  font-size: 14px;
+}
+
+.save-version-btn {
+  padding: 10px 20px;
+  background: linear-gradient(135deg, #28a745 0%, #20c997 100%);
+  color: white;
+  border: none;
+  border-radius: 6px;
+  cursor: pointer;
+  font-size: 14px;
+  font-weight: 500;
+  transition: all 0.3s ease;
+  box-shadow: 0 2px 4px rgba(40, 167, 69, 0.2);
+}
+
+.save-version-btn:hover:not(:disabled) {
+  background: linear-gradient(135deg, #218838 0%, #1abc9c 100%);
+  transform: translateY(-1px);
+  box-shadow: 0 4px 8px rgba(40, 167, 69, 0.3);
+}
+
+.save-version-btn:disabled {
+  background: #6c757d;
+  cursor: not-allowed;
+  transform: none;
+  box-shadow: none;
+}
+
+.version-description-section {
+  margin-bottom: 30px;
+}
+
+.description-card {
+  background: white;
+  border-radius: 8px;
+  padding: 30px;
+  box-shadow: 0 2px 4px rgba(0, 0, 0, 0.1);
+  max-width: 600px;
+  margin: 0 auto;
+}
+
+.description-card h3 {
+  margin: 0 0 20px 0;
+  color: #333;
+}
+
+.form-group {
+  margin-bottom: 20px;
+}
+
+.form-group label {
+  display: block;
+  margin-bottom: 8px;
+  font-weight: 500;
+  color: #333;
+}
+
+.form-control {
+  width: 100%;
+  padding: 10px;
+  border: 1px solid #ddd;
+  border-radius: 4px;
+  font-size: 14px;
+  box-sizing: border-box;
+}
+
+.form-control:focus {
+  outline: none;
+  border-color: #007bff;
+  box-shadow: 0 0 0 2px rgba(0, 123, 255, 0.25);
+}
+
+.start-edit-btn {
+  padding: 12px 24px;
+  background: #007bff;
+  color: white;
+  border: none;
+  border-radius: 6px;
+  cursor: pointer;
+  font-size: 16px;
+  font-weight: 500;
+}
+
+.start-edit-btn:hover:not(:disabled) {
+  background: #0056b3;
+}
+
+.start-edit-btn:disabled {
+  background: #6c757d;
+  cursor: not-allowed;
+}
+
+.toolbar {
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+  margin-bottom: 20px;
+  padding: 15px 20px;
+  background: white;
+  border-radius: 8px;
+  box-shadow: 0 2px 4px rgba(0, 0, 0, 0.1);
+}
+
+.stats {
+  display: flex;
+  gap: 20px;
+}
+
+.stat-item {
+  display: flex;
+  gap: 5px;
+  font-size: 14px;
+}
+
+.stat-label {
+  color: #666;
+}
+
+.stat-value {
+  font-weight: bold;
+  color: #333;
+}
+
+.stat-value.modified {
+  color: #28a745;
+}
+
+.toolbar-right {
+  display: flex;
+  gap: 10px;
+}
+
+.import-btn,
+.create-btn {
+  padding: 8px 16px;
+  border: none;
+  border-radius: 4px;
+  cursor: pointer;
+  font-size: 14px;
+  font-weight: 500;
+}
+
+.import-btn {
+  background: #17a2b8;
+  color: white;
+}
+
+.import-btn:hover {
+  background: #138496;
+}
+
+.create-btn {
+  background: #28a745;
+  color: white;
+}
+
+.create-btn:hover {
+  background: #218838;
+}
+
+.qa-list {
+  display: flex;
+  flex-direction: column;
+  gap: 20px;
+}
+
+.qa-item {
+  background: white;
+  border-radius: 8px;
+  box-shadow: 0 2px 4px rgba(0, 0, 0, 0.1);
+  overflow: hidden;
+  transition: all 0.3s ease;
+}
+
+.qa-item.modified {
+  border-left: 4px solid #28a745;
+}
+
+.qa-header {
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+  padding: 15px 20px;
+  background: #f8f9fa;
+  border-bottom: 1px solid #dee2e6;
+}
+
+.qa-info {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+}
+
+.qa-id {
+  font-weight: bold;
+  color: #007bff;
+}
+
+.modified-badge {
+  background: #28a745;
+  color: white;
+  padding: 2px 8px;
+  border-radius: 12px;
+  font-size: 12px;
+  font-weight: 500;
+}
+
+.qa-actions {
+  display: flex;
+  gap: 8px;
+}
+
+.edit-btn,
+.delete-btn {
+  padding: 6px 12px;
+  border: none;
+  border-radius: 4px;
+  cursor: pointer;
+  font-size: 12px;
+}
+
+.edit-btn {
+  background: #007bff;
+  color: white;
+}
+
+.edit-btn:hover {
+  background: #0056b3;
+}
+
+.delete-btn {
+  background: #dc3545;
+  color: white;
+}
+
+.delete-btn:hover {
+  background: #c82333;
+}
+
+.qa-content {
+  padding: 20px;
+}
+
+.question-section,
+.answers-section {
+  margin-bottom: 20px;
+}
+
+.question-section h4,
+.answers-section h4 {
+  margin: 0 0 10px 0;
+  color: #333;
+  font-size: 16px;
+}
+
+.question-text {
+  background: #f8f9fa;
+  padding: 15px;
+  border-radius: 4px;
+  margin-bottom: 10px;
+  line-height: 1.5;
+}
+
+.question-meta {
+  display: flex;
+  align-items: center;
+  gap: 15px;
+  font-size: 13px;
+}
+
+.question-type {
+  color: #6c757d;
+}
+
+.tags {
+  display: flex;
+  gap: 6px;
+}
+
+.tag {
+  background: #007bff;
+  color: white;
+  padding: 2px 8px;
+  border-radius: 12px;
+  font-size: 11px;
+}
+
+.answer-item {
+  background: #f8f9fa;
+  padding: 15px;
+  border-radius: 4px;
+  margin-bottom: 10px;
+}
+
+.answer-text {
+  margin-bottom: 8px;
+  line-height: 1.5;
+}
+
+.answer-meta {
+  font-size: 13px;
+  color: #6c757d;
+  display: flex;
+  gap: 15px;
+}
+
+/* 弹窗样式 */
+.modal-overlay {
+  position: fixed;
+  top: 0;
+  left: 0;
+  width: 100%;
+  height: 100%;
+  background: rgba(0, 0, 0, 0.5);
+  display: flex;
+  justify-content: center;
+  align-items: center;
+  z-index: 1000;
+}
+
+.edit-modal,
+.create-modal,
+.import-modal {
+  background: white;
+  border-radius: 8px;
+  width: 90%;
+  max-width: 800px;
+  max-height: 80vh;
+  overflow-y: auto;
+}
+
+.modal-header {
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+  padding: 20px;
+  border-bottom: 1px solid #dee2e6;
+}
+
+.modal-header h3 {
+  margin: 0;
+  color: #333;
+}
+
+.close-btn {
+  background: none;
+  border: none;
+  font-size: 24px;
+  cursor: pointer;
+  color: #666;
+  padding: 0;
+  width: 30px;
+  height: 30px;
+}
+
+.close-btn:hover {
+  color: #333;
+}
+
+.modal-content {
+  padding: 20px;
+}
+
+.tags-editor {
+  border: 1px solid #ddd;
+  border-radius: 4px;
+  padding: 10px;
+}
+
+.current-tags {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 6px;
+  margin-bottom: 10px;
+  min-height: 24px;
+}
+
+.tag-item {
+  display: inline-flex;
+  align-items: center;
+  background: #007bff;
+  color: white;
+  padding: 4px 8px;
+  border-radius: 12px;
+  font-size: 12px;
+  gap: 4px;
+}
+
+.remove-tag-btn {
+  background: rgba(255, 255, 255, 0.3);
+  border: none;
+  color: white;
+  border-radius: 50%;
+  width: 16px;
+  height: 16px;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  cursor: pointer;
+  font-size: 12px;
+}
+
+.add-tag {
+  display: flex;
+  gap: 8px;
+  align-items: center;
+}
+
+.add-tag input {
+  flex: 1;
+}
+
+.add-tag-btn {
+  padding: 6px 12px;
+  background: #28a745;
+  color: white;
+  border: none;
+  border-radius: 4px;
+  cursor: pointer;
+  font-size: 12px;
+}
+
+.answers-editor {
+  border: 1px solid #ddd;
+  border-radius: 4px;
+  padding: 15px;
+}
+
+.answer-edit-item {
+  border: 1px solid #e9ecef;
+  border-radius: 4px;
+  padding: 15px;
+  margin-bottom: 15px;
+}
+
+.answer-header {
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+  margin-bottom: 10px;
+}
+
+.remove-answer-btn {
+  background: #dc3545;
+  color: white;
+  border: none;
+  padding: 4px 8px;
+  border-radius: 4px;
+  cursor: pointer;
+  font-size: 12px;
+}
+
+.answer-meta-edit {
+  margin: 10px 0;
+}
+
+.form-control.small {
+  max-width: 200px;
+  padding: 6px 8px;
+  font-size: 13px;
+}
+
+.scoring-points-section {
+  margin-top: 15px;
+  padding-top: 15px;
+  border-top: 1px solid #e9ecef;
+}
+
+.scoring-points-list {
+  margin-bottom: 10px;
+}
+
+.scoring-point-item {
+  display: flex;
+  gap: 10px;
+  align-items: end;
+  margin-bottom: 10px;
+}
+
+.point-controls {
+  display: flex;
+  gap: 5px;
+  align-items: center;
+}
+
+.remove-point-btn {
+  background: #dc3545;
+  color: white;
+  border: none;
+  padding: 4px 8px;
+  border-radius: 4px;
+  cursor: pointer;
+  font-size: 12px;
+  white-space: nowrap;
+}
+
+.add-point-btn,
+.add-answer-btn {
+  background: #17a2b8;
+  color: white;
+  border: none;
+  padding: 8px 16px;
+  border-radius: 4px;
+  cursor: pointer;
+  font-size: 14px;
+}
+
+.add-point-btn:hover,
+.add-answer-btn:hover {
+  background: #138496;
+}
+
+.form-actions {
+  display: flex;
+  justify-content: flex-end;
+  gap: 10px;
+  margin-top: 20px;
+  padding-top: 20px;
+  border-top: 1px solid #dee2e6;
+}
+
+.cancel-btn {
+  padding: 8px 16px;
+  background: #6c757d;
+  color: white;
+  border: none;
+  border-radius: 4px;
+  cursor: pointer;
+  font-size: 14px;
+}
+
+.cancel-btn:hover {
+  background: #5a6268;
+}
+
+.save-btn {
+  padding: 8px 16px;
+  background: #007bff;
+  color: white;
+  border: none;
+  border-radius: 4px;
+  cursor: pointer;
+  font-size: 14px;
+}
+
+.save-btn:hover:not(:disabled) {
+  background: #0056b3;
+}
+
+.save-btn:disabled {
+  background: #6c757d;
+  cursor: not-allowed;
+}
+
+/* 文件上传样式 */
+.upload-area {
+  border: 2px dashed #dee2e6;
+  border-radius: 8px;
+  padding: 40px;
+  text-align: center;
+  margin-bottom: 20px;
+  transition: all 0.3s ease;
+}
+
+.upload-area.drag-over {
+  border-color: #007bff;
+  background: #f0f8ff;
+}
+
+.upload-content {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  gap: 15px;
+}
+
+.upload-icon {
+  font-size: 48px;
+}
+
+.select-file-btn {
+  padding: 10px 20px;
+  background: #007bff;
+  color: white;
+  border: none;
+  border-radius: 4px;
+  cursor: pointer;
+  font-size: 14px;
+}
+
+.select-file-btn:hover {
+  background: #0056b3;
+}
+
+.import-preview {
+  background: #f8f9fa;
+  padding: 15px;
+  border-radius: 4px;
+  margin-bottom: 15px;
+}
+
+.preview-actions {
+  display: flex;
+  justify-content: flex-end;
+  gap: 10px;
+  margin-top: 15px;
+}
+
+.clear-btn {
+  padding: 6px 12px;
+  background: #6c757d;
+  color: white;
+  border: none;
+  border-radius: 4px;
+  cursor: pointer;
+  font-size: 12px;
+}
+
+.import-confirm-btn {
+  padding: 6px 12px;
+  background: #28a745;
+  color: white;
+  border: none;
+  border-radius: 4px;
+  cursor: pointer;
+  font-size: 12px;
+}
+
+.import-confirm-btn:disabled {
+  background: #6c757d;
+  cursor: not-allowed;
+}
+
+.error-message {
+  background: #f8d7da;
+  color: #721c24;
+  padding: 10px;
+  border-radius: 4px;
+  margin-top: 10px;
+}
+
+.message {
+  position: fixed;
+  top: 20px;
+  right: 20px;
+  padding: 15px 20px;
+  color: white;
+  border-radius: 4px;
+  font-weight: 500;
+  z-index: 1100;
+  animation: slideIn 0.3s ease;
+}
+
+.message.success {
+  background: #28a745;
+}
+
+.message.error {
+  background: #dc3545;
+}
+
+@keyframes slideIn {
+  from {
+    transform: translateX(100%);
+    opacity: 0;
+  }
+  to {
+    transform: translateX(0);
+    opacity: 1;
+  }
+}
+</style>
