@@ -229,10 +229,14 @@
                   </template>
                 </span>                <span v-else-if="column.type === 'number' && column.key === 'scoring_points_count'" class="number-content">
                   <div class="scoring-points-count">
-                    <span class="valid-count">{{ getScoringPointsCount(item) }}</span>
-                    <span v-if="getDeletedScoringPointsCount(item) > 0" class="deleted-count" title="已删除的得分点">
-                      + <span class="deleted-number">{{ getDeletedScoringPointsCount(item) }}</span> 已删除
-                    </span>
+                    <div class="valid-count-container">
+                      <span class="valid-count">{{ getScoringPointsCount(item) }}</span>
+                      <span class="count-label">有效</span>
+                    </div>
+                    <div v-if="getDeletedScoringPointsCount(item) > 0" class="deleted-count-container" title="已删除的得分点">
+                      <span class="deleted-count">{{ getDeletedScoringPointsCount(item) }}</span>
+                      <span class="count-label deleted">已删除</span>
+                    </div>
                   </div>
                 </span>
                 <span v-else-if="column.type === 'number'" class="number-content">
@@ -273,11 +277,10 @@
                     >
                       ✏️
                     </button>
-                    <!-- 得分点管理按钮：只在标准答案视图中显示，且非选择题类型 -->
-                    <button 
+                    <!-- 得分点管理按钮：只在标准答案视图中显示，且非选择题类型 -->                    <button 
                       v-if="selectedTable === 'std_answers' && item.is_valid && shouldShowScoringPointsButton(item)"
                       @click="manageScoringPoints(item)" 
-                      class="action-btn small scoring-btn"
+                      :class="['action-btn', 'small', 'scoring-btn', { 'has-deleted': getDeletedScoringPointsCount(item) > 0 }]"
                       title="管理得分点 (有效: {{ getScoringPointsCount(item) }}, 已删除: {{ getDeletedScoringPointsCount(item) }})"
                     >
                       🎯
@@ -508,8 +511,7 @@
           <h3>编辑 {{ selectedTable }}</h3>
           <button @click="closeEditModal" class="close-btn">×</button>
         </div>
-        <div class="modal-content">          
-          <form @submit.prevent="saveEdit" class="edit-form">
+        <div class="modal-content">            <form @submit.prevent="saveEdit" class="edit-form">
             <div v-for="column in editableColumns" :key="column.key" class="form-group">
               <label :for="column.key">{{ column.label }}:</label>
               
@@ -523,6 +525,81 @@
                 <option value="text">文本题</option>
                 <option value="choice">选择题</option>
               </select>
+              
+              <!-- 标签编辑的特殊处理 -->
+              <div v-else-if="column.key === 'tags'" class="tags-editor">
+                <div class="current-tags">
+                  <span 
+                    v-for="(tag, index) in editForm.tags" 
+                    :key="index" 
+                    class="tag-item"
+                  >
+                    {{ tag }}
+                    <button 
+                      type="button" 
+                      @click="removeTag(index)" 
+                      class="remove-tag-btn"
+                      title="删除标签"
+                    >
+                      ×
+                    </button>
+                  </span>
+                </div>
+                <div class="add-tag">
+                  <input 
+                    v-model="newTag"
+                    type="text" 
+                    placeholder="输入新标签后按回车添加"
+                    @keyup.enter="addTag"
+                    class="form-control"
+                  />
+                  <button 
+                    type="button" 
+                    @click="addTag" 
+                    class="add-tag-btn"
+                    :disabled="!newTag.trim()"
+                  >
+                    添加标签
+                  </button>
+                </div>
+              </div>
+              
+              <!-- 得分点编辑的特殊处理 -->
+              <div v-else-if="column.key === 'scoring_points'" class="scoring-points-editor">
+                <div class="scoring-points-list">
+                  <div 
+                    v-for="(point, index) in editForm.scoring_points" 
+                    :key="index" 
+                    class="scoring-point-edit-item"
+                  >
+                    <div class="point-header">
+                      <label>得分点 {{ index + 1 }}:</label>
+                    </div>
+                    <textarea 
+                      v-model="point.answer"
+                      placeholder="输入得分点内容..."
+                      rows="3"
+                      class="form-control"
+                    ></textarea>
+                    <div class="point-order">
+                      <label>排序:</label>
+                      <input 
+                        v-model.number="point.point_order"
+                        type="number" 
+                        min="1"
+                        class="form-control small"
+                      />
+                    </div>
+                  </div>
+                </div>
+                <button 
+                  type="button" 
+                  @click="addScoringPoint" 
+                  class="add-point-btn"
+                >
+                  添加得分点
+                </button>
+              </div>
               
               <!-- 普通文本区域 -->
               <textarea 
@@ -678,13 +755,15 @@ const editForm = ref<Record<string, any>>({});
 const saving = ref(false);
 const scoringPointsData = ref<any[]>([]);
 
+// 编辑相关变量
+const newTag = ref("");
+
 // 消息提示
 const message = ref("");
 const messageType = ref<"success" | "error">("success");
 
 // 表格配置
-const tableConfigs: Record<TableName, TableConfig> = {    
-  std_questions: {
+const tableConfigs: Record<TableName, TableConfig> = {      std_questions: {
     columns: [
       { key: "id", label: "ID", type: "number", className: "id-col" },
       { key: "body", label: "问题文本", type: "text", className: "text-col", multiline: true },
@@ -692,17 +771,18 @@ const tableConfigs: Record<TableName, TableConfig> = {
       { key: "tags", label: "标签", type: "tags", className: "tags-col" },
       { key: "std_answers_summary", label: "标准答案", type: "text", className: "answers-col", multiline: true },
     ],
-    editable: ["body", "question_type", "created_by"]
-  },
+    editable: ["body", "question_type", "tags"]
+  },  
   std_answers: {
     columns: [
       { key: "id", label: "ID", type: "number", className: "id-col" },
       { key: "std_question_body", label: "标准问题", type: "text", className: "question-col", multiline: true },
       { key: "answer", label: "答案文本", type: "text", className: "answer-col", multiline: true },
-      { key: "scoring_points_summary", label: "得分点", type: "text", className: "scoring-points-col", multiline: true },
+      { key: "answered_by", label: "回答者", type: "text", className: "author-col" },
+      { key: "scoring_points", label: "得分点", type: "text", className: "scoring-points-col", multiline: true },
       { key: "scoring_points_count", label: "得分点数量", type: "number", className: "scoring-points-count-col" },
     ],
-    editable: ["answer", "answered_by"]
+    editable: ["answer", "answered_by", "scoring_points"]
   },
   overview_std: {
     columns: [
@@ -806,7 +886,7 @@ const loadTableData = async () => {
       );
     }
     currentData.value = result.data;
-      // 特殊处理标准问题数据，添加 tags、dataset_name 和答案摘要字段
+    // 特殊处理标准问题数据，添加 tags、dataset_name 和答案摘要字段
     if (selectedTable.value === 'std_questions') {
       currentData.value = result.data.map(item => {
         // 处理标准答案摘要
@@ -1112,6 +1192,29 @@ const viewItem = (item: any) => {
 const editItem = (item: any) => {
   selectedItem.value = item;
   editForm.value = { ...item };
+  
+  // 初始化标签数据
+  if (item.tags) {
+    editForm.value.tags = Array.isArray(item.tags) ? [...item.tags] : [];
+  } else {
+    editForm.value.tags = [];
+  }
+  
+  // 初始化得分点数据
+  if (item.scoring_points) {
+    editForm.value.scoring_points = item.scoring_points.map((point: any) => ({
+      id: point.id,
+      answer: point.answer,
+      point_order: point.point_order,
+      is_valid: point.is_valid
+    }));
+  } else {
+    editForm.value.scoring_points = [];
+  }
+  
+  // 清空新标签输入
+  newTag.value = "";
+  
   showEditModal.value = true;
 };
 
@@ -1255,6 +1358,37 @@ const shouldShowScoringPointsButton = (item: DatabaseItem) => {
   
   // 对于选择题（choice）类型不显示得分点管理按钮
   return questionType !== 'choice';
+};
+
+// 标签编辑相关函数
+const addTag = () => {
+  const tag = newTag.value.trim();
+  if (tag && !editForm.value.tags.includes(tag)) {
+    editForm.value.tags.push(tag);
+    newTag.value = "";
+  }
+};
+
+const removeTag = (index: number) => {
+  editForm.value.tags.splice(index, 1);
+};
+
+// 得分点编辑相关函数
+const addScoringPoint = () => {
+  const newOrder = editForm.value.scoring_points.length + 1;
+  editForm.value.scoring_points.push({
+    answer: "",
+    point_order: newOrder,
+    is_valid: true
+  });
+};
+
+const removeScoringPoint = (index: number) => {
+  editForm.value.scoring_points.splice(index, 1);
+  // 重新排序剩余的得分点
+  editForm.value.scoring_points.forEach((point: any, i: number) => {
+    point.point_order = i + 1;
+  });
 };
 
 // 生命周期
@@ -1612,11 +1746,41 @@ onMounted(async () => {
 .action-btn.scoring-btn {
   border-color: #6f42c1;
   color: #6f42c1;
+  position: relative;
 }
 
 .action-btn.scoring-btn:hover:not(:disabled) {
   background: #6f42c1;
   color: white;
+}
+
+.action-btn.scoring-btn.has-deleted {
+  border-color: #dc3545;
+  color: #dc3545;
+  background: #fff5f5;
+}
+
+.action-btn.scoring-btn.has-deleted:hover:not(:disabled) {
+  background: #dc3545;
+  color: white;
+}
+
+.action-btn.scoring-btn.has-deleted::after {
+  content: '!';
+  position: absolute;
+  top: -2px;
+  right: -2px;
+  background: #dc3545;
+  color: white;
+  font-size: 8px;
+  font-weight: bold;
+  width: 12px;
+  height: 12px;
+  border-radius: 50%;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  line-height: 1;
 }
 
 .overview-info {
@@ -2155,12 +2319,6 @@ onMounted(async () => {
   border-radius: 4px;
 }
 
-.detail-value.multiline .text-value {
-  white-space: pre-wrap;
-  word-break: break-word;
-  line-height: 1.5;
-}
-
 /* 得分点样式 */
 .scoring-points-detail {
   border: 1px solid #e9ecef;
@@ -2261,7 +2419,7 @@ onMounted(async () => {
 
 /* 表格中得分点数量列的样式 */
 .scoring-points-count-col {
-  width: 120px;
+  width: 140px;
   text-align: center;
 }
 
@@ -2269,13 +2427,50 @@ onMounted(async () => {
   display: flex;
   flex-direction: column;
   align-items: center;
-  gap: 2px;
+  gap: 4px;
+  font-size: 13px;
+}
+
+.scoring-points-count .valid-count-container {
+  display: flex;
+  align-items: center;
+  gap: 4px;
+  padding: 2px 6px;
+  background: #e8f5e8;
+  border-radius: 12px;
+  border: 1px solid #28a745;
+}
+
+.scoring-points-count .valid-count {
+  font-weight: bold;
+  color: #28a745;
+}
+
+.scoring-points-count .deleted-count-container {
+  display: flex;
+  align-items: center;
+  gap: 4px;
+  padding: 2px 6px;
+  background: #ffeaea;
+  border-radius: 12px;
+  border: 1px solid #dc3545;
+  cursor: help;
 }
 
 .scoring-points-count .deleted-count {
-  font-size: 11px;
+  font-weight: bold;
   color: #dc3545;
-  font-style: italic;
+}
+
+.scoring-points-count .count-label {
+  font-size: 10px;
+  color: #28a745;
+  text-transform: uppercase;
+  letter-spacing: 0.5px;
+}
+
+.scoring-points-count .count-label.deleted {
+  color: #dc3545;
 }
 
 /* 得分点管理弹窗样式 */
@@ -2376,5 +2571,214 @@ onMounted(async () => {
 .scoring-points-modal .deleted-point .point-content {
   background: #fed7d7 !important;
   color: #742a2a !important;
+}
+
+/* 标签编辑器样式 */
+.tags-editor {
+  border: 1px solid #e1e5e9;
+  border-radius: 8px;
+  padding: 15px;
+  background: #f8f9fa;
+}
+
+.current-tags {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 8px;
+  margin-bottom: 12px;
+  min-height: 30px;
+}
+
+.tag-item {
+  display: inline-flex;
+  align-items: center;
+  background: linear-gradient(135deg, #007bff 0%, #0056b3 100%);
+  color: white;
+  padding: 6px 10px;
+  border-radius: 16px;
+  font-size: 12px;
+  font-weight: 500;
+  gap: 6px;
+  transition: all 0.3s ease;
+  box-shadow: 0 2px 4px rgba(0, 123, 255, 0.2);
+}
+
+.tag-item:hover {
+  transform: translateY(-1px);
+  box-shadow: 0 4px 8px rgba(0, 123, 255, 0.3);
+}
+
+.remove-tag-btn {
+  background: rgba(255, 255, 255, 0.2);
+  border: none;
+  color: white;
+  border-radius: 50%;
+  width: 18px;
+  height: 18px;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  cursor: pointer;
+  font-size: 14px;
+  font-weight: bold;
+  transition: all 0.2s ease;
+}
+
+.remove-tag-btn:hover {
+  background: rgba(255, 255, 255, 0.3);
+  transform: scale(1.1);
+}
+
+.add-tag {
+  display: flex;
+  gap: 10px;
+  align-items: center;
+}
+
+.add-tag input {
+  flex: 1;
+  min-width: 200px;
+}
+
+.add-tag-btn {
+  padding: 8px 16px;
+  background: #28a745;
+  color: white;
+  border: none;
+  border-radius: 6px;
+  cursor: pointer;
+  font-size: 13px;
+  font-weight: 500;
+  transition: all 0.3s ease;
+  white-space: nowrap;
+}
+
+.add-tag-btn:hover:not(:disabled) {
+  background: #218838;
+  transform: translateY(-1px);
+  box-shadow: 0 2px 6px rgba(40, 167, 69, 0.3);
+}
+
+.add-tag-btn:disabled {
+  background: #6c757d;
+  cursor: not-allowed;
+  transform: none;
+  box-shadow: none;
+}
+
+/* 得分点编辑器样式 */
+.scoring-points-editor {
+  border: 1px solid #e1e5e9;
+  border-radius: 8px;
+  padding: 15px;
+  background: #f8f9fa;
+}
+
+.scoring-points-list {
+  display: flex;
+  flex-direction: column;
+  gap: 15px;
+  margin-bottom: 15px;
+}
+
+.scoring-point-edit-item {
+  background: white;
+  border: 1px solid #dee2e6;
+  border-radius: 8px;
+  padding: 15px;
+  transition: all 0.3s ease;
+  position: relative;
+}
+
+.scoring-point-edit-item:hover {
+  box-shadow: 0 2px 8px rgba(0, 0, 0, 0.1);
+  border-color: #007bff;
+}
+
+.scoring-point-edit-item .point-header {
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+  margin-bottom: 10px;
+  padding-bottom: 8px;
+  border-bottom: 1px solid #e9ecef;
+}
+
+.scoring-point-edit-item .point-header label {
+  font-weight: bold;
+  color: #495057;
+  margin: 0;
+}
+
+.remove-point-btn {
+  background: #dc3545;
+  color: white;
+  border: none;
+  padding: 4px 8px;
+  border-radius: 4px;
+  cursor: pointer;
+  font-size: 12px;
+  transition: all 0.2s ease;
+}
+
+.remove-point-btn:hover {
+  background: #c82333;
+  transform: scale(1.05);
+}
+
+.scoring-point-edit-item textarea {
+  margin-bottom: 10px;
+  resize: vertical;
+  min-height: 80px;
+}
+
+.point-order {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+}
+
+.point-order label {
+  font-size: 13px;
+  font-weight: 500;
+  color: #6c757d;
+  margin: 0;
+  min-width: 40px;
+}
+
+.point-order input {
+  width: 80px;
+}
+
+.form-control.small {
+  padding: 6px 8px;
+  font-size: 13px;
+}
+
+.add-point-btn {
+  padding: 10px 20px;
+  background: linear-gradient(135deg, #17a2b8 0%, #138496 100%);
+  color: white;
+  border: none;
+  border-radius: 6px;
+  cursor: pointer;
+  font-size: 14px;
+  font-weight: 500;
+  transition: all 0.3s ease;
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  align-self: flex-start;
+}
+
+.add-point-btn:hover {
+  background: linear-gradient(135deg, #138496 0%, #117a8b 100%);
+  transform: translateY(-1px);
+  box-shadow: 0 4px 12px rgba(23, 162, 184, 0.3);
+}
+
+.add-point-btn::before {
+  content: '➕';
+  font-size: 12px;
 }
 </style>

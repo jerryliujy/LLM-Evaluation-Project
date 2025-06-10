@@ -348,8 +348,7 @@ def update_std_answer(db: Session, answer_id: int, answer: schemas.StdAnswerUpda
             db.query(models.ExpertAnswer).filter(
                 models.ExpertAnswer.id.in_(answer.referenced_expert_answer_ids)
             ).update({models.ExpertAnswer.referenced_by_std_answer_id: answer_id}, synchronize_session=False)
-    
-    # 如果提供了评分点，更新评分点
+      # 如果提供了评分点，更新评分点
     if answer.scoring_points is not None:
         # 删除现有评分点
         db.query(models.StdAnswerScoringPoint).filter(
@@ -360,9 +359,8 @@ def update_std_answer(db: Session, answer_id: int, answer: schemas.StdAnswerUpda
         for scoring_point_data in answer.scoring_points:
             db_scoring_point = models.StdAnswerScoringPoint(
                 std_answer_id=answer_id,
-                scoring_point_text=scoring_point_data.scoring_point_text,
+                answer=scoring_point_data.answer,  # 使用正确的字段名
                 point_order=scoring_point_data.point_order,
-                created_by=scoring_point_data.created_by
             )
             db.add(db_scoring_point)
     

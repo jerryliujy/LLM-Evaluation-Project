@@ -80,7 +80,15 @@ def update_std_question(
     updated_question = crud_std_question.update_std_question(db, std_question_id, std_question_update)
     if not updated_question:
         raise HTTPException(status_code=404, detail="Standard question not found")
-    return updated_question
+    
+    # 重新查询以获取关联数据
+    from sqlalchemy.orm import joinedload
+    std_question_with_relations = db.query(StdQuestion).options(
+        joinedload(StdQuestion.tags),
+        joinedload(StdQuestion.dataset)
+    ).filter(StdQuestion.id == updated_question.id).first()
+    
+    return StdQuestionResponse.from_db_model(std_question_with_relations)
     
 @router.delete("/{std_question_id}/", response_model=Msg)
 def delete_std_question_api(std_question_id: int, db: Session = Depends(get_db)):

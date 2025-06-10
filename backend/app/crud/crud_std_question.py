@@ -257,9 +257,26 @@ def update_std_question(db: Session, question_id: int, question: schemas.StdQues
         return None
     
     # 更新问题字段
-    update_data = question.dict(exclude_unset=True)
+    update_data = question.dict(exclude_unset=True, exclude={'tags'})
     for field, value in update_data.items():
         setattr(db_question, field, value)
+    
+    # 处理标签更新
+    if question.tags is not None:
+        # 清除现有标签关联
+        db_question.tags.clear()
+        
+        # 添加新标签
+        for tag_label in question.tags:
+            # 查找或创建标签
+            tag = db.query(models.Tag).filter(models.Tag.label == tag_label).first()
+            if not tag:
+                tag = models.Tag(label=tag_label)
+                db.add(tag)
+                db.flush()  # 确保标签有ID
+            
+            # 关联标签到问题
+            db_question.tags.append(tag)
     
     db.commit()
     db.refresh(db_question)

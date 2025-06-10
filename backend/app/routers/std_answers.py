@@ -80,66 +80,18 @@ def update_std_answer(
     std_answer_update: StdAnswerUpdate,
     db: Session = Depends(get_db)
 ):
-    """This needs to be modified"""
-    """更新标准答案（版本控制）"""
-    # 获取当前答案
-    current_answer = db.query(StdAnswer).filter(StdAnswer.id == std_answer_id).first()
-    if not current_answer:
+    """普通编辑：直接更新标准答案，不创建新版本"""
+    updated_answer = crud_std_answer.update_std_answer(db, std_answer_id, std_answer_update)
+    if not updated_answer:
         raise HTTPException(status_code=404, detail="Standard answer not found")
     
-    # 检查是否有实际修改
-    update_data = std_answer_update.dict(exclude_unset=True)
-    has_changes = False
-    for field, value in update_data.items():
-        if hasattr(current_answer, field) and getattr(current_answer, field) != value:
-            has_changes = True
-            break
+    # 重新查询以获取关联数据
+    std_answer_with_relations = db.query(StdAnswer).options(
+        joinedload(StdAnswer.std_question),
+        joinedload(StdAnswer.scoring_points)
+    ).filter(StdAnswer.id == updated_answer.id).first()
     
-    if not has_changes:
-        return current_answer
-    
-    # 标记当前版本为无效
-    current_answer.is_valid = False
-      # 创建新版本
-    new_version_data = {
-        'std_question_id': current_answer.std_question_id,
-        'answer': current_answer.answer,
-        'answered_by': current_answer.answered_by,
-        'version': current_answer.version + 1,
-        'previous_version_id': current_answer.id,
-        'is_valid': True
-    }
-    
-    # 应用更新
-    new_version_data.update(update_data)
-    
-    new_answer = StdAnswer(**new_version_data)
-    db.add(new_answer)
-    
-    # 如果有评分点，也需要复制到新版本
-    scoring_points = db.query(StdAnswerScoringPoint).filter(
-        StdAnswerScoringPoint.std_answer_id == current_answer.id,
-        StdAnswerScoringPoint.is_valid == True
-    ).all()
-    
-    db.commit()
-    db.refresh(new_answer)
-      # 复制评分点到新版本
-    for point in scoring_points:
-        new_point = StdAnswerScoringPoint(
-            std_answer_id=new_answer.id,
-            answer=point.answer,
-            point_order=point.point_order,
-            created_by=point.created_by,
-            version=1,  # 新答案的评分点从版本1开始
-            is_valid=True
-        )
-        db.add(new_point)
-    
-    db.commit()
-    db.refresh(new_answer)
-    
-    return new_answer
+    return StdAnswerResponse.from_db_model(std_answer_with_relations)
 
 @router.delete("/{std_answer_id}/", response_model=Msg)
 def delete_std_answer_api(std_answer_id: int, db: Session = Depends(get_db)):
@@ -159,7 +111,14 @@ def restore_std_answer_api(std_answer_id: int, db: Session = Depends(get_db)):
     db_answer = crud_std_answer.set_std_answer_deleted_status(db, answer_id=std_answer_id, deleted_status=False)
     if db_answer is None:
         raise HTTPException(status_code=404, detail="Error restoring StdAnswer")
-    return db_answer
+    
+    # 重新查询以获取关联数据
+    std_answer_with_relations = db.query(StdAnswer).options(
+        joinedload(StdAnswer.std_question),
+        joinedload(StdAnswer.scoring_points)
+    ).filter(StdAnswer.id == db_answer.id).first()
+    
+    return StdAnswerResponse.from_db_model(std_answer_with_relations)
 
 @router.delete("/{std_answer_id}/force-delete/", response_model=Msg)
 def force_delete_std_answer_api(std_answer_id: int, db: Session = Depends(get_db)):

@@ -64,5 +64,52 @@ class StdAnswerScoringPointResponse(StdAnswerScoringPoint):
 class StdAnswerResponse(StdAnswerWithScoringPoints):
     """标准答案响应模型"""
     std_question: Optional[dict] = None  # 添加关联的标准问题信息
+    
     class Config:
         from_attributes = True
+    
+    @classmethod
+    def from_db_model(cls, db_obj):
+        """从数据库对象创建响应模型"""
+        # 转换基本字段
+        data = {
+            'id': db_obj.id,
+            'answer': db_obj.answer,
+            'answered_by': db_obj.answered_by,
+            'std_question_id': db_obj.std_question_id,
+            'is_valid': db_obj.is_valid,
+            'answered_at': db_obj.answered_at,
+            'previous_version_id': db_obj.previous_version_id,
+        }
+        
+        # 转换评分点
+        if hasattr(db_obj, 'scoring_points') and db_obj.scoring_points:
+            data['scoring_points'] = [
+                {
+                    'id': sp.id,
+                    'answer': sp.answer,
+                    'point_order': sp.point_order,
+                    'std_answer_id': sp.std_answer_id,
+                    'is_valid': sp.is_valid,
+                    'previous_version_id': sp.previous_version_id
+                }
+                for sp in db_obj.scoring_points
+            ]
+        else:
+            data['scoring_points'] = []
+        
+        # 转换关联的标准问题
+        if hasattr(db_obj, 'std_question') and db_obj.std_question:
+            data['std_question'] = {
+                'id': db_obj.std_question.id,
+                'body': db_obj.std_question.body,
+                'question_type': db_obj.std_question.question_type,
+                'dataset_id': db_obj.std_question.dataset_id,
+                'is_valid': db_obj.std_question.is_valid,
+                'created_at': db_obj.std_question.created_at,
+                'previous_version_id': db_obj.std_question.previous_version_id
+            }
+        else:
+            data['std_question'] = None
+        
+        return cls(**data)
