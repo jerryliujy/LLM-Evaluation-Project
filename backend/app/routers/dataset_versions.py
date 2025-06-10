@@ -1,103 +1,275 @@
-from typing import List
+# filepath: d:\classes\Database\PJ\backend\app\routers\dataset_versions.py
+from typing import List, Optional
 from fastapi import APIRouter, Depends, HTTPException
 from sqlalchemy.orm import Session, joinedload
+from sqlalchemy import func, and_
 
 from ..db.database import get_db
+from ..auth import get_current_active_user
 from ..models.dataset import Dataset
+from ..models.dataset_version import DatasetVersion
+from ..models.version_tables import (
+    VersionStdQuestion, 
+    VersionStdAnswer, 
+    VersionScoringPoint
+)
 from ..models.std_question import StdQuestion
-from ..models.std_answer import StdAnswer
-from ..schemas.common import Msg
-from pydantic import BaseModel
+from ..models.std_answer import StdAnswer, StdAnswerScoringPoint
+from ..models.tag import Tag
+from ..schemas.dataset_version import (
+    DatasetVersionCreate, 
+    DatasetVersionResponse, 
+    DatasetVersionUpdate,
+    DatasetVersionPublish
+)
+from ..schemas.std_question import StdQuestionResponse
+from ..schemas.std_answer import StdAnswerResponse
 
 router = APIRouter(prefix="/api/datasets", tags=["Dataset Versions"])
+version_router = APIRouter(prefix="/api/versions", tags=["Versions"])
 
-class VersionCreate(BaseModel):
-    description: str
-
-class VersionResponse(BaseModel):
-    id: int
-    description: str
-    created_at: str
-    dataset_id: int
-
-@router.post("/{dataset_id}/versions", response_model=VersionResponse)
-def create_dataset_version(
-    dataset_id: int,
-    version_data: VersionCreate,
-    db: Session = Depends(get_db)
-):
-    """创建数据集的新版本"""
-    # 验证数据集是否存在
-    dataset = db.query(Dataset).filter(Dataset.id == dataset_id).first()
-    if not dataset:
-        raise HTTPException(status_code=404, detail="Dataset not found")
+def get_version_question_data(db: Session, version_question: VersionStdQuestion):
+    """获取版本问题的完整数据"""
+    # 获取问题数据：如果被修改则使用修改后的数据，否则使用原始数据
+    if version_question.is_modified:
+        question_body = version_question.modified_body
+        question_type = version_question.modified_question_type
+    else:
+        question_body = version_question.original_question.body
+        question_type = version_question.original_question.question_type
     
-    # 这里暂时返回一个模拟的版本响应
-    # 在实际实现中，你可能需要创建一个Version模型来管理版本
-    from datetime import datetime
-    return VersionResponse(
-        id=1,  # 模拟版本ID
-        description=version_data.description,
-        created_at=datetime.now().isoformat(),
-        dataset_id=dataset_id
-    )
-
-@router.get("/{dataset_id}/std-questions-with-answers")
-def get_std_questions_with_answers(
-    dataset_id: int,
-    db: Session = Depends(get_db)
-):
-    """获取数据集中的所有标准问答对"""
-    # 验证数据集是否存在
-    dataset = db.query(Dataset).filter(Dataset.id == dataset_id).first()
-    if not dataset:
-        raise HTTPException(status_code=404, detail="Dataset not found")
+    question_data = {
+        "id": version_question.id,
+        "body": question_body,
+        "question_type": question_type,
+        "tags": [tag.tag_name for tag in version_question.version_tags],
+        "std_answers": [],
+        "is_modified": version_question.is_modified
+    }
     
-    # 获取标准问题及其关联的答案
-    questions = db.query(StdQuestion).options(
+    # 处理答案
+    for version_answer in version_question.version_answers:
+        if not version_answer.is_deleted:
+            # 获取答案数据
+            if version_answer.is_new or version_answer.is_modified:
+                answer_text = version_answer.modified_answer
+                answered_by = version_answer.modified_answered_by
+            else:
+                answer_text = version_answer.original_answer.answer
+                answered_by = version_answer.original_answer.answered_by
+            
+            answer_data = {
+                "id": version_answer.id,
+                "answer": answer_text,
+                "answered_by": answered_by,
+                "scoring_points": [],
+                "is_modified": version_answer.is_modified,
+                "is_new": version_answer.is_new
+            }
+            
+            # 处理得分点
+            for version_point in version_answer.version_scoring_points:
+                if not version_point.is_deleted:
+                    if version_point.is_new or version_point.is_modified:
+                        point_answer = version_point.modified_answer
+                        point_order = version_point.modified_point_order
+                    else:
+                        point_answer = version_point.original_point.answer
+                        point_order = version_point.original_point.point_order
+                    
+                    point_data = {
+                        "id": version_point.id,
+                        "answer": point_answer,
+                        "point_order": point_order,
+                        "is_modified": version_point.is_modified,
+                        "is_new": version_point.is_new
+                    }
+                    answer_data["scoring_points"].append(point_data)
+            
+            question_data["std_answers"].append(answer_data)
+    
+    return question_data
+
+def copy_dataset_to_version_tables(db: Session, dataset_id: int, version_id: int):
+    """将数据集内容复制到版本工作表 - 只记录引用，不复制内容"""
+    
+    # 获取源数据集的所有标准问题
+    source_questions = db.query(StdQuestion).options(
         joinedload(StdQuestion.std_answers).joinedload(StdAnswer.scoring_points),
         joinedload(StdQuestion.tags)
     ).filter(
-        StdQuestion.dataset_id == dataset_id,
+        and_(
+            StdQuestion.original_dataset_id <= dataset_id,
+            StdQuestion.current_dataset_id >= dataset_id
+        ),
         StdQuestion.is_valid == True
     ).all()
     
+    # 为每个问题创建版本记录（初始状态：未修改）
+    for source_question in source_questions:
+        # 创建版本问题记录 - 只记录引用，不复制内容
+        version_question = VersionStdQuestion(
+            version_id=version_id,
+            original_question_id=source_question.id,
+            is_modified=False,
+            is_deleted=False
+        )
+        db.add(version_question)
+        db.flush()  # 获取版本问题的ID
+        
+        # 注意：标签在版本系统中不单独存储，它们作为原始问题的一部分
+        
+        # 为每个答案创建版本记录
+        for source_answer in source_question.std_answers:
+            if source_answer.is_valid:
+                version_answer = VersionStdAnswer(
+                    version_id=version_id,
+                    version_question_id=version_question.id,
+                    original_answer_id=source_answer.id,
+                    is_modified=False,
+                    is_deleted=False,
+                    is_new=False
+                )
+                db.add(version_answer)
+                db.flush()  # 获取版本答案的ID
+                
+                # 为每个得分点创建版本记录
+                for source_point in source_answer.scoring_points:
+                    if source_point.is_valid:
+                        version_point = VersionScoringPoint(
+                            version_id=version_id,
+                            version_answer_id=version_answer.id,
+                            original_point_id=source_point.id,
+                            is_modified=False,
+                            is_deleted=False,
+                            is_new=False
+                        )
+                        db.add(version_point)
+
+@router.post("/{dataset_id}/versions", response_model=DatasetVersionResponse)
+def create_dataset_version(
+    dataset_id: int,
+    version_data: DatasetVersionCreate,
+    db: Session = Depends(get_db),
+    current_user = Depends(get_current_active_user)
+):
+    """创建数据集的新版本（使用版本工作表）"""
+    
+    # 验证原始数据集是否存在
+    dataset = db.query(Dataset).filter(Dataset.id == dataset_id).first()
+    if not dataset:
+        raise HTTPException(status_code=404, detail="Dataset not found")
+    
+    # 获取下一个版本号（字符串格式）
+    existing_versions = db.query(DatasetVersion).filter(
+        DatasetVersion.dataset_id == dataset_id
+    ).all()
+    
+    # 生成版本号，格式为 v1, v2, v3...
+    version_number = f"v{len(existing_versions) + 1}"
+    
+    # 创建版本记录
+    new_version = DatasetVersion(
+        dataset_id=dataset_id,
+        name=version_data.name,
+        description=version_data.description,
+        version_number=version_number,
+        created_by=current_user.id,
+        is_committed=False,
+        is_public=False
+    )
+    
+    db.add(new_version)
+    db.flush()  # 获取版本ID
+    
+    # 复制原数据库的内容到版本工作表
+    copy_dataset_to_version_tables(db, dataset_id, new_version.id)
+    
+    db.commit()
+    db.refresh(new_version)
+    
+    return new_version
+
+@version_router.get("/{version_id}", response_model=DatasetVersionResponse)
+def get_version(version_id: int, db: Session = Depends(get_db)):
+    """获取版本信息"""
+    version = db.query(DatasetVersion).filter(DatasetVersion.id == version_id).first()
+    if not version:
+        raise HTTPException(status_code=404, detail="Version not found")
+    return version
+
+@version_router.get("/{version_id}/std-qa")
+def get_version_std_qa(version_id: int, db: Session = Depends(get_db)):
+    """获取版本中的标准问答对 - 合并原始数据和修改数据"""
+    version = db.query(DatasetVersion).filter(DatasetVersion.id == version_id).first()
+    if not version:
+        raise HTTPException(status_code=404, detail="Version not found")
+    
+    # 获取版本工作表中的问答对
+    version_questions = db.query(VersionStdQuestion).options(
+        joinedload(VersionStdQuestion.version_answers).joinedload(VersionStdAnswer.version_scoring_points),
+        joinedload(VersionStdQuestion.original_question).joinedload(StdQuestion.std_answers).joinedload(StdAnswer.scoring_points),
+        joinedload(VersionStdQuestion.original_question).joinedload(StdQuestion.tags)
+    ).filter(
+        VersionStdQuestion.version_id == version_id,
+        VersionStdQuestion.is_deleted == False
+    ).all()
+    
     result = []
-    for question in questions:
+    for version_question in version_questions:
+        # 获取问题数据：如果被修改则使用修改后的数据，否则使用原始数据
+        if version_question.is_modified:
+            question_body = version_question.modified_body
+            question_type = version_question.modified_question_type
+        else:
+            question_body = version_question.original_question.body
+            question_type = version_question.original_question.question_type
+        
         question_data = {
-            "id": question.id,
-            "body": question.body,
-            "question_type": question.question_type,
-            "dataset_id": question.dataset_id,
-            "is_valid": question.is_valid,
-            "created_at": question.created_at.isoformat() if question.created_at else None,
-            "previous_version_id": question.previous_version_id,
-            "tags": [tag.label for tag in question.tags] if question.tags else [],
-            "std_answers": []
+            "id": version_question.id,  # 使用版本表的ID
+            "body": question_body,
+            "question_type": question_type,
+            "std_answers": [],
+            "is_modified": version_question.is_modified
         }
         
-        for answer in question.std_answers:
-            if answer.is_valid:  # 只包含有效的答案
+        # 处理答案
+        for version_answer in version_question.version_answers:
+            if not version_answer.is_deleted:
+                # 获取答案数据：如果是新增或修改则使用修改后的数据，否则使用原始数据
+                if version_answer.is_new or version_answer.is_modified:
+                    answer_text = version_answer.modified_answer
+                    answered_by = version_answer.modified_answered_by
+                else:
+                    answer_text = version_answer.original_answer.answer
+                    answered_by = version_answer.original_answer.answered_by
+                
                 answer_data = {
-                    "id": answer.id,
-                    "answer": answer.answer,
-                    "answered_by": answer.answered_by,
-                    "std_question_id": answer.std_question_id,
-                    "is_valid": answer.is_valid,
-                    "answered_at": answer.answered_at.isoformat() if answer.answered_at else None,
-                    "previous_version_id": answer.previous_version_id,
-                    "scoring_points": []
+                    "id": version_answer.id,  # 使用版本表的ID
+                    "answer": answer_text,
+                    "answered_by": answered_by,
+                    "scoring_points": [],
+                    "is_modified": version_answer.is_modified,
+                    "is_new": version_answer.is_new
                 }
                 
-                for point in answer.scoring_points:
-                    if point.is_valid:  # 只包含有效的得分点
+                # 处理得分点
+                for version_point in version_answer.version_scoring_points:
+                    if not version_point.is_deleted:
+                        # 获取得分点数据
+                        if version_point.is_new or version_point.is_modified:
+                            point_answer = version_point.modified_answer
+                            point_order = version_point.modified_point_order
+                        else:
+                            point_answer = version_point.original_point.answer
+                            point_order = version_point.original_point.point_order
+                        
                         point_data = {
-                            "id": point.id,
-                            "answer": point.answer,
-                            "point_order": point.point_order,
-                            "std_answer_id": point.std_answer_id,
-                            "is_valid": point.is_valid,
-                            "previous_version_id": point.previous_version_id
+                            "id": version_point.id,  # 使用版本表的ID
+                            "answer": point_answer,
+                            "point_order": point_order,
+                            "is_modified": version_point.is_modified,
+                            "is_new": version_point.is_new
                         }
                         answer_data["scoring_points"].append(point_data)
                 
@@ -107,175 +279,421 @@ def get_std_questions_with_answers(
     
     return result
 
-class StdQuestionVersionUpdate(BaseModel):
-    body: str
-    question_type: str
-    tags: List[str] = []
-    std_answers: List[dict] = []
-
-@router.put("/versions/{version_id}/std-questions/{question_id}")
-def update_std_question_version(
+@version_router.put("/{version_id}/std-questions/{question_id}")
+def update_version_question(
     version_id: int,
     question_id: int,
-    update_data: StdQuestionVersionUpdate,
+    question_data: dict,
     db: Session = Depends(get_db)
 ):
-    """在版本编辑模式下更新标准问题"""
-    # 获取原始问题
-    original_question = db.query(StdQuestion).filter(StdQuestion.id == question_id).first()
-    if not original_question:
+    """更新版本中的问题 - 标记为已修改并保存修改内容"""
+    version = db.query(DatasetVersion).filter(DatasetVersion.id == version_id).first()
+    if not version:
+        raise HTTPException(status_code=404, detail="Version not found")
+    
+    # 更新版本工作表中的问题
+    version_question = db.query(VersionStdQuestion).filter(
+        and_(
+            VersionStdQuestion.id == question_id,
+            VersionStdQuestion.version_id == version_id,
+            VersionStdQuestion.is_deleted == False
+        )
+    ).first()
+    
+    if not version_question:
         raise HTTPException(status_code=404, detail="Question not found")
     
-    # 在实际实现中，这里应该创建新版本的记录
-    # 现在暂时直接更新原记录作为演示
-    original_question.body = update_data.body
-    original_question.question_type = update_data.question_type
+    # 标记为已修改并保存修改内容
+    version_question.is_modified = True
+    version_question.modified_body = question_data.get("body")
+    version_question.modified_question_type = question_data.get("question_type")
     
-    # 处理标签更新（这里简化处理）
-    # 在实际实现中需要更复杂的标签关系管理
+    # 更新标签
+    if "tags" in question_data:
+        # 删除现有标签
+        for tag in version_question.version_tags:
+            db.delete(tag)
+        
+        # 标签在版本系统中不单独存储，通过原始问题获取
     
-    # 处理答案更新
-    for answer_data in update_data.std_answers:
-        if "id" in answer_data and answer_data["id"]:
-            # 更新现有答案
-            answer = db.query(StdAnswer).filter(StdAnswer.id == answer_data["id"]).first()
-            if answer:
-                answer.answer = answer_data.get("answer", answer.answer)
-                answer.answered_by = answer_data.get("answered_by", answer.answered_by)
-        else:
-            # 创建新答案
-            new_answer = StdAnswer(
-                std_question_id=question_id,
-                answer=answer_data.get("answer", ""),
-                answered_by=answer_data.get("answered_by"),
-                is_valid=True
-            )
-            db.add(new_answer)
-    
-    db.commit()
-    db.refresh(original_question)
-    
-    return {"message": "Question updated successfully"}
-
-@router.delete("/versions/{version_id}/std-questions/{question_id}")
-def delete_std_question_version(
-    version_id: int,
-    question_id: int,
-    db: Session = Depends(get_db)
-):
-    """在版本编辑模式下删除标准问题"""
-    question = db.query(StdQuestion).filter(StdQuestion.id == question_id).first()
-    if not question:
-        raise HTTPException(status_code=404, detail="Question not found")
-    
-    # 软删除
-    question.is_valid = False
-    
-    # 同时软删除关联的答案
-    for answer in question.std_answers:
-        answer.is_valid = False
-        for point in answer.scoring_points:
-            point.is_valid = False
-    
-    db.commit()
-    return {"message": "Question deleted successfully"}
-
-class StdQACreate(BaseModel):
-    question: dict
-    answer: dict
-
-@router.post("/versions/{version_id}/std-qa")
-def create_std_qa_version(
-    version_id: int,
-    qa_data: StdQACreate,
-    db: Session = Depends(get_db)
-):
-    """在版本编辑模式下创建新的标准问答对"""
-    # 创建问题
-    question_data = qa_data.question
-    new_question = StdQuestion(
-        dataset_id=question_data.get("dataset_id"),  # 需要从版本信息中获取
-        body=question_data.get("body"),
-        question_type=question_data.get("question_type", "text"),
-        is_valid=True
-    )
-    db.add(new_question)
-    db.commit()
-    db.refresh(new_question)
-    
-    # 创建答案
-    answer_data = qa_data.answer
-    new_answer = StdAnswer(
-        std_question_id=new_question.id,
-        answer=answer_data.get("answer"),
-        answered_by=answer_data.get("answered_by"),
-        is_valid=True
-    )
-    db.add(new_answer)
-    db.commit()
-    db.refresh(new_answer)
-    
-    return {
-        "id": new_question.id,
-        "body": new_question.body,
-        "question_type": new_question.question_type,
-        "std_answers": [{
-            "id": new_answer.id,
-            "answer": new_answer.answer,
-            "answered_by": new_answer.answered_by
-        }]
-    }
-
-class ImportData(BaseModel):
-    data: List[dict]
-
-@router.post("/versions/{version_id}/import")
-def import_data_version(
-    version_id: int,
-    import_data: ImportData,
-    db: Session = Depends(get_db)
-):
-    """在版本编辑模式下导入数据"""
-    imported_count = 0
-    
-    for item in import_data.data:
-        try:
-            # 创建问题
-            new_question = StdQuestion(
-                dataset_id=item.get("dataset_id"),  # 需要从版本信息中获取
-                body=item.get("body"),
-                question_type=item.get("question_type", "text"),
-                is_valid=True
-            )
-            db.add(new_question)
-            db.commit()
-            db.refresh(new_question)
+    # 更新答案
+    if "std_answers" in question_data:
+        # 标记所有现有答案为删除
+        for answer in version_question.version_answers:
+            answer.is_deleted = True
+        
+        # 添加新答案
+        for answer_data in question_data["std_answers"]:
+            # 检查是否是现有答案的修改
+            existing_answer = None
+            if "id" in answer_data and not answer_data.get("is_new", False):
+                existing_answer = next((a for a in version_question.version_answers if a.id == answer_data["id"]), None)
             
-            # 创建答案
-            if "answer" in item:
-                new_answer = StdAnswer(
-                    std_question_id=new_question.id,
-                    answer=item.get("answer"),
-                    answered_by=item.get("answered_by"),
-                    is_valid=True
+            if existing_answer:
+                # 修改现有答案
+                existing_answer.is_deleted = False
+                existing_answer.is_modified = True
+                existing_answer.modified_answer = answer_data.get("answer", "")
+                existing_answer.modified_answered_by = answer_data.get("answered_by")
+                
+                # 处理得分点
+                for point in existing_answer.version_scoring_points:
+                    point.is_deleted = True
+                
+                for point_data in answer_data.get("scoring_points", []):
+                    if "id" in point_data and not point_data.get("is_new", False):
+                        # 修改现有得分点
+                        existing_point = next((p for p in existing_answer.version_scoring_points if p.id == point_data["id"]), None)
+                        if existing_point:
+                            existing_point.is_deleted = False
+                            existing_point.is_modified = True
+                            existing_point.modified_answer = point_data.get("answer", "")
+                            existing_point.modified_point_order = point_data.get("point_order", 1)
+                    else:
+                        # 新增得分点
+                        new_point = VersionScoringPoint(
+                            version_answer_id=existing_answer.id,
+                            is_new=True,
+                            is_modified=False,
+                            is_deleted=False,
+                            modified_answer=point_data.get("answer", ""),
+                            modified_point_order=point_data.get("point_order", 1)
+                        )
+                        db.add(new_point)
+            else:
+                # 新增答案
+                new_answer = VersionStdAnswer(
+                    version_id=version_id,
+                    version_question_id=version_question.id,
+                    is_new=True,
+                    is_modified=False,
+                    is_deleted=False,
+                    modified_answer=answer_data.get("answer", ""),
+                    modified_answered_by=answer_data.get("answered_by")
                 )
                 db.add(new_answer)
-                db.commit()
-            
-            imported_count += 1
-            
-        except Exception as e:
-            print(f"Error importing item: {e}")
-            continue
+                db.flush()
+                
+                # 添加得分点
+                for point_data in answer_data.get("scoring_points", []):
+                    new_point = VersionScoringPoint(
+                        version_id=version_id,
+                        version_answer_id=new_answer.id,
+                        is_new=True,
+                        is_modified=False,
+                        is_deleted=False,
+                        modified_answer=point_data.get("answer", ""),
+                        modified_point_order=point_data.get("point_order", 1)
+                    )
+                    db.add(new_point)
     
-    return {"imported": imported_count}
+    db.commit()
+    
+    # 返回更新后的问题数据
+    return get_version_question_data(db, version_question)
 
-@router.post("/versions/{version_id}/commit")
-def commit_version(
+@version_router.delete("/{version_id}/std-questions/{question_id}")
+def delete_version_question(
     version_id: int,
+    question_id: int,
     db: Session = Depends(get_db)
 ):
-    """提交版本更改"""
-    # 在实际实现中，这里应该完成版本的最终确认
-    # 比如更新版本状态、创建版本快照等
-    return {"message": "Version committed successfully"}
+    """删除版本中的问题（软删除）"""
+    version = db.query(DatasetVersion).filter(DatasetVersion.id == version_id).first()
+    if not version:
+        raise HTTPException(status_code=404, detail="Version not found")
+    
+    # 在版本工作表中软删除问题
+    version_question = db.query(VersionStdQuestion).filter(
+        and_(
+            VersionStdQuestion.id == question_id,
+            VersionStdQuestion.version_id == version_id,
+            VersionStdQuestion.is_deleted == False
+        )
+    ).first()
+    
+    if not version_question:
+        raise HTTPException(status_code=404, detail="Question not found")
+    
+    # 软删除问题和相关答案
+    version_question.is_deleted = True
+    for answer in version_question.version_answers:
+        answer.is_deleted = True
+        for point in answer.version_scoring_points:
+            point.is_deleted = True
+    
+    db.commit()
+    
+    return {"message": "Question deleted successfully"}
+
+@version_router.post("/{version_id}/std-qa")
+def create_version_qa(
+    version_id: int,
+    qa_data: dict,
+    db: Session = Depends(get_db)
+):
+    """在版本中创建新的问答对"""
+    version = db.query(DatasetVersion).filter(DatasetVersion.id == version_id).first()
+    if not version:
+        raise HTTPException(status_code=404, detail="Version not found")
+    
+    # 创建新的版本问题（新增的问题直接设置为修改状态）
+    new_question = VersionStdQuestion(
+        version_id=version_id,
+        is_modified=True,  # 新增的问题标记为已修改
+        is_deleted=False,
+        modified_body=qa_data["question"]["body"],
+        modified_question_type=qa_data["question"].get("question_type", "text")
+    )
+    db.add(new_question)
+    db.flush()
+    
+    # 标签在版本系统中不单独存储
+    
+    # 创建答案
+    answer_data = qa_data["answer"]
+    new_answer = VersionStdAnswer(
+        version_id=version_id,
+        version_question_id=new_question.id,
+        is_new=True,  # 新增的答案
+        is_modified=False,
+        is_deleted=False,
+        modified_answer=answer_data["answer"],
+        modified_answered_by=answer_data.get("answered_by")
+    )
+    db.add(new_answer)
+    db.flush()
+    
+    # 添加得分点
+    for point_data in answer_data.get("scoring_points", []):
+        new_point = VersionScoringPoint(
+            version_id=version_id,
+            version_answer_id=new_answer.id,
+            is_new=True,  # 新增的得分点
+            is_modified=False,
+            is_deleted=False,
+            modified_answer=point_data.get("answer", ""),
+            modified_point_order=point_data.get("point_order", 1)
+        )
+        db.add(new_point)
+    
+    db.commit()
+    
+    # 返回创建的问答对
+    return get_version_question_data(db, new_question)
+
+@version_router.post("/{version_id}/commit")
+def commit_version(
+    version_id: int,
+    publish_data: DatasetVersionPublish,
+    db: Session = Depends(get_db)
+):
+    """提交版本（智能创建新数据集，未修改数据通过引用节省存储）"""
+    version = db.query(DatasetVersion).filter(DatasetVersion.id == version_id).first()
+    if not version:
+        raise HTTPException(status_code=404, detail="Version not found")
+    
+    if version.is_committed:
+        raise HTTPException(status_code=400, detail="Version already committed")
+    
+    try:
+        # 1. 获取原始数据集
+        original_dataset = db.query(Dataset).filter(Dataset.id == version.dataset_id).first()
+        if not original_dataset:
+            raise HTTPException(status_code=404, detail="Original dataset not found")
+        
+        # 2. 创建新的数据集版本
+        new_dataset = Dataset(
+            name=f"{original_dataset.name}_v{version.version_number}",
+            description=f"{original_dataset.description} - 版本 {version.version_number}: {version.description}",
+            is_public=publish_data.is_public,
+            created_by=original_dataset.created_by
+        )
+        db.add(new_dataset)
+        db.flush()
+        
+        # 3. 处理版本工作表中的数据
+        version_questions = db.query(VersionStdQuestion).options(
+            joinedload(VersionStdQuestion.version_answers).joinedload(VersionStdAnswer.version_scoring_points),
+            joinedload(VersionStdQuestion.version_tags),
+            joinedload(VersionStdQuestion.original_question).joinedload(StdQuestion.std_answers).joinedload(StdAnswer.scoring_points),
+            joinedload(VersionStdQuestion.original_question).joinedload(StdQuestion.tags)
+        ).filter(
+            VersionStdQuestion.version_id == version_id,
+            VersionStdQuestion.is_deleted == False
+        ).all()
+        
+        from ..models.tag import Tag
+        
+        for version_question in version_questions:
+            if version_question.is_modified or not version_question.original_question_id:
+                # 情况1：修改的问题或新增的问题 - 创建新记录
+                if version_question.original_question_id and version_question.is_modified:
+                    # 修改的问题：设置previous_version_id
+                    new_question = StdQuestion(
+                        original_dataset_id=version_question.original_question.original_dataset_id,
+                        current_dataset_id=new_dataset.id,
+                        body=version_question.modified_body,
+                        question_type=version_question.modified_question_type,
+                        is_valid=True,
+                        previous_version_id=version_question.original_question_id
+                    )
+                else:
+                    # 新增的问题
+                    new_question = StdQuestion(
+                        original_dataset_id=new_dataset.id,
+                        current_dataset_id=new_dataset.id,
+                        body=version_question.modified_body,
+                        question_type=version_question.modified_question_type,
+                        is_valid=True
+                    )
+                
+                db.add(new_question)
+                db.flush()
+                
+                # 处理标签
+                for version_tag in version_question.version_tags:
+                    tag = db.query(Tag).filter(Tag.name == version_tag.tag_name).first()
+                    if not tag:
+                        tag = Tag(name=version_tag.tag_name)
+                        db.add(tag)
+                        db.flush()
+                    new_question.tags.append(tag)
+                
+                # 处理答案
+                for version_answer in version_question.version_answers:
+                    if not version_answer.is_deleted:
+                        if version_answer.is_new or version_answer.is_modified:
+                            # 新增或修改的答案
+                            new_answer = StdAnswer(
+                                std_question_id=new_question.id,
+                                original_dataset_id=new_dataset.id if version_answer.is_new else (version_answer.original_answer.original_dataset_id),
+                                current_dataset_id=new_dataset.id,
+                                answer=version_answer.modified_answer,
+                                answered_by=version_answer.modified_answered_by,
+                                is_valid=True,
+                                previous_version_id=version_answer.original_answer_id if version_answer.is_modified else None
+                            )
+                            db.add(new_answer)
+                            db.flush()
+                            
+                            # 处理得分点
+                            for version_point in version_answer.version_scoring_points:
+                                if not version_point.is_deleted:
+                                    new_point = StdAnswerScoringPoint(
+                                        std_answer_id=new_answer.id,
+                                        answer=version_point.modified_answer,
+                                        point_order=version_point.modified_point_order,
+                                        is_valid=True,
+                                        previous_version_id=version_point.original_point_id if version_point.is_modified else None
+                                    )
+                                    db.add(new_point)
+                        else:
+                            # 未修改的答案：更新引用
+                            original_answer = version_answer.original_answer
+                            original_answer.current_dataset_id = new_dataset.id
+                            
+                            # 更新得分点的引用
+                            for point in original_answer.scoring_points:
+                                if point.is_valid:
+                                    point.current_dataset_id = new_dataset.id
+            else:
+                # 情况2：未修改的问题 - 更新数据集引用，节省存储
+                original_question = version_question.original_question
+                original_question.current_dataset_id = new_dataset.id
+                
+                # 更新答案的引用
+                for answer in original_question.std_answers:
+                    if answer.is_valid:
+                        answer.current_dataset_id = new_dataset.id
+                        
+                        # 更新得分点的引用
+                        for point in answer.scoring_points:
+                            if point.is_valid:
+                                point.current_dataset_id = new_dataset.id
+        
+        # 4. 更新版本状态
+        version.is_committed = True
+        version.committed_at = func.now()
+        
+        db.commit()
+        
+        return {
+            "message": "Version committed successfully", 
+            "is_public": publish_data.is_public,
+            "dataset_id": version.dataset_id,
+            "new_dataset_id": new_dataset.id
+        }
+        
+    except Exception as e:
+        db.rollback()
+        raise HTTPException(status_code=500, detail=f"Failed to commit version: {str(e)}")
+
+@version_router.post("/{version_id}/import")
+def import_data_to_version(
+    version_id: int,
+    import_data: dict,
+    db: Session = Depends(get_db)
+):
+    """导入数据到版本工作表"""
+    version = db.query(DatasetVersion).filter(DatasetVersion.id == version_id).first()
+    if not version:
+        raise HTTPException(status_code=404, detail="Version not found")
+    
+    try:
+        data_list = import_data.get("data", [])
+        imported_count = 0
+        
+        for item in data_list:
+            # 创建版本问题（导入的数据标记为修改状态）
+            new_question = VersionStdQuestion(
+                version_id=version_id,
+                is_modified=True,  # 导入的数据标记为已修改
+                is_deleted=False,
+                modified_body=item.get("body", ""),
+                modified_question_type=item.get("question_type", "text")
+            )
+            db.add(new_question)
+            db.flush()
+            
+            # 标签在版本系统中不单独存储
+            
+            # 创建答案
+            if item.get("answer"):
+                new_answer = VersionStdAnswer(
+                    version_id=version_id,
+                    version_question_id=new_question.id,
+                    is_new=True,  # 导入的答案标记为新增
+                    is_modified=False,
+                    is_deleted=False,
+                    modified_answer=item.get("answer", ""),
+                    modified_answered_by=item.get("answered_by")
+                )
+                db.add(new_answer)
+                db.flush()
+                
+                # 添加得分点
+                for point_data in item.get("scoring_points", []):
+                    new_point = VersionScoringPoint(
+                        version_id=version_id,
+                        version_answer_id=new_answer.id,
+                        is_new=True,  # 导入的得分点标记为新增
+                        is_modified=False,
+                        is_deleted=False,
+                        modified_answer=point_data.get("answer", ""),
+                        modified_point_order=point_data.get("point_order", 1)
+                    )
+                    db.add(new_point)
+            
+            imported_count += 1
+        
+        db.commit()
+        
+        return {
+            "message": f"Successfully imported {imported_count} items",
+            "imported": imported_count
+        }
+        
+    except Exception as e:
+        db.rollback()
+        raise HTTPException(status_code=500, detail=f"Import failed: {str(e)}")

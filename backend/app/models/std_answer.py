@@ -8,15 +8,21 @@ class StdAnswer(Base):
 
     id = Column(Integer, primary_key=True, index=True)
     std_question_id = Column(Integer, ForeignKey("StdQuestion.id"), nullable=False, index=True)
+    original_dataset_id = Column(Integer, ForeignKey("Dataset.id"), nullable=False, index=True)  # 最初来源的数据集ID（必须）
+    current_dataset_id = Column(Integer, ForeignKey("Dataset.id"), nullable=False, index=True)   # 当前所在的数据集ID（必须）
     answer = Column(Text, nullable=False)
     is_valid = Column(Boolean, default=True, nullable=False, index=True)
     answered_by = Column(Integer, ForeignKey("User.id"), nullable=True, index=True)
     answered_at = Column(DateTime(timezone=True), server_default=func.now())
+    previous_version_id = Column(Integer, ForeignKey("StdAnswer.id"), nullable=True, index=True)
+    
+    # Relationships
     std_question = relationship("StdQuestion", back_populates="std_answers")
+    original_dataset = relationship("Dataset", foreign_keys=[original_dataset_id])
+    current_dataset = relationship("Dataset", foreign_keys=[current_dataset_id])
     answered_by_user = relationship("User", foreign_keys=[answered_by])
     previous_version = relationship("StdAnswer", remote_side=[id])
     scoring_points = relationship("StdAnswerScoringPoint", back_populates="std_answer", cascade="all, delete-orphan")
-    previous_version_id = Column(Integer, ForeignKey("StdAnswer.id"), nullable=True, index=True)
     
     # 多对多关系记录
     raw_answer_records = relationship("StdAnswerRawAnswerRecord", back_populates="std_answer", cascade="all, delete-orphan")

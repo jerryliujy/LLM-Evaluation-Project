@@ -20,9 +20,11 @@ def create_std_question(
     db: Session = Depends(get_db)
 ):
     """创建标准问题"""
-    # 验证dataset和raw_question是否存在
-    if not db.query(Dataset).filter(Dataset.id == std_question.dataset_id).first():
-        raise HTTPException(status_code=404, detail="Dataset not found")
+    # 验证dataset存在
+    if not db.query(Dataset).filter(Dataset.id == std_question.original_dataset_id).first():
+        raise HTTPException(status_code=404, detail="Original dataset not found")
+    if not db.query(Dataset).filter(Dataset.id == std_question.current_dataset_id).first():
+        raise HTTPException(status_code=404, detail="Current dataset not found")
     
     if not db.query(RawQuestion).filter(RawQuestion.id == std_question.raw_question_id).first():
         raise HTTPException(status_code=404, detail="Raw question not found")
@@ -187,10 +189,10 @@ def create_std_question_from_raw(
     # 验证数据集存在
     if not db.query(Dataset).filter(Dataset.id == dataset_id).first():
         raise HTTPException(status_code=404, detail="Dataset not found")
-    
-    # 创建标准问题
+      # 创建标准问题
     std_question_data = StdQuestionCreate(
-        dataset_id=dataset_id,
+        original_dataset_id=dataset_id,
+        current_dataset_id=dataset_id,
         body=raw_question.title,  # 使用body字段，并使用原始问题的标题
         question_type=question_type,
         created_by=created_by

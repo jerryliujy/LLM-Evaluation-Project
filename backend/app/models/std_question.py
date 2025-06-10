@@ -6,7 +6,8 @@ from ..db.database import Base
 class StdQuestion(Base):
     __tablename__ = "StdQuestion"    
     id = Column(Integer, primary_key=True, index=True)
-    dataset_id = Column(Integer, ForeignKey("Dataset.id"), nullable=False, index=True)
+    original_dataset_id = Column(Integer, ForeignKey("Dataset.id"), nullable=False, index=True)  # 最初来源的数据集ID（必须）
+    current_dataset_id = Column(Integer, ForeignKey("Dataset.id"), nullable=False, index=True)   # 当前所在的数据集ID（必须）
     body = Column(Text, nullable=False)  # 统一字段名为body
     question_type = Column(String(50), nullable=False)
     is_valid = Column(Boolean, default=True, nullable=False, index=True)
@@ -15,7 +16,8 @@ class StdQuestion(Base):
     previous_version_id = Column(Integer, ForeignKey("StdQuestion.id"), nullable=True, index=True)      
     
     # Relationships
-    dataset = relationship("Dataset")
+    original_dataset = relationship("Dataset", foreign_keys=[original_dataset_id])
+    current_dataset = relationship("Dataset", foreign_keys=[current_dataset_id])
     created_by_user = relationship("User", foreign_keys=[created_by])
     previous_version = relationship("StdQuestion", remote_side=[id])
     std_answers = relationship("StdAnswer", back_populates="std_question", cascade="all, delete-orphan")

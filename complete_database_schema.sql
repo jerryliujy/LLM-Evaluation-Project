@@ -62,26 +62,32 @@ CREATE TABLE `RawQuestion` (
 -- 标准问题
 CREATE TABLE `StdQuestion` (
   `id` INT NOT NULL AUTO_INCREMENT,
-  `dataset_id` INT NOT NULL,
   `body` TEXT NOT NULL,
   `question_type` ENUM('choice', 'text') NOT NULL DEFAULT 'text',
   `is_valid` TINYINT(1) NOT NULL DEFAULT 1,
   `created_at` DATETIME NOT NULL DEFAULT CURRENT_TIMESTAMP,
   `created_by` INT DEFAULT NULL,
   `previous_version_id` INT DEFAULT NULL, -- 指向前一个版本
+  `original_dataset_id` INT NOT NULL, -- 原始数据集ID（必须字段）
+  `current_dataset_id` INT NOT NULL, -- 当前数据集ID（必须字段）
   PRIMARY KEY (`id`),
-  INDEX `idx_stdquestion_dataset` (`dataset_id`),
   INDEX `idx_stdquestion_valid` (`is_valid`),
   INDEX `idx_stdquestion_created_by` (`created_by`),
-  CONSTRAINT `fk_stdquestion_dataset`
-    FOREIGN KEY (`dataset_id`) REFERENCES `Dataset` (`id`)
-    ON DELETE CASCADE ON UPDATE CASCADE,
+  INDEX `idx_stdquestion_original_dataset` (`original_dataset_id`),
+  INDEX `idx_stdquestion_current_dataset` (`current_dataset_id`),
+  INDEX `idx_stdquestion_dataset_range` (`original_dataset_id`, `current_dataset_id`),
   CONSTRAINT `fk_stdquestion_user`
     FOREIGN KEY (`created_by`) REFERENCES `User` (`id`)
     ON DELETE SET NULL ON UPDATE CASCADE,
   CONSTRAINT `fk_stdquestion_previous`
     FOREIGN KEY (`previous_version_id`) REFERENCES `StdQuestion` (`id`)
-    ON DELETE SET NULL ON UPDATE CASCADE
+    ON DELETE SET NULL ON UPDATE CASCADE,
+  CONSTRAINT `fk_stdquestion_original_dataset`
+    FOREIGN KEY (`original_dataset_id`) REFERENCES `Dataset` (`id`)
+    ON DELETE CASCADE ON UPDATE CASCADE,
+  CONSTRAINT `fk_stdquestion_current_dataset`
+    FOREIGN KEY (`current_dataset_id`) REFERENCES `Dataset` (`id`)
+    ON DELETE CASCADE ON UPDATE CASCADE
 ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4;
 
 -- 标准回答
@@ -93,10 +99,15 @@ CREATE TABLE `StdAnswer` (
   `answered_at` DATETIME NOT NULL DEFAULT CURRENT_TIMESTAMP,
   `answered_by` INT DEFAULT NULL,
   `previous_version_id` INT DEFAULT NULL, -- 指向前一个版本
+  `original_dataset_id` INT NOT NULL, -- 原始数据集ID（必须字段）
+  `current_dataset_id` INT NOT NULL, -- 当前数据集ID（必须字段）
   PRIMARY KEY (`id`),
   KEY `idx_sa_stdq` (`std_question_id`),
   INDEX `idx_stdanswer_valid` (`is_valid`),
   INDEX `idx_stdanswer_answered_by` (`answered_by`),
+  INDEX `idx_stdanswer_original_dataset` (`original_dataset_id`),
+  INDEX `idx_stdanswer_current_dataset` (`current_dataset_id`),
+  INDEX `idx_stdanswer_dataset_range` (`original_dataset_id`, `current_dataset_id`),
   CONSTRAINT `fk_stdanswer_stdq`
     FOREIGN KEY (`std_question_id`) REFERENCES `StdQuestion` (`id`)
     ON DELETE CASCADE ON UPDATE CASCADE,
@@ -105,7 +116,13 @@ CREATE TABLE `StdAnswer` (
     ON DELETE SET NULL ON UPDATE CASCADE,
   CONSTRAINT `fk_stdanswer_previous`
     FOREIGN KEY (`previous_version_id`) REFERENCES `StdAnswer` (`id`)
-    ON DELETE SET NULL ON UPDATE CASCADE
+    ON DELETE SET NULL ON UPDATE CASCADE,
+  CONSTRAINT `fk_stdanswer_original_dataset`
+    FOREIGN KEY (`original_dataset_id`) REFERENCES `Dataset` (`id`)
+    ON DELETE CASCADE ON UPDATE CASCADE,
+  CONSTRAINT `fk_stdanswer_current_dataset`
+    FOREIGN KEY (`current_dataset_id`) REFERENCES `Dataset` (`id`)
+    ON DELETE CASCADE ON UPDATE CASCADE
 ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4;
 
 -- 原始回答
@@ -152,7 +169,7 @@ CREATE TABLE `StdAnswerScoringPoint` (
   `answer` TEXT NOT NULL,
   `point_order` INT DEFAULT 0,
   `is_valid` TINYINT(1) NOT NULL DEFAULT 1,
-  `previous_version_id` INT DEFAULT NULL, 
+  `previous_version_id` INT DEFAULT NULL,
   PRIMARY KEY (`id`),
   KEY `idx_sasp_stdanswer` (`std_answer_id`),
   INDEX `idx_sasp_valid` (`is_valid`),
@@ -332,6 +349,122 @@ CREATE TABLE `Evaluation` (
     ON DELETE CASCADE ON UPDATE CASCADE,
   CONSTRAINT `fk_eval_llmanswer`
     FOREIGN KEY (`llm_answer_id`) REFERENCES `LLMAnswer` (`id`)
+    ON DELETE CASCADE ON UPDATE CASCADE
+) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4;
+
+-- ================== 版本管理系统 ==================
+
+-- 数据集版本表
+CREATE TABLE `DatasetVersion` (
+  `id` INT NOT NULL AUTO_INCREMENT,
+  `dataset_id` INT NOT NULL,
+  `name` VARCHAR(255) NOT NULL,
+  `description` TEXT DEFAULT NULL,
+  `version_number` VARCHAR(50) NOT NULL,
+  `is_committed` TINYINT(1) NOT NULL DEFAULT 0,
+  `is_public` TINYINT(1) NOT NULL DEFAULT 0,
+  `created_by` INT NOT NULL,
+  `created_at` DATETIME NOT NULL DEFAULT CURRENT_TIMESTAMP,
+  `committed_at` DATETIME DEFAULT NULL,
+  PRIMARY KEY (`id`),
+  INDEX `idx_version_dataset` (`dataset_id`),
+  INDEX `idx_version_created_by` (`created_by`),
+  INDEX `idx_version_committed` (`is_committed`),
+  INDEX `idx_version_public` (`is_public`),
+  UNIQUE INDEX `idx_version_dataset_number` (`dataset_id`, `version_number`),
+  CONSTRAINT `fk_version_dataset`
+    FOREIGN KEY (`dataset_id`) REFERENCES `Dataset` (`id`)
+    ON DELETE CASCADE ON UPDATE CASCADE,
+  CONSTRAINT `fk_version_user`
+    FOREIGN KEY (`created_by`) REFERENCES `User` (`id`)
+    ON DELETE CASCADE ON UPDATE CASCADE
+) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4;
+
+-- 版本标准问题工作表
+CREATE TABLE `VersionStdQuestion` (
+  `id` INT NOT NULL AUTO_INCREMENT,
+  `version_id` INT NOT NULL,
+  `original_question_id` INT DEFAULT NULL, -- 引用原始问题ID
+  `is_modified` TINYINT(1) NOT NULL DEFAULT 0, -- 是否修改
+  `is_new` TINYINT(1) NOT NULL DEFAULT 0, -- 是否新创建
+  `is_deleted` TINYINT(1) NOT NULL DEFAULT 0, -- 是否删除
+  `modified_body` TEXT DEFAULT NULL, -- 修改后的问题内容
+  `modified_question_type` ENUM('choice', 'text') DEFAULT NULL, -- 修改后的问题类型
+  `created_at` DATETIME NOT NULL DEFAULT CURRENT_TIMESTAMP,
+  PRIMARY KEY (`id`),
+  INDEX `idx_vq_version` (`version_id`),
+  INDEX `idx_vq_original` (`original_question_id`),
+  INDEX `idx_vq_modified` (`is_modified`),
+  INDEX `idx_vq_new` (`is_new`),
+  INDEX `idx_vq_deleted` (`is_deleted`),
+  CONSTRAINT `fk_vq_version`
+    FOREIGN KEY (`version_id`) REFERENCES `DatasetVersion` (`id`)
+    ON DELETE CASCADE ON UPDATE CASCADE,
+  CONSTRAINT `fk_vq_original`
+    FOREIGN KEY (`original_question_id`) REFERENCES `StdQuestion` (`id`)
+    ON DELETE CASCADE ON UPDATE CASCADE
+) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4;
+
+-- 版本标准答案工作表
+CREATE TABLE `VersionStdAnswer` (
+  `id` INT NOT NULL AUTO_INCREMENT,
+  `version_id` INT NOT NULL,
+  `version_question_id` INT NOT NULL, -- 关联版本问题
+  `original_answer_id` INT DEFAULT NULL, -- 引用原始答案ID
+  `is_modified` TINYINT(1) NOT NULL DEFAULT 0, -- 是否修改
+  `is_new` TINYINT(1) NOT NULL DEFAULT 1, -- 是否新创建
+  `is_deleted` TINYINT(1) NOT NULL DEFAULT 0, -- 是否删除
+  `modified_answer` TEXT DEFAULT NULL, -- 修改后的答案内容
+  `modified_answered_by` INT DEFAULT NULL, -- 修改后的回答者
+  `created_at` DATETIME NOT NULL DEFAULT CURRENT_TIMESTAMP,
+  PRIMARY KEY (`id`),
+  INDEX `idx_va_version` (`version_id`),
+  INDEX `idx_va_vquestion` (`version_question_id`),
+  INDEX `idx_va_original` (`original_answer_id`),
+  INDEX `idx_va_modified` (`is_modified`),
+  INDEX `idx_va_new` (`is_new`),
+  INDEX `idx_va_deleted` (`is_deleted`),
+  CONSTRAINT `fk_va_version`
+    FOREIGN KEY (`version_id`) REFERENCES `DatasetVersion` (`id`)
+    ON DELETE CASCADE ON UPDATE CASCADE,
+  CONSTRAINT `fk_va_vquestion`
+    FOREIGN KEY (`version_question_id`) REFERENCES `VersionStdQuestion` (`id`)
+    ON DELETE CASCADE ON UPDATE CASCADE,
+  CONSTRAINT `fk_va_original`
+    FOREIGN KEY (`original_answer_id`) REFERENCES `StdAnswer` (`id`)
+    ON DELETE CASCADE ON UPDATE CASCADE,
+  CONSTRAINT `fk_va_answered_by`
+    FOREIGN KEY (`modified_answered_by`) REFERENCES `User` (`id`)
+    ON DELETE SET NULL ON UPDATE CASCADE
+) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4;
+
+-- 版本评分点工作表
+CREATE TABLE `VersionScoringPoint` (
+  `id` INT NOT NULL AUTO_INCREMENT,
+  `version_id` INT NOT NULL,
+  `version_answer_id` INT NOT NULL, -- 关联版本答案
+  `original_point_id` INT DEFAULT NULL, -- 引用原始评分点ID
+  `is_modified` TINYINT(1) NOT NULL DEFAULT 0, -- 是否修改
+  `is_new` TINYINT(1) NOT NULL DEFAULT 1, -- 是否新创建
+  `is_deleted` TINYINT(1) NOT NULL DEFAULT 0, -- 是否删除
+  `modified_answer` TEXT DEFAULT NULL, -- 修改后的评分点内容
+  `modified_point_order` INT DEFAULT NULL, -- 修改后的顺序
+  `created_at` DATETIME NOT NULL DEFAULT CURRENT_TIMESTAMP,
+  PRIMARY KEY (`id`),
+  INDEX `idx_vsp_version` (`version_id`),
+  INDEX `idx_vsp_vanswer` (`version_answer_id`),
+  INDEX `idx_vsp_original` (`original_point_id`),
+  INDEX `idx_vsp_modified` (`is_modified`),
+  INDEX `idx_vsp_new` (`is_new`),
+  INDEX `idx_vsp_deleted` (`is_deleted`),
+  CONSTRAINT `fk_vsp_version`
+    FOREIGN KEY (`version_id`) REFERENCES `DatasetVersion` (`id`)
+    ON DELETE CASCADE ON UPDATE CASCADE,
+  CONSTRAINT `fk_vsp_vanswer`
+    FOREIGN KEY (`version_answer_id`) REFERENCES `VersionStdAnswer` (`id`)
+    ON DELETE CASCADE ON UPDATE CASCADE,
+  CONSTRAINT `fk_vsp_original`
+    FOREIGN KEY (`original_point_id`) REFERENCES `StdAnswerScoringPoint` (`id`)
     ON DELETE CASCADE ON UPDATE CASCADE
 ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4;
 

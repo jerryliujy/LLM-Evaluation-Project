@@ -99,12 +99,12 @@ class StdAnswerResponse(StdAnswerWithScoringPoints):
             data['scoring_points'] = []
         
         # 转换关联的标准问题
-        if hasattr(db_obj, 'std_question') and db_obj.std_question:
-            data['std_question'] = {
+        if hasattr(db_obj, 'std_question') and db_obj.std_question:            data['std_question'] = {
                 'id': db_obj.std_question.id,
                 'body': db_obj.std_question.body,
                 'question_type': db_obj.std_question.question_type,
-                'dataset_id': db_obj.std_question.dataset_id,
+                'original_dataset_id': db_obj.std_question.original_dataset_id,
+                'current_dataset_id': db_obj.std_question.current_dataset_id,
                 'is_valid': db_obj.std_question.is_valid,
                 'created_at': db_obj.std_question.created_at,
                 'previous_version_id': db_obj.std_question.previous_version_id

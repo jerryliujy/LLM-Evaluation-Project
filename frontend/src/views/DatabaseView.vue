@@ -948,10 +948,10 @@ const createNewVersion = () => {
     showMessage("请先选择一个数据集", "error");
     return;
   }
-  
-  // 跳转到版本编辑页面
+
+  // 跳转到版本创建页面
   router.push({
-    name: 'DatabaseVersionEdit',
+    name: 'DatabaseVersionCreate',
     params: { datasetId: currentDatasetId.value.toString() }
   });
 };
@@ -1103,23 +1103,6 @@ const forceDeleteStdItem = async (item: DatabaseItem) => {
     showMessage(`${itemType}永久删除失败`, "error");
   }
 };
-
-// // 得分点管理
-// const manageScoringPoints = async (stdAnswer: DatabaseItem) => {
-//   selectedItem.value = stdAnswer;
-  
-//   try {
-//     // 调用API获取所有得分点（包括已删除的）
-//     const response = await apiClient.get(`/api/std-answers/${stdAnswer.id}/scoring-points`);
-//     scoringPointsData.value = response.data;
-//   } catch (error) {
-//     console.error('Load scoring points error:', error);
-//     showMessage("加载得分点失败", "error");
-//     scoringPointsData.value = [];
-//   }
-  
-//   showScoringPointsModal.value = true;
-// };
 
 const manageScoringPoints = async (stdAnswer: DatabaseItem) => {
   selectedItem.value = stdAnswer;

@@ -44,7 +44,7 @@ def get_std_questions_paginated(
     
     # 构建基础查询
     query = db.query(models.StdQuestion).options(
-        selectinload(models.StdQuestion.dataset),
+        selectinload(models.StdQuestion.current_dataset),
         selectinload(models.StdQuestion.std_answers.and_(models.StdAnswer.is_valid == True)),
         selectinload(models.StdQuestion.tags)
     )
@@ -54,10 +54,14 @@ def get_std_questions_paginated(
         query = query.filter(models.StdQuestion.is_valid == False)
     elif not include_deleted:
         query = query.filter(models.StdQuestion.is_valid == True)
-    
-    # 应用数据集过滤
+      # 应用数据集过滤（使用范围查询代替直接匹配）
     if dataset_id is not None:
-        query = query.filter(models.StdQuestion.dataset_id == dataset_id)
+        query = query.filter(
+            and_(
+                models.StdQuestion.original_dataset_id <= dataset_id,
+                models.StdQuestion.current_dataset_id >= dataset_id
+            )
+        )
     
     # 应用搜索查询
     if search_query:
@@ -103,21 +107,22 @@ def get_std_questions_paginated(
     questions = query.order_by(models.StdQuestion.id.asc()).offset(skip).limit(limit).all()
       # 转换为字典格式以避免序列化问题
     questions_data = []
-    for question in questions:
+    for question in questions:        
         question_dict = {
             "id": question.id,
-            "dataset_id": question.dataset_id,
+            "original_dataset_id": question.original_dataset_id,
+            "current_dataset_id": question.current_dataset_id,
             "body": question.body,
             "question_type": question.question_type,
             "created_by": question.created_by,
             "created_at": question.created_at,
             "is_valid": question.is_valid,
-            "previous_version_id": question.previous_version_id,
+            "previous_version_id": question.previous_version_id,            
             "dataset": {
-                "id": question.dataset.id,
-                "name": question.dataset.name,
-                "description": question.dataset.description
-            } if question.dataset else None,
+                "id": question.current_dataset.id,
+                "name": question.current_dataset.name,
+                "description": question.current_dataset.description
+            } if question.current_dataset else None,
             "tags": [tag.label for tag in question.tags] if question.tags else [],            
             "std_answers": [
                 {
@@ -136,6 +141,7 @@ def get_std_questions_paginated(
                 } for answer in question.std_answers if answer.is_valid
             ] if question.std_answers else []
         }
+    
         questions_data.append(question_dict)
     
     # 计算分页信息
@@ -228,7 +234,8 @@ def force_delete_std_question(db: Session, question_id: int) -> bool:
 def create_std_question(db: Session, question: schemas.StdQuestionCreate) -> models.StdQuestion:
     """创建标准问题，支持嵌套的标准回答"""
     db_question = models.StdQuestion(
-        dataset_id=question.dataset_id,
+        original_dataset_id=question.original_dataset_id,
+        current_dataset_id=question.current_dataset_id,
         body=question.body,  # 统一字段名为body
         question_type=question.question_type,
         created_by=question.created_by,

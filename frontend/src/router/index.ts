@@ -76,7 +76,14 @@ const routes: Array<RouteRecordRaw> = [
     props: true
   },
   {
-    path: "/database-version-edit/:datasetId",
+    path: "/database-version-create/:datasetId",
+    name: "DatabaseVersionCreate",
+    component: () => import("../views/DatabaseVersionCreateView.vue"),
+    meta: { requiresAuth: true, role: 'admin' },
+    props: true
+  },
+  {
+    path: "/database-version-edit/:datasetId/:versionId",
     name: "DatabaseVersionEdit",
     component: () => import("../views/DatabaseVersionEditView.vue"),
     meta: { requiresAuth: true, role: 'admin' },

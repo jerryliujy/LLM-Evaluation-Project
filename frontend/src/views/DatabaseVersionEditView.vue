@@ -6,9 +6,12 @@
           ← 返回数据库管理
         </button>
         <div class="title-section">
-          <h2>创建新版本</h2>
-          <p class="subtitle" v-if="currentDataset">
-            数据库: {{ currentDataset.name }}
+          <h2>编辑版本</h2>
+          <p class="subtitle" v-if="currentDataset && currentVersion">
+            数据库: {{ currentDataset.name }} - 版本 #{{ currentVersion.id }}
+          </p>
+          <p class="version-description" v-if="currentVersion">
+            {{ currentVersion.description }}
           </p>
         </div>
       </div>
@@ -19,29 +22,8 @@
       </div>
     </div>
 
-    <!-- 版本描述输入 -->
-    <div class="version-description-section" v-if="!versionCreated">
-      <div class="description-card">
-        <h3>版本信息</h3>
-        <div class="form-group">
-          <label for="version-description">版本描述：</label>
-          <textarea
-            id="version-description"
-            v-model="versionDescription"
-            placeholder="请输入这个版本的描述信息，说明本次更新的内容..."
-            rows="3"
-            class="form-control"
-            required
-          ></textarea>
-        </div>
-        <button @click="createVersionAndEnterEdit" class="start-edit-btn" :disabled="!versionDescription.trim()">
-          开始编辑
-        </button>
-      </div>
-    </div>
-
     <!-- 编辑界面 -->
-    <div v-if="versionCreated" class="edit-interface">
+    <div class="edit-interface">
       <!-- 工具栏 -->
       <div class="toolbar">
         <div class="toolbar-left">
@@ -60,8 +42,8 @@
           <button @click="showImportModal = true" class="import-btn">
             📁 导入数据
           </button>
-          <button @click="showCreateModal = true" class="create-btn">
-            ➕ 创建问答对
+          <button @click="goToManualCreation" class="create-btn">
+            ➕ 手动创建
           </button>
         </div>
       </div>
@@ -313,14 +295,43 @@
                 @change="handleFileSelect"
                 style="display: none"
               />
-              <button @click="$refs.fileInput.click()" class="select-file-btn">选择文件</button>
+              <button @click="fileInput?.click()" class="select-file-btn">选择文件</button>
             </div>
-          </div>
-
-          <!-- 预览和导入 -->
+          </div>          <!-- 预览和导入 -->
           <div v-if="importPreviewData.length > 0" class="import-preview">
             <h4>数据预览</h4>
             <p>共 {{ importPreviewData.length }} 条记录</p>
+            
+            <!-- 预览表格 -->
+            <div class="preview-table-container">
+              <table class="preview-table">
+                <thead>
+                  <tr>
+                    <th>问题内容</th>
+                    <th>答案内容</th>
+                    <th>问题类型</th>
+                    <th>标签</th>
+                  </tr>
+                </thead>
+                <tbody>
+                  <tr v-for="(item, index) in importPreviewData.slice(0, 5)" :key="index">
+                    <td class="preview-cell">{{ item.body || '未提供' }}</td>
+                    <td class="preview-cell">{{ item.answer || '未提供' }}</td>
+                    <td class="preview-cell">{{ item.question_type === 'text' ? '文本题' : '选择题' }}</td>
+                    <td class="preview-cell">
+                      <span v-if="item.tags && item.tags.length > 0" class="preview-tags">
+                        <span v-for="tag in item.tags" :key="tag" class="preview-tag">{{ tag }}</span>
+                      </span>
+                      <span v-else>无标签</span>
+                    </td>
+                  </tr>
+                </tbody>
+              </table>
+              <p v-if="importPreviewData.length > 5" class="preview-note">
+                显示前5条记录，总共{{ importPreviewData.length }}条
+              </p>
+            </div>
+            
             <div class="preview-actions">
               <button @click="clearImportPreview" class="clear-btn">清除</button>
               <button @click="confirmImport" class="import-confirm-btn" :disabled="importing">
@@ -347,7 +358,7 @@
 import { ref, computed, onMounted } from 'vue';
 import { useRoute, useRouter } from 'vue-router';
 import { datasetService } from '@/services/datasetService';
-import { apiClient } from '@/services/api';
+import { versionService } from '@/services/versionService';
 
 // 路由
 const route = useRoute();
@@ -355,9 +366,8 @@ const router = useRouter();
 
 // 响应式数据
 const datasetId = computed(() => route.params.datasetId as string);
+const versionId = computed(() => route.params.versionId as string);
 const currentDataset = ref<any>(null);
-const versionDescription = ref('');
-const versionCreated = ref(false);
 const currentVersion = ref<any>(null);
 
 // 编辑相关
@@ -365,8 +375,6 @@ const stdQuestions = ref<any[]>([]);
 const modifiedItems = ref<number[]>([]);
 const saving = ref(false);
 const hasChanges = computed(() => modifiedItems.value.length > 0);
-
-// 弹窗控制
 const showEditModal = ref(false);
 const showCreateModal = ref(false);
 const showImportModal = ref(false);
@@ -400,7 +408,19 @@ const messageType = ref<'success' | 'error'>('success');
 const goBackToDatabase = () => {
   router.push({
     name: 'DatabaseView',
-    query: { dataset: datasetId.value }
+    params: { id: datasetId.value }
+  });
+};
+
+const goToManualCreation = () => {
+  // 跳转到手动创建页面，并传递版本信息
+  router.push({
+    name: 'ManualStdQaCreation',
+    params: { datasetId: datasetId.value },
+    query: { 
+      fromVersion: 'true',
+      versionId: versionId.value 
+    }
   });
 };
 
@@ -421,35 +441,19 @@ const loadDataset = async () => {
   }
 };
 
-const createVersionAndEnterEdit = async () => {
-  if (!versionDescription.value.trim()) {
-    showMessage('请输入版本描述', 'error');
-    return;
-  }
-
+const loadVersion = async () => {
   try {
-    // 创建新版本（这里需要实现后端API）
-    const response = await apiClient.post(`/datasets/${datasetId.value}/versions`, {
-      description: versionDescription.value
-    });
-    
-    currentVersion.value = response.data;
-    versionCreated.value = true;
-    
-    // 加载标准问答对数据
-    await loadStdQuestions();
-    
-    showMessage('版本创建成功，开始编辑', 'success');
+    currentVersion.value = await versionService.getVersion(Number(versionId.value));
   } catch (error) {
-    showMessage('创建版本失败', 'error');
-    console.error('Create version error:', error);
+    showMessage('加载版本信息失败', 'error');
+    console.error('Load version error:', error);
   }
 };
 
 const loadStdQuestions = async () => {
   try {
-    const response = await apiClient.get(`/datasets/${datasetId.value}/std-questions-with-answers`);
-    stdQuestions.value = response.data;
+    // 加载版本中的标准问答对
+    stdQuestions.value = await versionService.getVersionQuestions(Number(versionId.value));
   } catch (error) {
     showMessage('加载问答对失败', 'error');
     console.error('Load std questions error:', error);
@@ -481,12 +485,16 @@ const saveEdit = async () => {
   editSaving.value = true;
   try {
     // 这里实现保存编辑的逻辑，需要后端支持版本管理
-    await apiClient.put(`/versions/${currentVersion.value.id}/std-questions/${editForm.value.id}`, editForm.value);
+    const updatedQuestion = await versionService.updateVersionQuestion(
+      Number(currentVersion.value.id), 
+      editForm.value.id, 
+      editForm.value
+    );
     
     // 更新本地数据
     const index = stdQuestions.value.findIndex(q => q.id === editForm.value.id);
     if (index !== -1) {
-      stdQuestions.value[index] = { ...editForm.value };
+      stdQuestions.value[index] = updatedQuestion;
     }
     
     // 添加到修改列表
@@ -508,7 +516,7 @@ const deleteQuestion = async (questionId: number) => {
   if (!confirm('确定要删除这个问答对吗？')) return;
   
   try {
-    await apiClient.delete(`/versions/${currentVersion.value.id}/std-questions/${questionId}`);
+    await versionService.deleteVersionQuestion(Number(currentVersion.value.id), questionId);
     stdQuestions.value = stdQuestions.value.filter(q => q.id !== questionId);
     modifiedItems.value = modifiedItems.value.filter(id => id !== questionId);
     showMessage('删除成功', 'success');
@@ -521,14 +529,18 @@ const deleteQuestion = async (questionId: number) => {
 const createNewQA = async () => {
   createSaving.value = true;
   try {
-    const response = await apiClient.post(`/versions/${currentVersion.value.id}/std-qa`, {
-      question: createForm.value,
+    const newQuestion = await versionService.createVersionQA(Number(currentVersion.value.id), {
+      question: {
+        body: createForm.value.body,
+        question_type: createForm.value.question_type,
+        tags: []
+      },
       answer: {
         answer: createForm.value.answer
       }
     });
     
-    stdQuestions.value.push(response.data);
+    stdQuestions.value.push(newQuestion);
     showMessage('创建成功', 'success');
     closeCreateModal();
   } catch (error) {
@@ -545,10 +557,15 @@ const saveVersion = async () => {
     return;
   }
   
+  // 询问用户是否公开
+  const isPublic = confirm('版本保存后是否立即公开发布？\n\n选择"确定"将公开发布，其他用户可以看到\n选择"取消"将保存为私有版本，仅您可以访问');
+  
   saving.value = true;
   try {
-    await apiClient.post(`/versions/${currentVersion.value.id}/commit`);
-    showMessage('版本保存成功', 'success');
+    await versionService.commitVersion(Number(currentVersion.value.id), {
+      is_public: isPublic
+    });
+    showMessage(`版本保存成功，已${isPublic ? '公开发布' : '保存为私有'}`, 'success');
     
     // 跳转回数据库管理
     setTimeout(() => {
@@ -667,13 +684,11 @@ const clearImportPreview = () => {
 const confirmImport = async () => {
   importing.value = true;
   try {
-    const response = await apiClient.post(`/versions/${currentVersion.value.id}/import`, {
-      data: importPreviewData.value
-    });
+    const response = await versionService.importDataToVersion(Number(currentVersion.value.id), importPreviewData.value);
     
     // 重新加载数据
     await loadStdQuestions();
-    showMessage(`成功导入 ${response.data.imported} 条记录`, 'success');
+    showMessage(`成功导入 ${response.imported} 条记录`, 'success');
     closeImportModal();
   } catch (error) {
     showMessage('导入失败', 'error');
@@ -686,6 +701,8 @@ const confirmImport = async () => {
 // 生命周期
 onMounted(async () => {
   await loadDataset();
+  await loadVersion();
+  await loadStdQuestions();
 });
 </script>
 
@@ -737,6 +754,17 @@ onMounted(async () => {
   margin: 5px 0 0 0;
   color: #666;
   font-size: 14px;
+}
+
+.version-description {
+  margin: 8px 0 0 0;
+  color: #555;
+  font-size: 13px;
+  font-style: italic;
+  background: #f8f9fa;
+  padding: 4px 8px;
+  border-radius: 4px;
+  border-left: 3px solid #007bff;
 }
 
 .save-version-btn {
@@ -1338,74 +1366,66 @@ onMounted(async () => {
   margin-bottom: 15px;
 }
 
-.preview-actions {
-  display: flex;
-  justify-content: flex-end;
-  gap: 10px;
-  margin-top: 15px;
-}
-
-.clear-btn {
-  padding: 6px 12px;
-  background: #6c757d;
-  color: white;
-  border: none;
+/* 导入预览表格样式 */
+.preview-table-container {
+  margin: 15px 0;
+  max-height: 300px;
+  overflow-y: auto;
+  border: 1px solid #dee2e6;
   border-radius: 4px;
-  cursor: pointer;
-  font-size: 12px;
 }
 
-.import-confirm-btn {
-  padding: 6px 12px;
-  background: #28a745;
-  color: white;
-  border: none;
-  border-radius: 4px;
-  cursor: pointer;
-  font-size: 12px;
+.preview-table {
+  width: 100%;
+  border-collapse: collapse;
+  font-size: 13px;
 }
 
-.import-confirm-btn:disabled {
-  background: #6c757d;
-  cursor: not-allowed;
-}
-
-.error-message {
-  background: #f8d7da;
-  color: #721c24;
-  padding: 10px;
-  border-radius: 4px;
-  margin-top: 10px;
-}
-
-.message {
-  position: fixed;
-  top: 20px;
-  right: 20px;
-  padding: 15px 20px;
-  color: white;
-  border-radius: 4px;
+.preview-table th {
+  background: #f8f9fa;
+  padding: 10px 8px;
+  text-align: left;
   font-weight: 500;
-  z-index: 1100;
-  animation: slideIn 0.3s ease;
+  border-bottom: 1px solid #dee2e6;
+  position: sticky;
+  top: 0;
+  z-index: 1;
 }
 
-.message.success {
-  background: #28a745;
+.preview-table td {
+  padding: 8px;
+  border-bottom: 1px solid #f1f3f4;
 }
 
-.message.error {
-  background: #dc3545;
+.preview-cell {
+  max-width: 200px;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+  word-break: break-word;
 }
 
-@keyframes slideIn {
-  from {
-    transform: translateX(100%);
-    opacity: 0;
-  }
-  to {
-    transform: translateX(0);
-    opacity: 1;
-  }
+.preview-tags {
+  display: flex;
+  gap: 4px;
+  flex-wrap: wrap;
+}
+
+.preview-tag {
+  background: #e9ecef;
+  color: #495057;
+  padding: 1px 6px;
+  border-radius: 8px;
+  font-size: 11px;
+}
+
+.preview-note {
+  font-size: 12px;
+  color: #6c757d;
+  text-align: center;
+  margin: 10px 0 0 0;
+  padding: 8px;
+  background: #f8f9fa;
+  border-top: 1px solid #dee2e6;
 }
 </style>

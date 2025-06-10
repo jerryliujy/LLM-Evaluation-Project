@@ -1,14 +1,14 @@
 <template>
-  <div class="manual-creation-container">
-    <div class="header">
+  <div class="manual-creation-container">    <div class="header">
       <div class="header-left">
-        <button @click="goBackToDataImport" class="back-btn">
-          ← 返回数据导入
+        <button @click="goBack" class="back-btn">
+          {{ isFromVersion ? '← 返回版本编辑' : '← 返回数据导入' }}
         </button>
         <div class="title-section">
-          <h2>手动创建标准问答对</h2>
+          <h2>{{ isFromVersion ? '为新版本创建标准问答对' : '手动创建标准问答对' }}</h2>
           <p class="subtitle" v-if="currentDataset">
             数据库: {{ currentDataset.name }}
+            <span v-if="isFromVersion" class="version-badge">版本创建模式</span>
           </p>
         </div>
       </div>
@@ -425,6 +425,10 @@ const submitting = ref(false)
 const successMessage = ref('')
 const errorMessage = ref('')
 
+// 版本相关数据
+const isFromVersion = computed(() => route.query.fromVersion === 'true')
+const versionId = computed(() => route.query.versionId as string)
+
 // 表单数据
 const stdQaForm = ref({
   question: '',
@@ -513,11 +517,23 @@ watch(activeTab, () => {
 })
 
 // 方法
-const goBackToDataImport = () => {
-  router.push({
-    name: 'DataImport',
-    query: { datasetId: datasetId.value }
-  })
+const goBack = () => {
+  if (isFromVersion.value) {
+    // 返回版本编辑页面，使用正确的路由参数
+    router.push({
+      name: 'DatabaseVersionEdit',
+      params: { 
+        datasetId: datasetId.value,
+        versionId: versionId.value 
+      }
+    })
+  } else {
+    // 返回数据导入页面
+    router.push({
+      name: 'DataImport',
+      query: { datasetId: datasetId.value }
+    })
+  }
 }
 
 const loadDataset = async () => {
@@ -874,12 +890,14 @@ const submitStdQa = async () => {
       raw_answer_ids: stdQaForm.value.rawAnswerIds, 
       expert_answer_ids: stdQaForm.value.expertAnswerIds, 
       tags: stdQaForm.value.customTags 
+    }    // 调用相应的API创建标准问答对
+    if (isFromVersion.value) {
+      await createStdQaPairForVersion(payload)
+      successMessage.value = '标准问答对已添加到新版本中！'
+    } else {
+      await createStdQaPair(payload)
+      successMessage.value = '标准问答对创建成功！'
     }
-
-    // 调用API创建标准问答对
-    await createStdQaPair(payload)
-    
-    successMessage.value = '标准问答对创建成功！'
     setTimeout(() => {
       successMessage.value = ''
     }, 3000)
@@ -896,6 +914,25 @@ const submitStdQa = async () => {
 // 创建标准问答对的API调用
 const createStdQaPair = async (payload: any) => {
   const response = await apiClient.post('/std-qa/create', payload)
+  return response.data
+}
+
+// 在版本模式下创建标准问答对的API调用
+const createStdQaPairForVersion = async (payload: any) => {
+  // 转换数据格式以适配版本API
+  const versionPayload = {
+    question: {
+      body: payload.question,
+      question_type: payload.question_type,
+      tags: payload.tags || []
+    },
+    answer: {
+      answer: payload.answer,
+      answered_by: payload.answered_by
+    }
+  }
+  
+  const response = await apiClient.post(`/versions/${versionId.value}/std-qa`, versionPayload)
   return response.data
 }
 
@@ -949,10 +986,22 @@ watch(errorMessage, (newValue) => {
   color: #333;
 }
 
+.version-badge {
+  background: linear-gradient(135deg, #28a745 0%, #20c997 100%);
+  color: white;
+  padding: 3px 8px;
+  border-radius: 12px;
+  font-size: 11px;
+  font-weight: 500;
+  margin-left: 10px;
+}
+
 .subtitle {
-  margin: 0;
+  margin: 5px 0 0 0;
   color: #666;
   font-size: 14px;
+  display: flex;
+  align-items: center;
 }
 
 .creation-layout {

@@ -3,7 +3,8 @@ from typing import Optional, List, Any
 from datetime import datetime
 
 class StdQuestionBase(BaseModel):
-    dataset_id: int
+    original_dataset_id: int
+    current_dataset_id: int
     body: str  # 统一字段名为body
     question_type: str
     created_by: Optional[int] = None  # 改为int类型用户ID
@@ -16,6 +17,8 @@ class StdQuestionUpdate(BaseModel):
     question_type: Optional[str] = None
     created_by: Optional[int] = None  # 改为int类型用户ID
     previous_version_id: Optional[int] = None
+    original_dataset_id: Optional[int] = None
+    current_dataset_id: Optional[int] = None
     tags: Optional[List[str]] = None  # 添加标签支持
 
 class StdQuestion(StdQuestionBase):
@@ -34,7 +37,7 @@ class StdQuestionResponse(StdQuestion):
     
     class Config:        
         from_attributes = True
-    
+        
     @classmethod
     def from_db_model(cls, db_obj):
         """从数据库对象创建响应模型"""
@@ -43,7 +46,8 @@ class StdQuestionResponse(StdQuestion):
             'id': db_obj.id,
             'body': db_obj.body,
             'question_type': db_obj.question_type,
-            'dataset_id': db_obj.dataset_id,
+            'original_dataset_id': db_obj.original_dataset_id,
+            'current_dataset_id': db_obj.current_dataset_id,
             'is_valid': db_obj.is_valid,
             'created_at': db_obj.created_at,
             'previous_version_id': db_obj.previous_version_id,
@@ -55,12 +59,12 @@ class StdQuestionResponse(StdQuestion):
         else:
             data['tags'] = []
         
-        # 转换数据集信息
-        if hasattr(db_obj, 'dataset') and db_obj.dataset:
+        # 转换数据集信息（使用当前数据集）
+        if hasattr(db_obj, 'current_dataset') and db_obj.current_dataset:
             data['dataset'] = {
-                'id': db_obj.dataset.id,
-                'name': db_obj.dataset.name,
-                'description': db_obj.dataset.description,
+                'id': db_obj.current_dataset.id,
+                'name': db_obj.current_dataset.name,
+                'description': db_obj.current_dataset.description,
             }
         else:
             data['dataset'] = None

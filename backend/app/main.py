@@ -55,6 +55,7 @@ app.include_router(overview.router)
 app.include_router(relationship_records.router)
 app.include_router(std_qa_management.router)
 app.include_router(dataset_versions.router)
+app.include_router(dataset_versions.version_router)  
 
 @app.get("/")
 def read_root():

@@ -54,13 +54,19 @@ async def get_std_questions_overview(
         selectinload(StdQuestion.std_answers.and_(
             StdAnswer.is_valid == True if not include_invalid else True
         )),
-        joinedload(StdQuestion.dataset)
+        joinedload(StdQuestion.current_dataset)
     )
     
     if not include_invalid:
         query = query.filter(StdQuestion.is_valid == True)
+    
     if dataset_id is not None:
-        query = query.filter(StdQuestion.dataset_id == dataset_id)
+        query = query.filter(
+            and_(
+                StdQuestion.original_dataset_id <= dataset_id,
+                StdQuestion.current_dataset_id >= dataset_id
+            )
+        )
       # 添加搜索查询过滤
     if search_query:
         search_term = f"%{search_query}%"
@@ -172,9 +178,8 @@ async def get_std_questions_overview(
             # 详细数据（用于详情弹窗）
             "raw_questions_detail": raw_questions_list,
             "raw_answers_detail": raw_answers_list,
-            "expert_answers_detail": expert_answers_list,
-            "dataset_id": std_q.dataset_id,
-            "dataset_description": std_q.dataset.description if std_q.dataset else None,
+            "expert_answers_detail": expert_answers_list,            "dataset_id": std_q.current_dataset_id,
+            "dataset_description": std_q.current_dataset.description if std_q.current_dataset else None,
             "created_at": std_q.created_at.isoformat() if std_q.created_at else None,
             "is_valid": std_q.is_valid,
             
@@ -196,8 +201,14 @@ async def get_std_questions_overview(
     
     if not include_invalid:
         total_query = total_query.filter(StdQuestion.is_valid == True)
+    
     if dataset_id is not None:
-        total_query = total_query.filter(StdQuestion.dataset_id == dataset_id)
+        total_query = total_query.filter(
+            and_(
+                StdQuestion.original_dataset_id <= dataset_id,
+                StdQuestion.current_dataset_id >= dataset_id
+            )
+        )
       # 添加与主查询相同的搜索过滤条件
     if search_query:
         search_term = f"%{search_query}%"

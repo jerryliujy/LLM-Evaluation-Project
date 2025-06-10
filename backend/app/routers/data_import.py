@@ -312,7 +312,8 @@ async def upload_std_qa_data(
             
             # 创建标准问题
             std_question = StdQuestion(
-                dataset_id=dataset_id,
+                original_dataset_id=dataset_id,
+                current_dataset_id=dataset_id,
                 body=item.get('body', ''),
                 question_type=item.get('question_type', 'text'),
                 created_by=current_user.id,
@@ -379,6 +380,8 @@ async def upload_std_qa_data(
             if answer_text:
                 std_answer = StdAnswer(
                     std_question_id=std_question.id,
+                    original_dataset_id=dataset_id,
+                    current_dataset_id=dataset_id,
                     answer=answer_text,
                     answered_by=current_user.id,
                     is_valid=True
