@@ -9,6 +9,8 @@ export interface MarketplaceDataset {
   description: string;
   version: number;
   question_count: number;
+  choice_question_count: number;
+  text_question_count: number;
   is_public: boolean;
   created_by: number;
   create_time: string;
@@ -89,13 +91,21 @@ export const llmEvaluationService = {  // 获取数据集市场列表
     skip?: number;
     limit?: number;
     search?: string;
+    all_datasets?: boolean;  // 新增：是否获取所有数据集
   } = {}): Promise<MarketplaceDataset[]> {
     const queryParams = new URLSearchParams();
     if (params.skip !== undefined) queryParams.append('skip', params.skip.toString());
     if (params.limit !== undefined) queryParams.append('limit', params.limit.toString());
     if (params.search) queryParams.append('search', params.search);
+    if (params.all_datasets) queryParams.append('all_datasets', 'true');
     
     const response = await apiClient.get(`/llm-evaluation/marketplace/datasets?${queryParams}`);
+    return response.data;
+  },
+
+  // 获取单个数据集信息
+  async getMarketplaceDataset(datasetId: number): Promise<MarketplaceDataset> {
+    const response = await apiClient.get(`/llm-evaluation/marketplace/datasets/${datasetId}`);
     return response.data;
   },
 
@@ -109,27 +119,24 @@ export const llmEvaluationService = {  // 获取数据集市场列表
   async getAvailableModels(): Promise<AvailableModel[]> {
     const response = await apiClient.get('/llm-evaluation/models');
     return response.data;
-  },
-  
-  // 创建评测任务
+  },  // 创建评测任务
   async createEvaluationTask(taskData: {
     task_name: string;
     dataset_id: number;
     model_config: {
-      model_name: string;
-      model_version?: string;
-      api_endpoint?: string;
-      api_key?: string;
+      model_id: number;
+      api_key: string;
       system_prompt?: string;
-      evaluation_prompt?: string;
       temperature?: number;
       max_tokens?: number;
-      timeout?: number;
+      top_k?: number;
+      enable_reasoning?: boolean;
     };
     evaluation_config?: Record<string, any>;
     is_auto_score?: boolean;
     question_limit?: number;
   }): Promise<EvaluationTask> {
+    console.log('LLM Evaluation Service - sending task data:', JSON.stringify(taskData, null, 2));
     const response = await apiClient.post('/llm-evaluation/tasks', taskData);
     return response.data;
   },

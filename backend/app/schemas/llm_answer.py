@@ -100,6 +100,8 @@ class MarketplaceDatasetInfo(BaseModel):
     description: str
     version: int
     question_count: int
+    choice_question_count: int = 0
+    text_question_count: int = 0
     is_public: bool
     created_by: int
     create_time: datetime

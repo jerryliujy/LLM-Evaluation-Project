@@ -2,7 +2,7 @@
 LLM Evaluation Router for regular users
 Provides marketplace access, task-based LLM evaluation, and result management
 """
-from fastapi import APIRouter, Depends, HTTPException, status, BackgroundTasks
+from fastapi import APIRouter, Depends, HTTPException, status, BackgroundTasks, Request
 from sqlalchemy.orm import Session
 from typing import List, Optional, Dict, Any
 import json
@@ -48,25 +48,42 @@ def get_marketplace_datasets(
     skip: int = 0,
     limit: int = 20,
     search: Optional[str] = None,
+    all_datasets: bool = False,  # 新增：是否获取所有数据集
     db: Session = Depends(get_db),
     current_user: User = Depends(get_current_user)
 ):
-    """获取数据集市场列表（仅公开数据集）"""
-    # 只显示公开的数据集
-    datasets, total = get_datasets_paginated(
-        db=db,
-        skip=skip,
-        limit=limit,
+    """获取公开数据集市场列表"""
+    # 根据参数决定是否限制数量
+    actual_limit = None if all_datasets else limit
+    
+    datasets = get_datasets_paginated(
+        db=db, 
+        skip=skip, 
+        limit=actual_limit,
         is_public=True,
-        search_query=search
+        search=search
     )
     
     marketplace_datasets = []
     for dataset in datasets:
-        # 统计问题数量
+        # 统计问题总数
         question_count = db.query(StdQuestion).filter(
             StdQuestion.current_dataset_id == dataset.id,
             StdQuestion.is_valid == True
+        ).count()
+        
+        # 统计选择题数量
+        choice_question_count = db.query(StdQuestion).filter(
+            StdQuestion.current_dataset_id == dataset.id,
+            StdQuestion.is_valid == True,
+            StdQuestion.question_type == 'choice'
+        ).count()
+        
+        # 统计文本题数量
+        text_question_count = db.query(StdQuestion).filter(
+            StdQuestion.current_dataset_id == dataset.id,
+            StdQuestion.is_valid == True,
+            StdQuestion.question_type == 'text'
         ).count()
         
         marketplace_datasets.append(MarketplaceDatasetInfo(
@@ -75,6 +92,8 @@ def get_marketplace_datasets(
             description=dataset.description,
             version=dataset.version,
             question_count=question_count,
+            choice_question_count=choice_question_count,
+            text_question_count=text_question_count,
             is_public=dataset.is_public,
             created_by=dataset.created_by,
             create_time=dataset.create_time
@@ -83,14 +102,13 @@ def get_marketplace_datasets(
     return marketplace_datasets
 
 
-@router.get("/marketplace/datasets/{dataset_id}/download", response_model=DatasetDownloadResponse)
-def download_dataset(
+@router.get("/marketplace/datasets/{dataset_id}", response_model=MarketplaceDatasetInfo)
+def get_marketplace_dataset(
     dataset_id: int,
-    format: str = "json",
     db: Session = Depends(get_db),
     current_user: User = Depends(get_current_user)
 ):
-    """下载数据集（JSON格式）"""
+    """获取单个数据集的详细信息（仅公开数据集）"""
     # 验证数据集存在且公开
     dataset = db.query(Dataset).filter(
         Dataset.id == dataset_id,
@@ -103,51 +121,37 @@ def download_dataset(
             detail="Dataset not found or not public"
         )
     
-    # 获取数据集中的所有问题和答案
-    questions = db.query(StdQuestion).filter(
-        StdQuestion.current_dataset_id == dataset_id,
+    # 统计问题总数
+    question_count = db.query(StdQuestion).filter(
+        StdQuestion.current_dataset_id == dataset.id,
         StdQuestion.is_valid == True
-    ).all()
+    ).count()
     
-    questions_data = []
-    for question in questions:
-        # 获取标准答案
-        std_answers = [answer for answer in question.std_answers if answer.is_valid]
-        answers_data = []
-        
-        for answer in std_answers:
-            scoring_points = []
-            for point in answer.scoring_points:
-                scoring_points.append({
-                    "answer": point.answer,
-                    "point_order": point.point_order
-                })
-            
-            answers_data.append({
-                "id": answer.id,
-                "answer": answer.answer,
-                "scoring_points": scoring_points
-            })
-        
-        questions_data.append({
-            "id": question.id,
-            "body": question.body,
-            "question_type": question.question_type,
-            "std_answers": answers_data
-        })
+    # 统计选择题数量
+    choice_question_count = db.query(StdQuestion).filter(
+        StdQuestion.current_dataset_id == dataset.id,
+        StdQuestion.is_valid == True,
+        StdQuestion.question_type == 'choice'
+    ).count()
     
-    return DatasetDownloadResponse(
-        dataset_info=MarketplaceDatasetInfo(
-            id=dataset.id,
-            name=dataset.name,
-            description=dataset.description,
-            version=dataset.version,
-            question_count=len(questions_data),
-            is_public=dataset.is_public,
-            created_by=dataset.created_by,
-            create_time=dataset.create_time
-        ),
-        questions=questions_data
+    # 统计文本题数量
+    text_question_count = db.query(StdQuestion).filter(
+        StdQuestion.current_dataset_id == dataset.id,
+        StdQuestion.is_valid == True,
+        StdQuestion.question_type == 'text'
+    ).count()
+    
+    return MarketplaceDatasetInfo(
+        id=dataset.id,
+        name=dataset.name,
+        description=dataset.description,
+        version=dataset.version,
+        question_count=question_count,
+        choice_question_count=choice_question_count,
+        text_question_count=text_question_count,
+        is_public=dataset.is_public,
+        created_by=dataset.created_by,
+        create_time=dataset.create_time
     )
 
 
@@ -159,11 +163,10 @@ def get_available_models(
     """获取可用的LLM模型列表"""
     # 从数据库获取活跃的模型
     db_models = get_active_llms(db)
-    
     models = []
     for db_model in db_models:
         model = AvailableModel(
-            id=db_model.name,  # 使用name作为id
+            id=db_model.id, 
             name=db_model.name,
             display_name=db_model.display_name,
             description=db_model.description or "",
@@ -282,20 +285,46 @@ def get_prompt_template_by_key(
     if not template:
         raise HTTPException(
             status_code=status.HTTP_404_NOT_FOUND,
-            detail=f"Template with key '{template_key}' not found"
+            detail="Template not found"
         )
     
     return template
 
 
 @router.post("/tasks", response_model=LLMEvaluationTaskResponse)
-def create_evaluation_task(
+async def create_evaluation_task(
     request: EvaluationStartRequest,
+    raw_request: Request,
     background_tasks: BackgroundTasks,
     db: Session = Depends(get_db),
     current_user: User = Depends(get_current_user)
 ):
     """创建并启动LLM评测任务"""
+    try:
+        # 获取原始请求体
+        body = await raw_request.body()
+        print(f"=== Raw Request Body ===")
+        print(f"Body: {body.decode('utf-8')}")
+        print(f"Body parsed: {json.loads(body.decode('utf-8'))}")
+        print(f"========================")
+        
+        # 打印调试信息
+        print(f"=== Debug Info ===")
+        print(f"Request type: {type(request)}")
+        print(f"Request data: {request}")
+        print(f"Request dict: {request.dict()}")        
+        print(f"Model config: {request.model_settings}")
+        print(f"Model config type: {type(request.model_settings)}")
+        if hasattr(request.model_settings, '__dict__'):
+            print(f"Model config dict: {request.model_settings.__dict__}")
+        if hasattr(request.model_settings, 'model_id'):
+            print(f"Model config model_id: {request.model_settings.model_id}")
+        print(f"=================")
+    except Exception as e:
+        print(f"Error in debug info: {e}")
+        import traceback
+        traceback.print_exc()
+
     # 验证数据集存在
     dataset = db.query(Dataset).filter(Dataset.id == request.dataset_id).first()
     if not dataset:        
@@ -303,30 +332,41 @@ def create_evaluation_task(
             status_code=status.HTTP_404_NOT_FOUND,
             detail="Dataset not found"
         )
-    # 查找或创建LLM模型记录
-    llm = db.query(LLM).filter(LLM.name == request.model_config.model_name).first()
-    if not llm:
-        llm = LLM(
-            name=request.model_config.model_name,
-            version=getattr(request.model_config, 'model_version', 'latest'),
-            affiliation="API"
+      # 直接通过model_id查找LLM模型记录
+    model_id = request.model_settings.model_id if hasattr(request.model_settings, 'model_id') else request.model_settings.get('model_id')
+    print(f"Extracted model_id: {model_id}")
+    
+    if not model_id:
+        raise HTTPException(
+            status_code=status.HTTP_400_BAD_REQUEST,
+            detail="Model ID is required"
         )
-        db.add(llm)
-        db.commit()
-        db.refresh(llm)    # 创建任务数据
+    
+    llm = db.query(LLM).filter(LLM.id == model_id).first()
+    if not llm:
+        raise HTTPException(
+            status_code=status.HTTP_404_NOT_FOUND,
+            detail="Model not found"
+        )
+    # 创建任务数据
+    def get_config_value(config, key, default=None):
+        if hasattr(config, key):
+            return getattr(config, key, default)
+        else:
+            return config.get(key, default)
+        
     task_data = LLMEvaluationTaskCreate(
         name=request.task_name,
         description=f"LLM评测任务: {request.task_name}",
         dataset_id=request.dataset_id,
-        model_id=llm.id,  # 使用LLM ID而不是名称
-        system_prompt=request.model_config.system_prompt,
-        temperature=getattr(request.model_config, 'temperature', Decimal("0.7")),
-        max_tokens=getattr(request.model_config, 'max_tokens', 2000),
-        top_k=getattr(request.model_config, 'top_k', 50),
-        enable_reasoning=getattr(request.model_config, 'enable_reasoning', False),
-        evaluation_llm_id=getattr(request.evaluation_config, 'evaluation_llm_id', None) if request.is_auto_score else None,
-        evaluation_prompt=getattr(request.evaluation_config, 'evaluation_prompt', None) if request.is_auto_score else None,
-        api_key=request.model_config.api_key
+        model_id=llm.id,  # 使用验证过的LLM ID        system_prompt=get_config_value(request.model_settings, 'system_prompt'),
+        temperature=Decimal(str(get_config_value(request.model_settings, 'temperature', 0.7))),  # 转换为Decimal
+        max_tokens=get_config_value(request.model_settings, 'max_tokens', 2000),
+        top_k=get_config_value(request.model_settings, 'top_k', 50),
+        enable_reasoning=get_config_value(request.model_settings, 'enable_reasoning', False),
+        evaluation_llm_id=request.evaluation_config.get('evaluation_llm_id') if request.is_auto_score and request.evaluation_config else None,
+        evaluation_prompt=request.evaluation_config.get('evaluation_prompt') if request.is_auto_score and request.evaluation_config else None,
+        api_key=get_config_value(request.model_settings, 'api_key')
     )
     
     # 创建任务
@@ -336,8 +376,7 @@ def create_evaluation_task(
     background_tasks.add_task(
         task_processor.process_evaluation_task,
         task.id,
-        db,
-        question_limit=request.question_limit
+        request.question_limit
     )
     
     return LLMEvaluationTaskResponse.from_orm(task)
@@ -378,7 +417,7 @@ def get_evaluation_task(
             detail="Task not found"
         )
     
-    if task.user_id != current_user.id:
+    if task.created_by != current_user.id:
         raise HTTPException(
             status_code=status.HTTP_403_FORBIDDEN,
             detail="Access denied"
@@ -402,7 +441,7 @@ def get_task_progress_endpoint(
             detail="Task not found"
         )
     
-    if task.user_id != current_user.id:
+    if task.created_by != current_user.id:
         raise HTTPException(
             status_code=status.HTTP_403_FORBIDDEN,
             detail="Access denied"
@@ -414,11 +453,11 @@ def get_task_progress_endpoint(
         task_id=task.id,
         status=task.status,
         progress=task.progress,
-        current_question=task.current_question,
+        current_question=task.completed_questions,  # 使用completed_questions作为当前问题数
         total_questions=task.total_questions,
-        successful_count=task.successful_count,
-        failed_count=task.failed_count,
-        average_score=task.average_score,
+        successful_count=task.completed_questions,  # 使用completed_questions
+        failed_count=task.failed_questions,
+        average_score=task.score,  # 使用score字段
         **progress_data
     )
 
@@ -438,7 +477,7 @@ def cancel_evaluation_task(
             detail="Task not found"
         )
     
-    if task.user_id != current_user.id:
+    if task.created_by != current_user.id:
         raise HTTPException(
             status_code=status.HTTP_403_FORBIDDEN,
             detail="Access denied"
@@ -472,7 +511,7 @@ def get_task_results(
             detail="Task not found"
         )
     
-    if task.user_id != current_user.id:
+    if task.created_by != current_user.id:
         raise HTTPException(
             status_code=status.HTTP_403_FORBIDDEN,
             detail="Access denied"
@@ -486,14 +525,14 @@ def get_task_results(
     
     return EvaluationResultSummary(
         task_id=task.id,
-        task_name=task.task_name,
+        task_name=task.name,  # 使用name字段
         dataset_name=task.dataset.name,
-        model_name=task.model_name,
+        model_name=task.model.name if task.model else "Unknown",  # 使用关联的模型名称
         total_questions=task.total_questions,
-        successful_count=task.successful_count,
-        failed_count=task.failed_count,
-        average_score=task.average_score,
-        completion_rate=task.successful_count / task.total_questions if task.total_questions > 0 else 0,
+        successful_count=task.completed_questions,  # 使用completed_questions
+        failed_count=task.failed_questions,
+        average_score=task.score,  # 使用score字段
+        completion_rate=task.completed_questions / task.total_questions if task.total_questions > 0 else 0,
         created_at=task.created_at,
         completed_at=task.completed_at
     )
@@ -515,7 +554,7 @@ def download_task_results(
             detail="Task not found"
         )
     
-    if task.user_id != current_user.id:
+    if task.created_by != current_user.id:
         raise HTTPException(
             status_code=status.HTTP_403_FORBIDDEN,
             detail="Access denied"
@@ -523,7 +562,7 @@ def download_task_results(
     
     # 获取任务的所有答案和评测结果
     answers = db.query(LLMAnswer).filter(
-        LLMAnswer.evaluation_task_id == task_id
+        LLMAnswer.task_id == task_id
     ).all()
     
     results = []
@@ -561,16 +600,16 @@ def download_task_results(
     return {
         "task_info": {
             "id": task.id,
-            "name": task.task_name,
-            "model": task.model_name,
+            "name": task.name,  # 使用name字段
+            "model": task.model.name if task.model else "Unknown",  # 使用关联的模型名称
             "dataset": task.dataset.name,
             "created_at": task.created_at.isoformat()
         },
         "results": results,
         "summary": {
             "total_questions": task.total_questions,
-            "successful_count": task.successful_count,
-            "failed_count": task.failed_count,
-            "average_score": task.average_score
+            "successful_count": task.completed_questions,  # 使用completed_questions
+            "failed_count": task.failed_questions,
+            "average_score": task.score  # 使用score字段
         }
     }

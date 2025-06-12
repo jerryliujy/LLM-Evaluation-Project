@@ -17,7 +17,7 @@ def get_dataset(db: Session, dataset_id: int) -> Optional[Dataset]:
 def get_datasets_paginated(
     db: Session,
     skip: int = 0,
-    limit: int = 20,
+    limit: Optional[int] = 20,  # 改为可选参数
     is_public: Optional[bool] = None,
     search_query: Optional[str] = None,
     created_by: Optional[int] = None
@@ -45,7 +45,10 @@ def get_datasets_paginated(
     total = query.count()
     
     # 分页和排序
-    datasets = query.order_by(Dataset.create_time.desc()).offset(skip).limit(limit).all()
+    query = query.order_by(Dataset.create_time.desc()).offset(skip)
+    if limit is not None:  # 只有当limit不为None时才应用限制
+        query = query.limit(limit)
+    datasets = query.all()
     
     return datasets, total
 

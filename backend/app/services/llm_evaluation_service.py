@@ -18,7 +18,7 @@ from ..models.llm import LLM
 from ..models.llm_answer import LLMAnswer
 from ..models.evaluation import Evaluation, EvaluatorType
 from ..crud.crud_llm_evaluation_task import update_llm_evaluation_task, get_llm_evaluation_task
-from ..schemas.llm_evaluation_task import LLMEvaluationTaskUpdate
+from ..schemas.llm_evaluation_task import LLMEvaluationTaskUpdate, TaskStatusEnum
 from .llm_client_service import get_llm_client, LLMClient
 from ..config.llm_config import get_api_key_from_env
 
@@ -30,23 +30,27 @@ class LLMEvaluationTaskProcessor:
     
     def __init__(self):
         self.running_tasks: Dict[int, asyncio.Task] = {}
-    
+        
     async def process_evaluation_task_async(self, task_id: int, question_limit: Optional[int] = None):
         """异步处理评测任务"""
-        db = next(get_db())
+        from ..db.database import SessionLocal
+        db = SessionLocal()
         try:
+            logger.info(f"Starting evaluation task {task_id}")
+            
             # 获取任务
             task = get_llm_evaluation_task(db, task_id)
             if not task:
                 logger.error(f"Task {task_id} not found")
                 return
-            
-            # 更新任务状态为运行中
+            logger.info(f"Task {task_id} status: {task.status}")
+              # 更新任务状态为运行中
             update_data = LLMEvaluationTaskUpdate(
-                status=TaskStatus.RUNNING,
+                status=TaskStatusEnum.RUNNING,
                 started_at=datetime.now()
             )
             update_llm_evaluation_task(db, task_id, update_data)
+            logger.info(f"Updated task {task_id} status to RUNNING")
             
             # 获取数据集问题
             questions = db.query(StdQuestion).filter(
@@ -54,29 +58,45 @@ class LLMEvaluationTaskProcessor:
                 StdQuestion.is_valid == True
             ).order_by(StdQuestion.id).all()
             
+            logger.info(f"Found {len(questions)} questions for dataset {task.dataset_id}")
+            
             if question_limit:
                 questions = questions[:question_limit]
+                logger.info(f"Limited to {len(questions)} questions")
+            
+            if not questions:
+                logger.error(f"No questions found for dataset {task.dataset_id}")
+                return
             
             # 更新总问题数
             update_data = LLMEvaluationTaskUpdate(total_questions=len(questions))
             update_llm_evaluation_task(db, task_id, update_data)
+              # 获取或创建LLM记录
+            llm = self._get_or_create_llm(db, task.model.name if task.model else task.model_name, 
+                                          task.model.version if task.model else "default")
+            logger.info(f"Using LLM: {llm.name} (ID: {llm.id})")
             
-            # 获取或创建LLM记录
-            llm = self._get_or_create_llm(db, task.model_name, task.model_version)            # 获取LLM客户端
+            # 获取LLM客户端
             api_key = self._decrypt_api_key(task.api_key_hash)
+            logger.info(f"Decrypted API key: {'*' * (len(api_key) - 4) + api_key[-4:] if len(api_key) > 4 else '****'}")
+            
             llm_client = await get_llm_client(
                 api_key=api_key,
                 db_llm=task.model  # 传递数据库模型信息
             )
+            logger.info(f"Created LLM client for model: {llm_client.model_name}")
             
             completed_count = 0
             failed_count = 0
             
             for i, question in enumerate(questions):
                 try:
+                    logger.info(f"Processing question {i+1}/{len(questions)}: {question.id}")
+                    
                     # 检查任务是否被取消
                     current_task = get_llm_evaluation_task(db, task_id)
                     if current_task.status == TaskStatus.CANCELLED:
+                        logger.info(f"Task {task_id} was cancelled")
                         break
                     
                     # 更新当前进度
@@ -85,32 +105,50 @@ class LLMEvaluationTaskProcessor:
                         progress=progress,
                         completed_questions=i
                     )
-                    update_llm_evaluation_task(db, task_id, update_data)
-                    # 生成答案
+                    update_llm_evaluation_task(db, task_id, update_data)                    # 生成答案
                     start_time = time.time()
+                    logger.info(f"Generating answer for question: {question.body[:100]}...")
+                    
+                    # 根据问题类型选择合适的system prompt
+                    question_type = getattr(question, 'type', 'text')  # 默认为text类型
+                    if question_type == 'choice':
+                        from ..config.llm_config import get_default_system_prompt
+                        system_prompt = get_default_system_prompt('choice')
+                    else:
+                        from ..config.llm_config import get_default_system_prompt  
+                        system_prompt = get_default_system_prompt('text')
+                    
+                    # 如果任务有自定义system prompt，使用它
+                    if task.system_prompt:
+                        system_prompt = task.system_prompt
+                    
                     answer_result = await llm_client.generate_answer(
                         question=question.body,
-                        system_prompt=task.system_prompt,
+                        system_prompt=system_prompt,
                         temperature=float(task.temperature) if task.temperature else 0.7,
                         max_tokens=task.max_tokens or 2000,
                         top_k=task.top_k or 50,
                         enable_reasoning=task.enable_reasoning or False
                     )
                     response_time = int((time.time() - start_time) * 1000)  # 毫秒
+                    logger.info(f"Got answer result - success: {answer_result['success']}")
                     
                     if answer_result["success"]:
+                        logger.info(f"Answer: {answer_result['answer'][:100]}...")
+                        
                         # 创建LLM答案记录
                         llm_answer = LLMAnswer(
                             llm_id=llm.id,
-                            task_id=task_id,
+                            task_id=task_id,  # 使用task_id作为evaluation_task_id
                             std_question_id=question.id,
-                            prompt_used=self._build_prompt(task.system_prompt, question.body),
+                            prompt_used=self._build_prompt(system_prompt, question.body),
                             answer=answer_result["answer"],
                             is_valid=True
                         )
                         db.add(llm_answer)
                         db.commit()
                         db.refresh(llm_answer)
+                        logger.info(f"Saved LLM answer with ID: {llm_answer.id}")
                         
                         completed_count += 1
                         
@@ -146,10 +184,9 @@ class LLMEvaluationTaskProcessor:
             
             # 生成结果摘要
             result_summary = self._generate_result_summary(db, task_id)
-            
-            # 更新任务完成状态
+              # 更新任务完成状态
             update_data = LLMEvaluationTaskUpdate(
-                status=TaskStatus.COMPLETED,
+                status=TaskStatusEnum.COMPLETED,
                 progress=100,
                 completed_questions=completed_count,
                 failed_questions=failed_count,
@@ -162,7 +199,7 @@ class LLMEvaluationTaskProcessor:
             logger.error(f"Task {task_id} failed: {str(e)}")
             # 更新任务失败状态
             update_data = LLMEvaluationTaskUpdate(
-                status=TaskStatus.FAILED,
+                status=TaskStatusEnum.FAILED,
                 error_message=str(e)
             )
             update_llm_evaluation_task(db, task_id, update_data)
@@ -338,7 +375,35 @@ class LLMEvaluationTaskProcessor:
         # 创建异步任务
         task = asyncio.create_task(self.process_evaluation_task_async(task_id))
         self.running_tasks[task_id] = task
-        return True
+        return True    
+    
+    def process_evaluation_task(self, task_id: int, question_limit: Optional[int] = None):
+        """同步处理评测任务（用于FastAPI BackgroundTasks）"""
+        try:
+            # 在新的事件循环中运行异步任务
+            loop = asyncio.new_event_loop()
+            asyncio.set_event_loop(loop)
+            try:
+                loop.run_until_complete(self.process_evaluation_task_async(task_id, question_limit))
+            finally:
+                loop.close()
+        except Exception as e:
+            logger.error(f"Error in sync task processing: {str(e)}")
+            # 更新任务状态为失败
+            try:
+                from ..db.database import SessionLocal
+                db = SessionLocal()                
+                try:
+                    update_data = LLMEvaluationTaskUpdate(
+                        status=TaskStatusEnum.FAILED,
+                        error_message=str(e),
+                        completed_at=datetime.now()
+                    )
+                    update_llm_evaluation_task(db, task_id, update_data)
+                finally:
+                    db.close()
+            except Exception as update_error:
+                logger.error(f"Failed to update task status: {str(update_error)}")
 
 
 # 全局任务处理器实例

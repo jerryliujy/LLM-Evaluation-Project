@@ -13,7 +13,7 @@ from ..models.dataset import Dataset
 from ..models.std_question import StdQuestion
 from ..schemas.llm_evaluation_task import (
     LLMEvaluationTaskCreate, LLMEvaluationTaskUpdate,
-    ModelConfigRequest
+    ModelConfigRequest, TaskStatusEnum
 )
 
 
@@ -28,7 +28,7 @@ def create_llm_evaluation_task(
     user_id: int
 ) -> LLMEvaluationTask:
     """创建LLM评测任务"""
-    # 获取数据集中的问题数量
+    # 获取数据集中的问题数�?
     total_questions = db.query(func.count(StdQuestion.id)).filter(
         StdQuestion.current_dataset_id == task_data.dataset_id,
         StdQuestion.is_valid == True
@@ -81,7 +81,7 @@ def get_user_evaluation_tasks(
     limit: int = 20,
     status: Optional[str] = None
 ) -> List[LLMEvaluationTask]:
-    """获取用户的评测任务列表"""
+    """获取用户的评测任务列"""
     query = db.query(LLMEvaluationTask).options(
         joinedload(LLMEvaluationTask.dataset)
     ).filter(LLMEvaluationTask.created_by == user_id)
@@ -123,11 +123,10 @@ def update_llm_evaluation_task(
     update_data = task_update.model_dump(exclude_unset=True)
     for field, value in update_data.items():
         setattr(task, field, value)
-    
-    # 自动设置时间戳
-    if task_update.status == TaskStatus.RUNNING and not task.started_at:
+      # 自动设置时间戳
+    if task_update.status and task_update.status.value == TaskStatus.RUNNING.value and not task.started_at:
         task.started_at = datetime.utcnow()
-    elif task_update.status in [TaskStatus.COMPLETED, TaskStatus.FAILED, TaskStatus.CANCELLED] and not task.completed_at:
+    elif task_update.status and task_update.status.value in [TaskStatus.COMPLETED.value, TaskStatus.FAILED.value, TaskStatus.CANCELLED.value] and not task.completed_at:
         task.completed_at = datetime.utcnow()
     
     db.commit()
@@ -140,7 +139,7 @@ def delete_llm_evaluation_task(db: Session, task_id: int, user_id: int) -> bool:
     task = db.query(LLMEvaluationTask).filter(
         and_(
             LLMEvaluationTask.id == task_id,
-            LLMEvaluationTask.user_id == user_id
+            LLMEvaluationTask.created_by == user_id
         )
     ).first()
     
@@ -161,7 +160,7 @@ def cancel_llm_evaluation_task(db: Session, task_id: int, user_id: int) -> Optio
     task = db.query(LLMEvaluationTask).filter(
         and_(
             LLMEvaluationTask.id == task_id,
-            LLMEvaluationTask.user_id == user_id,
+            LLMEvaluationTask.created_by == user_id,
             LLMEvaluationTask.status.in_([TaskStatus.PENDING.value, TaskStatus.RUNNING.value])
         )
     ).first()
@@ -186,12 +185,11 @@ def get_task_progress(db: Session, task_id: int) -> Dict[str, Any]:
     # 计算预计剩余时间
     estimated_remaining_time = None
     questions_per_minute = None
-    
     if task.status == TaskStatus.RUNNING.value and task.started_at:
         elapsed_time = (datetime.now() - task.started_at).total_seconds()
-        if elapsed_time > 0 and task.current_question > 0:
-            questions_per_minute = (task.current_question / elapsed_time) * 60
-            remaining_questions = task.total_questions - task.current_question
+        if elapsed_time > 0 and task.completed_questions > 0:
+            questions_per_minute = (task.completed_questions / elapsed_time) * 60
+            remaining_questions = task.total_questions - task.completed_questions
             if questions_per_minute > 0:
                 estimated_remaining_time = int(remaining_questions / questions_per_minute * 60)
     
@@ -202,7 +200,7 @@ def get_task_progress(db: Session, task_id: int) -> Dict[str, Any]:
         latest_llm_answer = sorted(task.llm_answers, key=lambda x: x.answered_at, reverse=True)[0]
         latest_answer = latest_llm_answer.answer[:100] + "..." if len(latest_llm_answer.answer) > 100 else latest_llm_answer.answer
         
-        # 获取最新评分
+        # 获取最新评�?
         if latest_llm_answer.evaluations:
             latest_evaluation = sorted(latest_llm_answer.evaluations, key=lambda x: x.evaluation_time, reverse=True)[0]
             latest_score = latest_evaluation.score

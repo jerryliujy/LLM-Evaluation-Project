@@ -25,3 +25,4 @@ class LLM(Base):
     evaluation_tasks = relationship("LLMEvaluationTask", foreign_keys="LLMEvaluationTask.model_id", back_populates="model")
     evaluation_tasks_as_evaluator = relationship("LLMEvaluationTask", foreign_keys="LLMEvaluationTask.evaluation_llm_id", back_populates="evaluation_llm")
     answers = relationship("LLMAnswer", back_populates="llm")
+    evaluations = relationship("Evaluation", back_populates="evaluator_llm")

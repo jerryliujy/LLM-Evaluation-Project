@@ -36,24 +36,31 @@ class PromptTemplateInfo(BaseModel):
 
 class ModelConfigRequest(BaseModel):
     """模型配置请求Schema"""
-    model_name: str = Field(..., description="模型名称")
-    model_version: Optional[str] = Field(None, description="模型版本")
+    model_id: int = Field(..., description="模型ID")
     api_key: str = Field(..., description="API密钥")
     system_prompt: Optional[str] = Field(None, description="系统提示词")
-    temperature: Optional[Decimal] = Field(Decimal("0.7"), description="温度参数")
+    temperature: Optional[float] = Field(0.7, description="温度参数")  # 改为float类型
     max_tokens: Optional[int] = Field(2000, description="最大token数")
     top_k: Optional[int] = Field(50, description="Top-K采样")
     enable_reasoning: Optional[bool] = Field(False, description="启用推理模式")
+    
+    class Config:
+        # 允许字段验证
+        validate_assignment = True
 
 
 class EvaluationStartRequest(BaseModel):
     """开始评测请求Schema"""
     dataset_id: int = Field(..., description="数据集ID")
     task_name: str = Field(..., description="任务名称")
-    model_config: ModelConfigRequest
+    model_settings: ModelConfigRequest = Field(..., description="模型配置", alias="model_config")
     evaluation_config: Optional[Dict[str, Any]] = Field(None, description="评测配置")
     is_auto_score: bool = Field(False, description="是否自动评分")
     question_limit: Optional[int] = Field(None, description="限制评测问题数量")
+    
+    class Config:
+        # 允许使用别名
+        allow_population_by_field_name = True
         
         
 class LLMEvaluationTaskBase(BaseModel):
@@ -82,6 +89,7 @@ class LLMEvaluationTaskUpdate(BaseModel):
     description: Optional[str] = None
     status: Optional[TaskStatusEnum] = None
     progress: Optional[int] = None
+    total_questions: Optional[int] = None
     completed_questions: Optional[int] = None
     failed_questions: Optional[int] = None
     started_at: Optional[datetime] = None
@@ -175,7 +183,7 @@ class EvaluationResponse(BaseModel):
 
 class AvailableModel(BaseModel):
     """可用模型Schema"""
-    id: str = Field(..., description="模型ID")
+    id: int = Field(..., description="模型ID")
     name: str = Field(..., description="模型名称")
     display_name: str = Field(..., description="显示名称")
     provider: str = Field(..., description="提供商")

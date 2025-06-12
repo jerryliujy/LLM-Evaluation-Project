@@ -65,12 +65,14 @@
           <h4>💻 模型选择</h4>
           <div class="config-card">
             <div class="form-group">
-              <label class="form-label">选择模型 <span class="required">*</span></label>
+              <label class="form-label">选择模型 
+                <span class="required">*</span>
+              </label>              
               <select 
                 v-model="modelConfig.model_id" 
                 class="form-select"
               >
-                <option value="">请选择要评测的模型</option>
+                <option :value="null">请选择要评测的模型</option>
                 <option
                   v-for="model in availableModels"
                   :key="model.id"
@@ -804,7 +806,8 @@
                 </div>
               </div>
             </div>
-          </div>        </div>
+          </div>        
+        </div>
 
         <!-- 最新回答预览 -->
         <div v-if="taskProgress && taskProgress.latest_answer" class="latest-answer">
@@ -1081,8 +1084,15 @@ const currentDataset = ref<any>(null)
 const availableModels = ref<any[]>([])
 
 // 模型配置
-const modelConfig = reactive({
-  model_id: '',
+const modelConfig = reactive<{
+  model_id: number | null;
+  api_key: string;
+  temperature: number;
+  max_tokens: number;
+  top_k: number;
+  enable_reasoning: boolean;
+}>({
+  model_id: null,
   api_key: '',
   temperature: 0.7,
   max_tokens: 2000,
@@ -1156,7 +1166,7 @@ const selectedModel = computed(() => {
 })
 
 const isModelConfigValid = computed(() => {
-  return modelConfig.model_id && modelConfig.api_key
+  return modelConfig.model_id !== null && modelConfig.api_key
 })
 
 // 获取题目数量统计
@@ -1235,8 +1245,9 @@ onMounted(async () => {
   // 检查是否从路由传递了数据集ID
   if (route.params.datasetId) {
     try {
-      const datasets = await llmEvaluationService.getMarketplaceDatasets()
-      const dataset = datasets.find(d => d.id === parseInt(route.params.datasetId as string))
+      // 直接获取指定的数据集信息，而不是获取所有数据集列表
+      const datasetId = parseInt(route.params.datasetId as string)
+      const dataset = await llmEvaluationService.getMarketplaceDataset(datasetId)
       if (dataset) {
         currentDataset.value = dataset
         // 如果从数据集市场进入，设置初始步骤
@@ -1244,6 +1255,7 @@ onMounted(async () => {
       }
     } catch (error) {
       console.error('加载数据集失败:', error)
+      showMessage('加载数据集失败，请检查数据集是否存在', 'error')
     }
   }
   
@@ -1355,46 +1367,46 @@ const resetTextEvaluationPrompt = async () => {
 }
 
 // 开始答案生成
-const startAnswerGeneration = async () => {
+const startAnswerGeneration = async () => {  
   if (!currentDataset.value || !isModelConfigValid.value || !isSystemPromptValid.value) {
     showMessage('请完善配置信息', 'error')
     return
   }
-
+  if (!modelConfig.model_id) {
+    showMessage('请选择模型', 'error')
+    return
+  }
   starting.value = true
-  try {
-    // TODO: 实现答案生成API
-    // const taskData = {
-    //   task_name: answerGenerationOptions.task_name || `${currentDataset.value.name} - 答案生成`,
-    //   dataset_id: currentDataset.value.id,
-    //   model_config: {
-    //     model_name: selectedModel.value?.name,
-    //     api_key: modelConfig.api_key,
-    //     api_endpoint: modelConfig.api_endpoint,
-    //     temperature: modelConfig.temperature,
-    //     max_tokens: modelConfig.max_tokens,
-    //     timeout: modelConfig.timeout
-    //   },
-    //   system_prompts: {
-    //     choice_system_prompt: systemPromptConfig.choice_system_prompt,
-    //     text_system_prompt: systemPromptConfig.text_system_prompt
-    //   },
-    //   question_limit_type: answerGenerationOptions.question_limit_type,
-    //   question_limit: answerGenerationOptions.question_limit,
-    //   concurrent_limit: answerGenerationOptions.concurrent_limit
-    // }
-
-    // answerGenerationTask.value = await llmEvaluationService.startAnswerGeneration(taskData)
+  try {    
+    console.log('Selected model for answer generation:', selectedModel.value)
+    console.log('Model Config:', modelConfig)
     
-    // 模拟任务创建
-    answerGenerationTask.value = {
-      id: Date.now(),
+    // 创建任务数据
+    const taskData = {
       task_name: answerGenerationOptions.task_name || `${currentDataset.value.name} - 答案生成`,
-      status: 'completed',
-      progress: 100
+      dataset_id: currentDataset.value.id,
+      model_config: {
+        model_id: modelConfig.model_id!, 
+        api_key: modelConfig.api_key,
+        system_prompt: systemPromptConfig.choice_system_prompt || systemPromptConfig.text_system_prompt,
+        temperature: modelConfig.temperature,
+        max_tokens: modelConfig.max_tokens,
+        top_k: modelConfig.top_k,
+        enable_reasoning: modelConfig.enable_reasoning
+      },
+      evaluation_config: {
+        evaluation_prompt: evaluationConfig.choice_evaluation_prompt || evaluationConfig.text_evaluation_prompt
+      },
+      is_auto_score: false, // 答案生成阶段不自动评分
+      question_limit: answerGenerationOptions.question_limit_type === 'limit' ? answerGenerationOptions.question_limit : undefined
     }
     
-    showMessage('答案生成任务已完成', 'success')
+    console.log('Task Data to be sent:', JSON.stringify(taskData, null, 2))
+
+    // 调用API创建并启动任务
+    answerGenerationTask.value = await llmEvaluationService.createEvaluationTask(taskData)
+    
+    showMessage('答案生成任务已创建，开始生成...', 'success')
     
     // 跳转到下一步
     nextStep()
@@ -1408,30 +1420,41 @@ const startAnswerGeneration = async () => {
 }
 
 // 开始评测（新的评测阶段）
-const startEvaluation = async () => {
-  if (!answerGenerationTask.value || !isEvaluationConfigValid.value) {
+const startEvaluation = async () => {  if (!answerGenerationTask.value || !isEvaluationConfigValid.value) {
     showMessage('请完成答案生成并配置评测参数', 'error')
+    return  
+  }
+
+  if (!modelConfig.model_id) {
+    showMessage('请选择模型', 'error')
     return
   }
 
   starting.value = true
-  try {
-    // 使用原有的API结构
+  try {    console.log('Selected model:', selectedModel.value)
+    console.log('Model ID:', modelConfig.model_id)
+    console.log('Model Config:', modelConfig)
+    
     const taskData = {
       task_name: evaluationOptions.task_name || `${currentDataset.value.name} - 评测`,
-      dataset_id: currentDataset.value.id,      model_config: {
-        model_name: selectedModel.value?.name,
+      dataset_id: currentDataset.value.id,
+      model_config: {
+        model_id: modelConfig.model_id!,  // 使用非空断言，因为前面已经验证过
         api_key: modelConfig.api_key,
         system_prompt: systemPromptConfig.choice_system_prompt || systemPromptConfig.text_system_prompt,
-        evaluation_prompt: evaluationConfig.choice_evaluation_prompt || evaluationConfig.text_evaluation_prompt,
         temperature: modelConfig.temperature,
         max_tokens: modelConfig.max_tokens,
         top_k: modelConfig.top_k,
         enable_reasoning: modelConfig.enable_reasoning
       },
+      evaluation_config: {
+        evaluation_prompt: evaluationConfig.choice_evaluation_prompt || evaluationConfig.text_evaluation_prompt
+      },
       is_auto_score: evaluationOptions.is_auto_score,
       question_limit: evaluationOptions.question_limit_type === 'limit' ? evaluationOptions.question_limit : undefined
     }
+    
+    console.log('Evaluation Task Data to be sent:', JSON.stringify(taskData, null, 2))
 
     evaluationTask.value = await llmEvaluationService.createEvaluationTask(taskData)
     
@@ -1514,21 +1537,21 @@ const backToMarketplace = () => {
 
 const getStatusType = (status: string) => {
   switch (status) {
-    case 'running': return 'primary'
-    case 'completed': return 'success'
-    case 'failed': return 'danger'
-    case 'paused': return 'warning'
+    case 'RUNNING': return 'primary'
+    case 'COMPLETED': return 'success'
+    case 'FAILED': return 'danger'
+    case 'PAUSED': return 'warning'
     default: return 'info'
   }
 }
 
 const getStatusText = (status: string) => {
   switch (status) {
-    case 'running': return '运行中'
-    case 'completed': return '已完成'
-    case 'failed': return '失败'
-    case 'paused': return '已暂停'
-    case 'pending': return '等待中'
+    case 'RUNNING': return '运行中'
+    case 'COMPLETED': return '已完成'
+    case 'FAILED': return '失败'
+    case 'PAUSED': return '已暂停'
+    case 'PENDING': return '等待中'
     default: return '未知'
   }
 }
@@ -1658,8 +1681,8 @@ const restart = () => {
   }
   
   // 重置状态
-  currentStep.value = 0    // 重置配置
-  modelConfig.model_id = ''
+  currentStep.value = 0  // 重置配置
+  modelConfig.model_id = null
   modelConfig.api_key = ''
   modelConfig.temperature = 0.7
   modelConfig.max_tokens = 2000
