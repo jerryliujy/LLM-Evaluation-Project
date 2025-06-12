@@ -67,7 +67,7 @@ class RawAnswerCreateForQuestion(BaseModel):
     answered_at: Optional[datetime] = None
 
 class RawQuestionWithAnswersCreate(BaseModel):
-    """用于事务性创建问题和回答的模式"""
+    """用于创建问题和回答的模式"""
     question: RawQuestionCreate
     answers: List[RawAnswerCreateForQuestion] = []
 

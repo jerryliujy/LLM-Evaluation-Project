@@ -355,6 +355,14 @@ const goToLLMEvaluation = (dataset: DatasetWithStats) => {
   });
 };
 
+const startTaskEvaluation = (dataset: DatasetWithStats) => {
+  // 跳转到任务管理页面
+  router.push({
+    name: "LLMTaskEvaluation",
+    query: { datasetId: dataset.id.toString() }
+  });
+};
+
 const downloadDataset = async (dataset: DatasetWithStats) => {
   if (downloadingId.value) return;
   

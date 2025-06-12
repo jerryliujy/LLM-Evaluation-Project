@@ -41,7 +41,7 @@ async def create_manual_std_qa(
     dataset = db.query(Dataset).filter(Dataset.id == std_qa_data.dataset_id).first()
     if not dataset:
         raise HTTPException(status_code=404, detail="Dataset not found")
-      # 验证用户权限（只有管理员可以创建）
+    # 验证用户权限（只有管理员可以创建）
     if current_user.role != "admin":
         raise HTTPException(status_code=403, detail="Only admin users can create standard QA pairs")
     
@@ -70,7 +70,8 @@ async def create_manual_std_qa(
             is_valid=True
         )
         db.add(std_question)
-        db.flush()  # 获取ID但不提交事务        # 创建标准问题与原始问题的关系记录
+        db.flush()  # 获取ID但不提交事务        
+        # 创建标准问题与原始问题的关系记录
         if std_qa_data.raw_question_ids:
             for raw_question_id in std_qa_data.raw_question_ids:                
                 question_relation = StdQuestionRawQuestionRecord(

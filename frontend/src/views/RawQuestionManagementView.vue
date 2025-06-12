@@ -940,7 +940,6 @@ const handleQuestionAnswerSave = async (data: { question: Partial<RawQuestion>, 
       answered_at: answer.answered_at || new Date().toISOString()
     }))
     
-    // 使用事务性API一次性创建问题和所有回答
     const result = await rawQuestionService.createRawQuestionWithAnswers({
       question: data.question,
       answers: answersData

@@ -1,41 +1,7 @@
 /**
- * LLM评测相关的API服务
+ * LLM评测相关的API服务 - 任务管理版本
  */
-import axios from 'axios';
-
-const API_BASE_URL = process.env.VUE_APP_API_BASE_URL || 'http://localhost:8000';
-
-// 创建axios实例
-const api = axios.create({
-  baseURL: API_BASE_URL,
-  timeout: 30000,
-});
-
-// 请求拦截器
-api.interceptors.request.use(
-  (config) => {
-    const token = localStorage.getItem('token');
-    if (token) {
-      config.headers.Authorization = `Bearer ${token}`;
-    }
-    return config;
-  },
-  (error) => {
-    return Promise.reject(error);
-  }
-);
-
-// 响应拦截器
-api.interceptors.response.use(
-  (response) => response.data,
-  (error) => {
-    if (error.response?.status === 401) {
-      localStorage.removeItem('token');
-      window.location.href = '/login';
-    }
-    return Promise.reject(error.response?.data || error);
-  }
-);
+import { apiClient } from './api';
 
 export interface MarketplaceDataset {
   id: number;
@@ -65,36 +31,49 @@ export interface DatasetDownloadResponse {
   }>;
 }
 
-export interface LLMAnswer {
-  llm_id: number;
-  std_question_id: number;
-  answer: string;
-  api_request_id?: string;
-  model_params?: string;
-  cost_tokens?: number;
-  scoring_points?: Array<{
-    answer: string;
-    point_order: number;
-  }>;
+export interface AvailableModel {
+  id: string;
+  name: string;
+  display_name: string;
+  description: string;
+  provider: string;
+  api_endpoint?: string;
+  max_tokens: number;
+  pricing?: Record<string, number>;
 }
 
-export interface LLMEvaluationRequest {
-  llm_answers: LLMAnswer[];
-  evaluation_config?: Record<string, any>;
-}
-
-export interface LLMEvaluationResponse {
-  evaluation_id: string;
+export interface EvaluationTask {
+  id: number;
+  task_name: string;
+  dataset_id: number;
+  dataset?: MarketplaceDataset;
+  model_name: string;
   status: string;
-  created_answers: Array<{
-    id: number;
-    llm_id: number;
-    std_question_id: number;
-    answer: string;
-    answered_at: string;
-    is_valid: boolean;
-  }>;
-  evaluation_results?: Record<string, any>;
+  progress: number;
+  current_question: number;
+  total_questions: number;
+  successful_count: number;
+  failed_count: number;
+  average_score?: number;
+  created_at: string;
+  started_at?: string;
+  completed_at?: string;
+  error_message?: string;
+}
+
+export interface TaskProgress {
+  task_id: number;
+  status: string;
+  progress: number;
+  current_question: number;
+  total_questions: number;
+  successful_count: number;
+  failed_count: number;
+  average_score?: number;
+  estimated_remaining_time?: number;
+  questions_per_minute?: number;
+  latest_answer?: string;
+  latest_score?: number;
 }
 
 export interface EvaluationResult {
@@ -105,8 +84,7 @@ export interface EvaluationResult {
   evaluation_time: string;
 }
 
-export const llmEvaluationService = {
-  // 获取数据集市场列表
+export const llmEvaluationService = {  // 获取数据集市场列表
   async getMarketplaceDatasets(params: {
     skip?: number;
     limit?: number;
@@ -117,119 +95,110 @@ export const llmEvaluationService = {
     if (params.limit !== undefined) queryParams.append('limit', params.limit.toString());
     if (params.search) queryParams.append('search', params.search);
     
-    return api.get(`/llm-evaluation/marketplace/datasets?${queryParams}`);
+    const response = await apiClient.get(`/llm-evaluation/marketplace/datasets?${queryParams}`);
+    return response.data;
   },
 
   // 下载数据集
   async downloadDataset(datasetId: number): Promise<DatasetDownloadResponse> {
-    return api.get(`/llm-evaluation/marketplace/datasets/${datasetId}/download`);
+    const response = await apiClient.get(`/llm-evaluation/marketplace/datasets/${datasetId}/download`);
+    return response.data;
   },
 
-  // 提交LLM回答进行评测
-  async submitLLMAnswers(request: LLMEvaluationRequest): Promise<LLMEvaluationResponse> {
-    return api.post('/llm-evaluation/submit', request);
+  // 获取可用模型列表
+  async getAvailableModels(): Promise<AvailableModel[]> {
+    const response = await apiClient.get('/llm-evaluation/models');
+    return response.data;
+  },
+  
+  // 创建评测任务
+  async createEvaluationTask(taskData: {
+    task_name: string;
+    dataset_id: number;
+    model_config: {
+      model_name: string;
+      model_version?: string;
+      api_endpoint?: string;
+      api_key?: string;
+      system_prompt?: string;
+      evaluation_prompt?: string;
+      temperature?: number;
+      max_tokens?: number;
+      timeout?: number;
+    };
+    evaluation_config?: Record<string, any>;
+    is_auto_score?: boolean;
+    question_limit?: number;
+  }): Promise<EvaluationTask> {
+    const response = await apiClient.post('/llm-evaluation/tasks', taskData);
+    return response.data;
   },
 
-  // 获取评测状态
-  async getEvaluationStatus(evaluationId: string): Promise<{
-    evaluation_id: string;
-    status: string;
-    progress?: number;
-  }> {
-    return api.get(`/llm-evaluation/evaluation/${evaluationId}/status`);
-  },
-
-  // 获取我的LLM回答列表
-  async getMyLLMAnswers(params: {
+  // 获取我的评测任务列表
+  async getMyEvaluationTasks(params: {
     skip?: number;
     limit?: number;
-  } = {}): Promise<Array<{
-    id: number;
-    llm_id: number;
-    std_question_id: number;
-    answer: string;
-    answered_at: string;
-    is_valid: boolean;
-    llm?: {
-      id: number;
-      name: string;
-      version: string;
-    };
-    std_question?: {
-      id: number;
-      body: string;
-      question_type: string;
-    };
-    scoring_points?: Array<{
-      id: number;
-      answer: string;
-      point_order: number;
-    }>;
-  }>> {
+    status_filter?: string;
+  } = {}): Promise<EvaluationTask[]> {
     const queryParams = new URLSearchParams();
     if (params.skip !== undefined) queryParams.append('skip', params.skip.toString());
     if (params.limit !== undefined) queryParams.append('limit', params.limit.toString());
+    if (params.status_filter) queryParams.append('status_filter', params.status_filter);
     
-    return api.get(`/llm-evaluation/answers?${queryParams}`);
+    const response = await apiClient.get(`/llm-evaluation/tasks?${queryParams}`);
+    return response.data;
   },
 
-  // 手动评估LLM回答
-  async manualEvaluateAnswers(request: {
-    llm_answer_ids: number[];
-    evaluation_type: string;
-    evaluation_criteria?: string;
-  }): Promise<EvaluationResult[]> {
-    return api.post('/llm-evaluation/evaluate', request);
+  // 获取评测任务详情
+  async getEvaluationTask(taskId: number): Promise<EvaluationTask> {
+    const response = await apiClient.get(`/llm-evaluation/tasks/${taskId}`);
+    return response.data;
   },
 
-  // 下载评测结果
-  async downloadEvaluationResults(answerId: number): Promise<{
-    llm_answer: {
-      id: number;
-      question_id: number;
-      answer: string;
-      answered_at: string;
-    };
-    evaluations: EvaluationResult[];
-    average_score: number;
-  }> {
-    return api.get(`/llm-evaluation/results/${answerId}/download`);
+  // 获取任务进度
+  async getTaskProgress(taskId: number): Promise<TaskProgress> {
+    const response = await apiClient.get(`/llm-evaluation/tasks/${taskId}/progress`);
+    return response.data;
   },
 
-  // 获取支持的LLM模型列表
-  async getSupportedModels(): Promise<Array<{
-    id: number;
-    name: string;
-    version: string;
-    affiliation?: string;
-  }>> {
-    return api.get('/llm-evaluation/models');
+  // 取消评测任务
+  async cancelEvaluationTask(taskId: number): Promise<{ message: string }> {
+    const response = await apiClient.post(`/llm-evaluation/tasks/${taskId}/cancel`);
+    return response.data;
   },
 
-  // 通过API调用LLM
-  async callLLMAPI(request: {
-    model_name: string;
-    questions: Array<{
-      id: number;
-      body: string;
-      question_type: string;
-    }>;
-    api_config: {
-      api_key?: string;
-      base_url?: string;
-      temperature?: number;
-      max_tokens?: number;
-    };
-  }): Promise<{
-    success: boolean;
-    answers: Array<{
-      question_id: number;
-      answer: string;
-      cost_tokens?: number;
-    }>;
-    error?: string;
-  }> {
-    return api.post('/llm-evaluation/api-call', request);
+  // 获取任务结果摘要
+  async getTaskResults(taskId: number): Promise<any> {
+    const response = await apiClient.get(`/llm-evaluation/tasks/${taskId}/results`);
+    return response.data;
+  },
+
+  // 下载任务结果
+  async downloadTaskResults(taskId: number, options: {
+    format?: string;
+    include_raw_responses?: boolean;
+    include_prompts?: boolean;
+  } = {}): Promise<any> {
+    const response = await apiClient.post(`/llm-evaluation/tasks/${taskId}/download`, {
+      task_id: taskId,
+      ...options
+    });
+    return response.data;
+  },
+  // Prompt模板相关（现在使用硬编码模板）
+  async getPromptTemplates(params: {
+    template_type?: 'system' | 'evaluation';
+  } = {}): Promise<any[]> {
+    const queryParams = new URLSearchParams();
+    if (params.template_type) queryParams.append('template_type', params.template_type);
+    
+    const response = await apiClient.get(`/llm-evaluation/prompt-templates?${queryParams}`);
+    return response.data;
+  },
+
+  async getPromptTemplate(templateKey: string): Promise<any> {
+    const response = await apiClient.get(`/llm-evaluation/prompt-templates/${templateKey}`);
+    return response.data;
   }
 };
 

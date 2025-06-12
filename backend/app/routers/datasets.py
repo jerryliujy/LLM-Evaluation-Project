@@ -132,12 +132,12 @@ def get_my_datasets(
     result = []
     for dataset in datasets:
         std_questions_count = db.query(func.count(StdQuestion.id)).filter(
-            StdQuestion.current_dataset_id <= dataset.id or StdQuestion.original_dataset_id >= dataset.id,
+            StdQuestion.current_dataset_id == dataset.id,
             StdQuestion.is_valid == True
         ).scalar() or 0
         
         std_answers_count = db.query(func.count(StdAnswer.id)).join(StdQuestion).filter(
-            StdQuestion.current_dataset_id == dataset.id or StdQuestion.original_dataset_id >= dataset.id,
+            StdQuestion.current_dataset_id == dataset.id,
             StdQuestion.is_valid == True,
             StdAnswer.is_valid == True
         ).scalar() or 0

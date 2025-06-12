@@ -296,34 +296,96 @@ CREATE TABLE `QuestionTagRecords` (
 CREATE TABLE `LLM` (
   `id` INT NOT NULL AUTO_INCREMENT,
   `name` VARCHAR(100) NOT NULL,
-  `version` VARCHAR(50) NOT NULL,
-  `affiliation` VARCHAR(50) DEFAULT NULL,
-  PRIMARY KEY (`id`)
+  `display_name` VARCHAR(255) NOT NULL,
+  `provider` VARCHAR(100) NOT NULL,
+  `api_endpoint` VARCHAR(500) DEFAULT NULL,
+  `default_temperature` DECIMAL(3,2) DEFAULT 0.7,
+  `max_tokens` INT DEFAULT 4000,
+  `top_k` INT DEFAULT 50,
+  `enable_reasoning` TINYINT(1) NOT NULL DEFAULT 0,
+  `cost_per_1k_tokens` DECIMAL(8,6) DEFAULT 0.0006,
+  `description` TEXT DEFAULT NULL,
+  `version` VARCHAR(50) DEFAULT NULL,
+  `affiliation` VARCHAR(100) DEFAULT NULL,
+  `is_active` TINYINT(1) NOT NULL DEFAULT 1,
+  PRIMARY KEY (`id`),
+  UNIQUE INDEX `idx_llm_name` (`name`),
+  INDEX `idx_llm_provider` (`provider`),
+  INDEX `idx_llm_active` (`is_active`)
+) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4;
+
+-- LLM评测任务表
+CREATE TABLE `LLMEvaluationTask` (
+  `id` INT NOT NULL AUTO_INCREMENT,
+  `name` VARCHAR(255) NOT NULL,
+  `description` TEXT DEFAULT NULL,
+  `dataset_id` INT NOT NULL,
+  `created_by` INT NOT NULL,
+  `created_at` DATETIME NOT NULL DEFAULT CURRENT_TIMESTAMP,
+  `status` ENUM('pending', 'running', 'completed', 'failed', 'cancelled') NOT NULL DEFAULT 'pending',
+  `progress` INT NOT NULL DEFAULT 0,
+  `score` DECIMAL(5,2) DEFAULT NULL,
+  `total_questions` INT NOT NULL DEFAULT 0,
+  `completed_questions` INT NOT NULL DEFAULT 0,
+  `failed_questions` INT NOT NULL DEFAULT 0,  
+  `model_id` INT NOT NULL,
+  `api_key_hash` VARCHAR(255) DEFAULT NULL,
+  `system_prompt` TEXT DEFAULT NULL,
+  `temperature` DECIMAL(3,2) DEFAULT 0.7,
+  `max_tokens` INT DEFAULT 2000,
+  `top_k` INT DEFAULT 50,
+  `enable_reasoning` TINYINT(1) NOT NULL DEFAULT 0,
+  `evaluation_llm_id` INT DEFAULT NULL,
+  `evaluation_prompt` TEXT DEFAULT NULL,
+  `started_at` DATETIME DEFAULT NULL,
+  `completed_at` DATETIME DEFAULT NULL,
+  `error_message` TEXT DEFAULT NULL,
+  `result_summary` JSON DEFAULT NULL,
+  PRIMARY KEY (`id`),
+  INDEX `idx_task_dataset` (`dataset_id`),
+  INDEX `idx_task_created_by` (`created_by`),
+  INDEX `idx_task_status` (`status`),
+  INDEX `idx_task_created_at` (`created_at`),  
+  INDEX `idx_task_model` (`model_id`),
+  INDEX `idx_task_eval_llm` (`evaluation_llm_id`),
+  CONSTRAINT `fk_task_dataset`
+    FOREIGN KEY (`dataset_id`) REFERENCES `Dataset` (`id`)
+    ON DELETE CASCADE ON UPDATE CASCADE,
+  CONSTRAINT `fk_task_user`
+    FOREIGN KEY (`created_by`) REFERENCES `User` (`id`)
+    ON DELETE CASCADE ON UPDATE CASCADE,
+  CONSTRAINT `fk_task_llm`
+    FOREIGN KEY (`model_id`) REFERENCES `LLM` (`id`)
+    ON DELETE CASCADE ON UPDATE CASCADE,
+  CONSTRAINT `fk_task_eval_llm`
+    FOREIGN KEY (`evaluation_llm_id`) REFERENCES `LLM` (`id`)
+    ON DELETE SET NULL ON UPDATE CASCADE
 ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4;
 
 -- LLM回答
 CREATE TABLE `LLMAnswer` (
   `id` INT NOT NULL AUTO_INCREMENT,
-  `llm_id` INT NOT NULL,
-  `answered_at` DATETIME NOT NULL,
+  `llm_id` INT DEFAULT NULL,
+  `task_id` INT DEFAULT NULL,
+  `std_question_id` INT DEFAULT NULL,
+  `prompt_used` TEXT DEFAULT NULL,
+  `answer` TEXT DEFAULT NULL,
+  `answered_at` DATETIME NOT NULL DEFAULT CURRENT_TIMESTAMP,
   `is_valid` TINYINT(1) NOT NULL DEFAULT 1,
   PRIMARY KEY (`id`),
   KEY `idx_la_llm` (`llm_id`),
+  KEY `idx_la_task` (`task_id`),
+  KEY `idx_la_question` (`std_question_id`),
+  INDEX `idx_la_answered_at` (`answered_at`),
+  INDEX `idx_la_valid` (`is_valid`),
   CONSTRAINT `fk_llmanswer_llm`
     FOREIGN KEY (`llm_id`) REFERENCES `LLM` (`id`)
-    ON DELETE CASCADE ON UPDATE CASCADE
-) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4;
-
--- LLM回答评分点
-CREATE TABLE `LLMAnswerScoringPoint` (
-  `id` INT NOT NULL AUTO_INCREMENT,
-  `llm_answer_id` INT NOT NULL,
-  `answer` TEXT NOT NULL,
-  `point_order` INT DEFAULT 0, 
-  PRIMARY KEY (`id`),
-  KEY `idx_lasp_llmanswer` (`llm_answer_id`),
-  CONSTRAINT `fk_lasp_llmanswer`
-    FOREIGN KEY (`llm_answer_id`) REFERENCES `LLMAnswer` (`id`)
+    ON DELETE SET NULL ON UPDATE CASCADE,
+  CONSTRAINT `fk_llmanswer_task`
+    FOREIGN KEY (`task_id`) REFERENCES `LLMEvaluationTask` (`id`)
+    ON DELETE CASCADE ON UPDATE CASCADE,
+  CONSTRAINT `fk_llmanswer_question`
+    FOREIGN KEY (`std_question_id`) REFERENCES `StdQuestion` (`id`)
     ON DELETE CASCADE ON UPDATE CASCADE
 ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4;
 
@@ -333,10 +395,12 @@ CREATE TABLE `Evaluation` (
   `std_question_id` INT NOT NULL,
   `llm_answer_id` INT NOT NULL,
   `score` DECIMAL(5,2) DEFAULT NULL,
-  `evaluator_type` ENUM('user', 'llm') NOT NULL,
+  `evaluator_type` ENUM('user', 'llm', 'auto') NOT NULL,
   `evaluator_id` INT DEFAULT NULL, -- 用户ID或LLM ID
   `evaluation_time` DATETIME NOT NULL DEFAULT CURRENT_TIMESTAMP,
   `notes` TEXT DEFAULT NULL,
+  `reasoning` TEXT DEFAULT NULL, -- 评估理由
+  `evaluation_prompt` TEXT DEFAULT NULL, -- 使用的评估提示词
   `is_valid` TINYINT(1) NOT NULL DEFAULT 1,
   PRIMARY KEY (`id`),
   UNIQUE KEY `uk_eval_unique` (`std_question_id`, `llm_answer_id`, `evaluator_type`, `evaluator_id`),
@@ -344,12 +408,16 @@ CREATE TABLE `Evaluation` (
   KEY `idx_eval_llma` (`llm_answer_id`),
   KEY `idx_eval_type` (`evaluator_type`),
   KEY `idx_eval_evaluator` (`evaluator_id`),
+  INDEX `idx_eval_time` (`evaluation_time`),
   CONSTRAINT `fk_eval_stdq`
     FOREIGN KEY (`std_question_id`) REFERENCES `StdQuestion` (`id`)
     ON DELETE CASCADE ON UPDATE CASCADE,
   CONSTRAINT `fk_eval_llmanswer`
     FOREIGN KEY (`llm_answer_id`) REFERENCES `LLMAnswer` (`id`)
-    ON DELETE CASCADE ON UPDATE CASCADE
+    ON DELETE CASCADE ON UPDATE CASCADE,
+  CONSTRAINT `fk_eval_evaluator_llm`
+    FOREIGN KEY (`evaluator_id`) REFERENCES `LLM` (`id`)
+    ON DELETE SET NULL ON UPDATE CASCADE
 ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4;
 
 -- ================== 版本管理系统 ==================
@@ -462,9 +530,14 @@ CREATE TABLE `VersionScoringPoint` (
     ON DELETE CASCADE ON UPDATE CASCADE,
   CONSTRAINT `fk_vsp_vanswer`
     FOREIGN KEY (`version_answer_id`) REFERENCES `VersionStdAnswer` (`id`)
-    ON DELETE CASCADE ON UPDATE CASCADE,
-  CONSTRAINT `fk_vsp_original`
+    ON DELETE CASCADE ON UPDATE CASCADE,  CONSTRAINT `fk_vsp_original`
     FOREIGN KEY (`original_point_id`) REFERENCES `StdAnswerScoringPoint` (`id`)
     ON DELETE CASCADE ON UPDATE CASCADE
 ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4;
 
+-- ================== 初始化数据 ==================
+
+-- 插入支持的LLM模型
+-- 插入初始LLM模型数据
+INSERT INTO `LLM` (`name`, `display_name`, `provider`, `api_endpoint`, `max_tokens`, `default_temperature`, `top_k`, `enable_reasoning`, `cost_per_1k_tokens`, `description`, `version`, `affiliation`, `is_active`) VALUES
+('qwen-turbo', '通义千问Turbo', 'Alibaba Cloud', 'https://dashscope.aliyuncs.com/compatible-mode/v1', 8000, 0.7, 50, 0, 0.0006, '通义千问Turbo模型，快速响应，适合日常对话', '2025-04-28', 'Alibaba', 1);

@@ -1,38 +1,46 @@
 """
 LLM Evaluation Router for regular users
-Provides marketplace access, LLM evaluation, and result management
+Provides marketplace access, task-based LLM evaluation, and result management
 """
-from fastapi import APIRouter, Depends, HTTPException, status, UploadFile, File, Form
+from fastapi import APIRouter, Depends, HTTPException, status, BackgroundTasks
 from sqlalchemy.orm import Session
-from typing import List, Optional
+from typing import List, Optional, Dict, Any
 import json
-import uuid
 from datetime import datetime
+from decimal import Decimal
 
 from app.db.database import get_db
 from app.auth import get_current_user
 from app.models.user import User
 from app.models.dataset import Dataset
 from app.models.std_question import StdQuestion
-from app.models.llm_answer import LLM, LLMAnswer
+from app.models.llm import LLM
+from app.models.llm_answer import LLMAnswer
+from app.models.llm_evaluation_task import LLMEvaluationTask, TaskStatus
 from app.models.evaluation import Evaluation
+from app.schemas.llm_evaluation_task import (
+    LLMEvaluationTaskCreate, LLMEvaluationTaskResponse, LLMEvaluationTaskUpdate,
+    LLMEvaluationTaskProgress, PromptTemplateInfo,
+    EvaluationStartRequest, AvailableModel, EvaluationResultSummary,
+    EvaluationDownloadRequest, ModelConfigRequest
+)
 from app.schemas.llm_answer import (
-    LLM as LLMSchema, LLMCreate, LLMAnswer as LLMAnswerSchema, 
-    LLMAnswerCreate, LLMAnswerWithDetails, LLMEvaluationRequest, 
-    LLMEvaluationResponse, MarketplaceDatasetInfo, DatasetDownloadResponse
+    MarketplaceDatasetInfo, DatasetDownloadResponse
 )
-from app.schemas.evaluation import EvaluationCreate, EvaluationResponse, BatchEvaluationRequest
-from app.crud.crud_llm_answer import (
-    get_or_create_llm, create_llm_answer, get_llm_answers_paginated,
-    get_llm_answer, update_llm_answer
+from app.schemas.evaluation import EvaluationResponse
+from app.crud.crud_llm_evaluation_task import (
+    create_llm_evaluation_task, get_llm_evaluation_task, update_llm_evaluation_task,
+    get_user_evaluation_tasks, get_task_progress
 )
-from app.crud.crud_evaluation_new import (
-    create_evaluation, get_evaluations_by_llm_answer, batch_create_evaluations,
-    get_evaluation_statistics
-)
-from app.crud.crud_std_question import get_std_questions_paginated
+from app.crud.crud_llm import get_active_llms
+from app.crud.crud_dataset import get_datasets_paginated
+from app.services.llm_evaluation_service import LLMEvaluationTaskProcessor
+from app.config.llm_config import get_default_system_prompt, get_default_evaluation_prompt
 
-router = APIRouter()
+router = APIRouter(prefix="/api/llm-evaluation", tags=["LLM Evaluation"])
+
+# 创建任务处理器实例
+task_processor = LLMEvaluationTaskProcessor()
 
 
 @router.get("/marketplace/datasets", response_model=List[MarketplaceDatasetInfo])
@@ -103,355 +111,466 @@ def download_dataset(
     
     questions_data = []
     for question in questions:
-        question_data = {
+        # 获取标准答案
+        std_answers = [answer for answer in question.std_answers if answer.is_valid]
+        answers_data = []
+        
+        for answer in std_answers:
+            scoring_points = []
+            for point in answer.scoring_points:
+                scoring_points.append({
+                    "answer": point.answer,
+                    "point_order": point.point_order
+                })
+            
+            answers_data.append({
+                "id": answer.id,
+                "answer": answer.answer,
+                "scoring_points": scoring_points
+            })
+        
+        questions_data.append({
             "id": question.id,
             "body": question.body,
             "question_type": question.question_type,
-            "created_at": question.created_at.isoformat(),
-            "answers": []
-        }
-        
-        # 添加标准答案
-        for answer in question.std_answers:
-            if answer.is_valid:
-                answer_data = {
-                    "id": answer.id,
-                    "answer": answer.answer,
-                    "answered_at": answer.answered_at.isoformat(),
-                    "scoring_points": [
-                        {
-                            "answer": sp.answer,
-                            "point_order": sp.point_order
-                        }
-                        for sp in answer.scoring_points if sp.is_valid
-                    ]
-                }
-                question_data["answers"].append(answer_data)
-        
-        questions_data.append(question_data)
-    
-    # 统计信息
-    question_count = len(questions_data)
-    
-    dataset_info = MarketplaceDatasetInfo(
-        id=dataset.id,
-        name=dataset.name,
-        description=dataset.description,
-        version=dataset.version,
-        question_count=question_count,
-        is_public=dataset.is_public,
-        created_by=dataset.created_by,
-        create_time=dataset.create_time
-    )
+            "std_answers": answers_data
+        })
     
     return DatasetDownloadResponse(
-        dataset_info=dataset_info,
+        dataset_info=MarketplaceDatasetInfo(
+            id=dataset.id,
+            name=dataset.name,
+            description=dataset.description,
+            version=dataset.version,
+            question_count=len(questions_data),
+            is_public=dataset.is_public,
+            created_by=dataset.created_by,
+            create_time=dataset.create_time
+        ),
         questions=questions_data
     )
 
 
-@router.post("/evaluation/upload", response_model=LLMEvaluationResponse)
-async def upload_llm_evaluation(
-    llm_name: str = Form(...),
-    llm_version: str = Form(...),
-    dataset_id: int = Form(...),
-    answers_file: UploadFile = File(...),
+@router.get("/models", response_model=List[AvailableModel])
+def get_available_models(
     db: Session = Depends(get_db),
     current_user: User = Depends(get_current_user)
 ):
-    """上传LLM回答进行评测"""
-    # 验证数据集存在且公开
-    dataset = db.query(Dataset).filter(
-        Dataset.id == dataset_id,
-        Dataset.is_public == True
-    ).first()
+    """获取可用的LLM模型列表"""
+    # 从数据库获取活跃的模型
+    db_models = get_active_llms(db)
     
-    if not dataset:
-        raise HTTPException(
-            status_code=status.HTTP_404_NOT_FOUND,
-            detail="Dataset not found or not public"
-        )
-    
-    # 验证文件格式
-    if not answers_file.filename.endswith('.json'):
-        raise HTTPException(
-            status_code=status.HTTP_400_BAD_REQUEST,
-            detail="Only JSON files are supported"
-        )
-    
-    try:
-        # 读取上传的文件
-        content = await answers_file.read()
-        answers_data = json.loads(content.decode('utf-8'))
-        
-        # 获取或创建LLM
-        llm = get_or_create_llm(db, LLMCreate(
-            name=llm_name,
-            version=llm_version,
-            affiliation="User Upload"
-        ))
-        
-        # 生成评估ID
-        evaluation_id = str(uuid.uuid4())
-        created_answers = []
-        
-        # 处理每个答案
-        for answer_data in answers_data.get('answers', []):
-            question_id = answer_data.get('question_id')
-            answer_text = answer_data.get('answer', '')
-            scoring_points = answer_data.get('scoring_points', [])
-            
-            # 验证问题存在
-            question = db.query(StdQuestion).filter(
-                StdQuestion.id == question_id,
-                StdQuestion.current_dataset_id == dataset_id,
-                StdQuestion.is_valid == True
-            ).first()
-            
-            if not question:
-                continue
-            
-            # 创建LLM回答
-            llm_answer_create = LLMAnswerCreate(
-                llm_id=llm.id,
-                std_question_id=question_id,
-                answer=answer_text,
-                api_request_id=evaluation_id,
-                scoring_points=[
-                    {"answer": sp.get('answer', ''), "point_order": sp.get('point_order', 0)}
-                    for sp in scoring_points
-                ]
-            )
-            
-            llm_answer = create_llm_answer(db, llm_answer_create)
-            created_answers.append(LLMAnswerSchema.model_validate(llm_answer))
-        
-        return LLMEvaluationResponse(
-            evaluation_id=evaluation_id,
-            status="completed",
-            created_answers=created_answers,
-            evaluation_results={
-                "total_answers": len(created_answers),
-                "dataset_id": dataset_id,
-                "llm_name": llm_name,
-                "llm_version": llm_version
+    models = []
+    for db_model in db_models:
+        model = AvailableModel(
+            id=db_model.name,  # 使用name作为id
+            name=db_model.name,
+            display_name=db_model.display_name,
+            description=db_model.description or "",
+            provider=db_model.provider,
+            api_endpoint=db_model.api_endpoint or "",
+            max_tokens=db_model.max_tokens or 4000,
+            default_temperature=db_model.default_temperature or 0.7,
+            top_k=db_model.top_k or 50,
+            enable_reasoning=db_model.enable_reasoning or False,
+            pricing={
+                "input": float(db_model.cost_per_1k_tokens or 0.002),
+                "output": float(db_model.cost_per_1k_tokens or 0.002) * 3  # 假设输出价格是输入的3倍
             }
         )
-        
-    except json.JSONDecodeError:
-        raise HTTPException(
-            status_code=status.HTTP_400_BAD_REQUEST,
-            detail="Invalid JSON format"
-        )
-    except Exception as e:
-        raise HTTPException(
-            status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
-            detail=f"Error processing upload: {str(e)}"
-        )
+        models.append(model)
+    
+    return models
 
 
-@router.get("/evaluation/answers", response_model=List[LLMAnswerWithDetails])
-def get_llm_answers(
+@router.get("/prompt-templates", response_model=List[PromptTemplateInfo])
+def get_prompt_templates_list(
+    template_type: Optional[str] = None,
+    current_user: User = Depends(get_current_user)
+):
+    """获取基于llm_config的Prompt模板列表"""
+    templates = []
+    
+    if template_type == "system" or template_type is None:
+        # 系统模板
+        templates.extend([
+            PromptTemplateInfo(
+                key="choice_system_default",
+                name="选择题系统提示词",
+                description="用于选择题的默认系统提示词",
+                template_type="system",
+                content=get_default_system_prompt("choice"),
+                variables={}
+            ),
+            PromptTemplateInfo(
+                key="text_system_default",
+                name="文本题系统提示词", 
+                description="用于文本题的默认系统提示词",
+                template_type="system",
+                content=get_default_system_prompt("text"),
+                variables={}
+            )
+        ])
+    
+    if template_type == "evaluation" or template_type is None:
+        # 评估模板
+        templates.extend([
+            PromptTemplateInfo(
+                key="choice_evaluation_default",
+                name="选择题评估提示词",
+                description="用于选择题的默认评估提示词",
+                template_type="evaluation",
+                content=get_default_evaluation_prompt("choice"),
+                variables={"question": "问题", "answer": "回答", "correct_answer": "正确答案"}
+            ),
+            PromptTemplateInfo(
+                key="text_evaluation_default",
+                name="文本题评估提示词",
+                description="用于文本题的默认评估提示词", 
+                template_type="evaluation",
+                content=get_default_evaluation_prompt("text"),
+                variables={"question": "问题", "answer": "回答", "correct_answer": "参考答案"}
+            )
+        ])
+    
+    return templates
+
+
+@router.get("/prompt-templates/{template_key}", response_model=PromptTemplateInfo)
+def get_prompt_template_by_key(
+    template_key: str,
+    current_user: User = Depends(get_current_user)
+):
+    """根据key获取指定的Prompt模板"""
+    # 根据key返回对应的模板
+    template_mapping = {
+        "choice_system_default": PromptTemplateInfo(
+            key="choice_system_default",
+            name="选择题系统提示词",
+            description="用于选择题的默认系统提示词",
+            template_type="system",
+            content=get_default_system_prompt("choice"),
+            variables={}
+        ),
+        "text_system_default": PromptTemplateInfo(
+            key="text_system_default", 
+            name="文本题系统提示词",
+            description="用于文本题的默认系统提示词",
+            template_type="system",
+            content=get_default_system_prompt("text"),
+            variables={}
+        ),
+        "choice_evaluation_default": PromptTemplateInfo(
+            key="choice_evaluation_default",
+            name="选择题评估提示词",
+            description="用于选择题的默认评估提示词",
+            template_type="evaluation",
+            content=get_default_evaluation_prompt("choice"),
+            variables={"question": "问题", "answer": "回答", "correct_answer": "正确答案"}
+        ),
+        "text_evaluation_default": PromptTemplateInfo(
+            key="text_evaluation_default",
+            name="文本题评估提示词",
+            description="用于文本题的默认评估提示词",
+            template_type="evaluation", 
+            content=get_default_evaluation_prompt("text"),
+            variables={"question": "问题", "answer": "回答", "correct_answer": "参考答案"}
+        )
+    }
+    
+    template = template_mapping.get(template_key)
+    if not template:
+        raise HTTPException(
+            status_code=status.HTTP_404_NOT_FOUND,
+            detail=f"Template with key '{template_key}' not found"
+        )
+    
+    return template
+
+
+@router.post("/tasks", response_model=LLMEvaluationTaskResponse)
+def create_evaluation_task(
+    request: EvaluationStartRequest,
+    background_tasks: BackgroundTasks,
+    db: Session = Depends(get_db),
+    current_user: User = Depends(get_current_user)
+):
+    """创建并启动LLM评测任务"""
+    # 验证数据集存在
+    dataset = db.query(Dataset).filter(Dataset.id == request.dataset_id).first()
+    if not dataset:        
+        raise HTTPException(
+            status_code=status.HTTP_404_NOT_FOUND,
+            detail="Dataset not found"
+        )
+    # 查找或创建LLM模型记录
+    llm = db.query(LLM).filter(LLM.name == request.model_config.model_name).first()
+    if not llm:
+        llm = LLM(
+            name=request.model_config.model_name,
+            version=getattr(request.model_config, 'model_version', 'latest'),
+            affiliation="API"
+        )
+        db.add(llm)
+        db.commit()
+        db.refresh(llm)    # 创建任务数据
+    task_data = LLMEvaluationTaskCreate(
+        name=request.task_name,
+        description=f"LLM评测任务: {request.task_name}",
+        dataset_id=request.dataset_id,
+        model_id=llm.id,  # 使用LLM ID而不是名称
+        system_prompt=request.model_config.system_prompt,
+        temperature=getattr(request.model_config, 'temperature', Decimal("0.7")),
+        max_tokens=getattr(request.model_config, 'max_tokens', 2000),
+        top_k=getattr(request.model_config, 'top_k', 50),
+        enable_reasoning=getattr(request.model_config, 'enable_reasoning', False),
+        evaluation_llm_id=getattr(request.evaluation_config, 'evaluation_llm_id', None) if request.is_auto_score else None,
+        evaluation_prompt=getattr(request.evaluation_config, 'evaluation_prompt', None) if request.is_auto_score else None,
+        api_key=request.model_config.api_key
+    )
+    
+    # 创建任务
+    task = create_llm_evaluation_task(db=db, task_data=task_data, user_id=current_user.id)
+    
+    # 添加后台任务
+    background_tasks.add_task(
+        task_processor.process_evaluation_task,
+        task.id,
+        db,
+        question_limit=request.question_limit
+    )
+    
+    return LLMEvaluationTaskResponse.from_orm(task)
+
+
+@router.get("/tasks", response_model=List[LLMEvaluationTaskResponse])
+def get_my_evaluation_tasks(
     skip: int = 0,
     limit: int = 20,
-    llm_id: Optional[int] = None,
-    question_id: Optional[int] = None,
+    status_filter: Optional[str] = None,
     db: Session = Depends(get_db),
     current_user: User = Depends(get_current_user)
 ):
-    """获取LLM回答列表"""
-    answers, total = get_llm_answers_paginated(
+    """获取我的评测任务列表"""
+    tasks = get_user_evaluation_tasks(
         db=db,
+        user_id=current_user.id,
         skip=skip,
         limit=limit,
-        llm_id=llm_id,
-        std_question_id=question_id,
-        include_invalid=False
+        status_filter=status_filter
     )
     
-    return [LLMAnswerWithDetails.model_validate(answer) for answer in answers]
+    return [LLMEvaluationTaskResponse.from_orm(task) for task in tasks]
 
 
-@router.post("/evaluation/manual", response_model=EvaluationResponse)
-def create_manual_evaluation(
-    evaluation_data: EvaluationCreate,
+@router.get("/tasks/{task_id}", response_model=LLMEvaluationTaskResponse)
+def get_evaluation_task(
+    task_id: int,
     db: Session = Depends(get_db),
     current_user: User = Depends(get_current_user)
 ):
-    """创建手动评估"""
-    # 验证LLM回答存在
-    llm_answer = get_llm_answer(db, evaluation_data.llm_answer_id)
-    if not llm_answer:
+    """获取评测任务详情"""
+    task = get_llm_evaluation_task(db=db, task_id=task_id)
+    
+    if not task:
         raise HTTPException(
             status_code=status.HTTP_404_NOT_FOUND,
-            detail="LLM answer not found"
+            detail="Task not found"
         )
     
-    # 设置评估者信息
-    evaluation_data.evaluator_id = current_user.id
-    evaluation_data.evaluator_type = "user"
+    if task.user_id != current_user.id:
+        raise HTTPException(
+            status_code=status.HTTP_403_FORBIDDEN,
+            detail="Access denied"
+        )
     
-    evaluation = create_evaluation(db, evaluation_data)
-    return EvaluationResponse.model_validate(evaluation)
+    return LLMEvaluationTaskResponse.from_orm(task)
 
 
-@router.post("/evaluation/auto/{llm_answer_id}", response_model=EvaluationResponse)
-def create_auto_evaluation(
-    llm_answer_id: int,
-    evaluation_criteria: Optional[str] = None,
+@router.get("/tasks/{task_id}/progress", response_model=LLMEvaluationTaskProgress)
+def get_task_progress_endpoint(
+    task_id: int,
     db: Session = Depends(get_db),
     current_user: User = Depends(get_current_user)
 ):
-    """创建自动评估（选择题自动评分）"""
-    # 获取LLM回答和对应的问题
-    llm_answer = get_llm_answer(db, llm_answer_id)
-    if not llm_answer:
+    """获取任务进度"""
+    task = get_llm_evaluation_task(db=db, task_id=task_id)
+    
+    if not task:
         raise HTTPException(
             status_code=status.HTTP_404_NOT_FOUND,
-            detail="LLM answer not found"
+            detail="Task not found"
         )
     
-    question = llm_answer.std_question
+    if task.user_id != current_user.id:
+        raise HTTPException(
+            status_code=status.HTTP_403_FORBIDDEN,
+            detail="Access denied"
+        )
     
-    # 仅对选择题进行自动评分
-    if question.question_type != "choice":
+    progress_data = get_task_progress(db=db, task_id=task_id)
+    
+    return LLMEvaluationTaskProgress(
+        task_id=task.id,
+        status=task.status,
+        progress=task.progress,
+        current_question=task.current_question,
+        total_questions=task.total_questions,
+        successful_count=task.successful_count,
+        failed_count=task.failed_count,
+        average_score=task.average_score,
+        **progress_data
+    )
+
+
+@router.post("/tasks/{task_id}/cancel")
+def cancel_evaluation_task(
+    task_id: int,
+    db: Session = Depends(get_db),
+    current_user: User = Depends(get_current_user)
+):
+    """取消评测任务"""
+    task = get_llm_evaluation_task(db=db, task_id=task_id)
+    
+    if not task:
+        raise HTTPException(
+            status_code=status.HTTP_404_NOT_FOUND,
+            detail="Task not found"
+        )
+    
+    if task.user_id != current_user.id:
+        raise HTTPException(
+            status_code=status.HTTP_403_FORBIDDEN,
+            detail="Access denied"
+        )
+    
+    if task.status not in [TaskStatus.PENDING.value, TaskStatus.RUNNING.value]:
         raise HTTPException(
             status_code=status.HTTP_400_BAD_REQUEST,
-            detail="Automatic evaluation is only supported for choice questions"
+            detail="Task cannot be cancelled"
         )
-      # 智能自动评分逻辑
-    standard_answers = [answer.answer.lower().strip() for answer in question.std_answers if answer.is_valid]
-    llm_answer_text = llm_answer.answer.lower().strip()
     
-    # 计算匹配度
-    score = 0
-    feedback_details = []
+    # 更新任务状态
+    update_data = LLMEvaluationTaskUpdate(status="cancelled")
+    update_llm_evaluation_task(db=db, task_id=task_id, task_update=update_data)
     
-    if question.question_type == "choice":
-        # 选择题评分 - 精确匹配或包含匹配
-        for std_answer in standard_answers:
-            if std_answer == llm_answer_text:
-                # 精确匹配
-                score = 100
-                feedback_details.append(f"精确匹配标准答案: {std_answer}")
-                break
-            elif std_answer in llm_answer_text:
-                # 包含匹配
-                score = 90
-                feedback_details.append(f"部分匹配标准答案: {std_answer}")
-            elif llm_answer_text in std_answer:
-                # 反向包含匹配
-                score = 80
-                feedback_details.append(f"答案包含在标准答案中: {std_answer}")
-        
-        # 如果没有匹配，检查是否有相似的字符
-        if score == 0:
-            for std_answer in standard_answers:
-                # 简单的相似度检查（字符匹配度）
-                common_chars = set(std_answer) & set(llm_answer_text)
-                similarity = len(common_chars) / max(len(set(std_answer)), len(set(llm_answer_text)), 1)
-                if similarity > 0.5:
-                    score = max(score, int(similarity * 60))
-                    feedback_details.append(f"与标准答案有一定相似度: {similarity:.2f}")
-    
-    # 生成反馈信息
-    if score >= 90:
-        result_text = "正确"
-    elif score >= 60:
-        result_text = "部分正确"
-    else:
-        result_text = "错误"
-    
-    feedback = f"自动评测结果: {result_text} (得分: {score}分)\n详情: " + "; ".join(feedback_details) if feedback_details else f"自动评测结果: {result_text}"
-    evaluation_data = EvaluationCreate(
-        std_question_id=question.id,
-        llm_answer_id=llm_answer_id,
-        score=score,
-        evaluator_type="llm",
-        evaluator_id=None,
-        evaluation_criteria=evaluation_criteria or "智能自动评测 - 选择题匹配算法",
-        feedback=feedback
-    )
-    
-    evaluation = create_evaluation(db, evaluation_data)
-    return EvaluationResponse.model_validate(evaluation)
+    return {"message": "Task cancelled successfully"}
 
 
-@router.get("/evaluation/statistics/{llm_answer_id}")
-def get_answer_evaluation_statistics(
-    llm_answer_id: int,
+@router.get("/tasks/{task_id}/results", response_model=EvaluationResultSummary)
+def get_task_results(
+    task_id: int,
     db: Session = Depends(get_db),
     current_user: User = Depends(get_current_user)
 ):
-    """获取LLM回答的评估统计信息"""
-    # 验证LLM回答存在
-    llm_answer = get_llm_answer(db, llm_answer_id)
-    if not llm_answer:
+    """获取评测任务结果摘要"""
+    task = get_llm_evaluation_task(db=db, task_id=task_id)
+    
+    if not task:
         raise HTTPException(
             status_code=status.HTTP_404_NOT_FOUND,
-            detail="LLM answer not found"
+            detail="Task not found"
         )
     
-    stats = get_evaluation_statistics(db, llm_answer_id)
-    evaluations = get_evaluations_by_llm_answer(db, llm_answer_id)
+    if task.user_id != current_user.id:
+        raise HTTPException(
+            status_code=status.HTTP_403_FORBIDDEN,
+            detail="Access denied"
+        )
     
-    return {
-        "llm_answer_id": llm_answer_id,
-        "statistics": stats,
-        "evaluations": [EvaluationResponse.model_validate(eval) for eval in evaluations]
-    }
+    if task.status != TaskStatus.COMPLETED.value:
+        raise HTTPException(
+            status_code=status.HTTP_400_BAD_REQUEST,
+            detail="Task not completed yet"
+        )
+    
+    return EvaluationResultSummary(
+        task_id=task.id,
+        task_name=task.task_name,
+        dataset_name=task.dataset.name,
+        model_name=task.model_name,
+        total_questions=task.total_questions,
+        successful_count=task.successful_count,
+        failed_count=task.failed_count,
+        average_score=task.average_score,
+        completion_rate=task.successful_count / task.total_questions if task.total_questions > 0 else 0,
+        created_at=task.created_at,
+        completed_at=task.completed_at
+    )
 
 
-@router.get("/evaluation/results/{evaluation_id}/download")
-def download_evaluation_results(
-    evaluation_id: str,
-    format: str = "json",
+@router.post("/tasks/{task_id}/download")
+def download_task_results(
+    task_id: int,
+    request: EvaluationDownloadRequest,
     db: Session = Depends(get_db),
     current_user: User = Depends(get_current_user)
 ):
-    """下载评估结果"""
-    # 查找所有相关的LLM回答（通过api_request_id）
-    llm_answers = db.query(LLMAnswer).filter(
-        LLMAnswer.api_request_id == evaluation_id,
-        LLMAnswer.is_valid == True
+    """下载评测结果"""
+    task = get_llm_evaluation_task(db=db, task_id=task_id)
+    
+    if not task:
+        raise HTTPException(
+            status_code=status.HTTP_404_NOT_FOUND,
+            detail="Task not found"
+        )
+    
+    if task.user_id != current_user.id:
+        raise HTTPException(
+            status_code=status.HTTP_403_FORBIDDEN,
+            detail="Access denied"
+        )
+    
+    # 获取任务的所有答案和评测结果
+    answers = db.query(LLMAnswer).filter(
+        LLMAnswer.evaluation_task_id == task_id
     ).all()
     
-    if not llm_answers:
-        raise HTTPException(
-            status_code=status.HTTP_404_NOT_FOUND,
-            detail="Evaluation results not found"
-        )
-    
     results = []
-    for answer in llm_answers:
-        evaluations = get_evaluations_by_llm_answer(db, answer.id)
-        stats = get_evaluation_statistics(db, answer.id)
-        
-        result = {
+    for answer in answers:
+        answer_data = {
             "question_id": answer.std_question_id,
-            "question_body": answer.std_question.body,
-            "question_type": answer.std_question.question_type,
+            "question_text": answer.std_question.body if answer.std_question else "",
             "llm_answer": answer.answer,
-            "llm_answer_id": answer.id,
-            "evaluations": [
-                {
-                    "score": eval.score,
-                    "evaluator_type": eval.evaluator_type.value,
-                    "feedback": eval.feedback,
-                    "created_at": eval.created_at.isoformat()
-                }
-                for eval in evaluations
-            ],
-            "statistics": stats
+            "answered_at": answer.answered_at.isoformat() if answer.answered_at else None,
+            "is_valid": answer.is_valid
         }
-        results.append(result)
+        
+        if request.include_prompts and answer.prompt_used:
+            answer_data["prompt_used"] = answer.prompt_used
+        
+        if request.include_raw_responses and answer.api_response:
+            answer_data["api_response"] = answer.api_response
+        
+        # 添加评测结果
+        evaluations = db.query(Evaluation).filter(
+            Evaluation.llm_answer_id == answer.id
+        ).all()
+        
+        answer_data["evaluations"] = []
+        for eval in evaluations:
+            answer_data["evaluations"].append({
+                "score": eval.score,
+                "evaluator_type": eval.evaluator_type.value,
+                "feedback": eval.feedback,
+                "evaluation_time": eval.evaluation_time.isoformat()
+            })
+        
+        results.append(answer_data)
     
     return {
-        "evaluation_id": evaluation_id,
+        "task_info": {
+            "id": task.id,
+            "name": task.task_name,
+            "model": task.model_name,
+            "dataset": task.dataset.name,
+            "created_at": task.created_at.isoformat()
+        },
         "results": results,
         "summary": {
-            "total_questions": len(results),
-            "average_score": sum(r["statistics"]["average_score"] for r in results) / len(results) if results else 0,
-            "evaluated_questions": len([r for r in results if r["evaluations"]])
+            "total_questions": task.total_questions,
+            "successful_count": task.successful_count,
+            "failed_count": task.failed_count,
+            "average_score": task.average_score
         }
     }

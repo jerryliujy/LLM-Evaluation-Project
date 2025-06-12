@@ -2,27 +2,23 @@
 LLM Answer schemas for API serialization
 """
 from pydantic import BaseModel, ConfigDict
-from typing import Optional, List
+from typing import Optional, List, TYPE_CHECKING
 from datetime import datetime
 
-
-class LLMBase(BaseModel):
-    """LLM基础schema"""
-    name: str
-    version: str
-    affiliation: Optional[str] = None
+if TYPE_CHECKING:
+    from app.schemas.llm import LLM
 
 
-class LLMCreate(LLMBase):
-    """创建LLM的schema"""
-    pass
-
-
-class LLM(LLMBase):
-    """LLM响应schema"""
+class LLMSimple(BaseModel):
+    """简化的LLM schema，用于列表显示"""
     model_config = ConfigDict(from_attributes=True)
     
     id: int
+    name: str
+    display_name: str
+    provider: str
+    description: Optional[str] = None
+    is_active: bool
 
 
 class LLMAnswerScoringPointBase(BaseModel):
@@ -78,7 +74,7 @@ class LLMAnswer(LLMAnswerBase):
 class LLMAnswerWithDetails(LLMAnswer):
     """包含详细信息的LLM回答schema"""
     scoring_points: List[LLMAnswerScoringPoint] = []
-    llm: Optional[LLM] = None
+    llm: Optional["LLM"] = None
 
 
 class LLMEvaluationRequest(BaseModel):

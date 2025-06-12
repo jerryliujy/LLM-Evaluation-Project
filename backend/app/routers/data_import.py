@@ -348,31 +348,42 @@ async def upload_std_qa_data(
                 
                 if tag not in std_question.tags:
                     std_question.tags.append(tag)
-            
-            # 处理选择题答案逻辑
-            answer_text = item.get('answer', '')
+              # 处理选择题：将选项添加到问题中
             if item.get('question_type') == 'choice' and item.get('options'):
+                # 构建选项文本
+                options_text = []
+                correct_options = []
+                
+                for i, option in enumerate(item['options']):
+                    option_letter = chr(65 + i)  # A, B, C, D...
+                    option_text = option.get('text', '').strip()
+                    if option_text:
+                        options_text.append(f"{option_letter}. {option_text}")
+                    
+                    # 记录正确选项
+                    if option.get('is_correct', False):
+                        correct_options.append(option_letter)
+                
+                # 将选项添加到问题内容中
+                if options_text:
+                    original_body = std_question.body
+                    std_question.body = f"{original_body}\n\n{chr(10).join(options_text)}"
+                
+                # 设置答案为正确选项字母
+                answer_text = item.get('answer', '')
                 if not answer_text:
-                    # 如果没有提供答案，从选项中自动生成答案（找到正确选项对应的字母）
-                    correct_options = []
-                    for i, option in enumerate(item['options']):
-                        if option.get('is_correct', False):
-                            correct_options.append(chr(65 + i))  # A, B, C, D...
+                    # 如果没有提供答案，从选项中自动生成答案
                     answer_text = ', '.join(correct_options) if correct_options else 'A'
                 else:
                     # 如果提供了答案，验证答案与选项的一致性
                     provided_answers = [ans.strip().upper() for ans in answer_text.split(',')]
-                    correct_options = []
-                    for i, option in enumerate(item['options']):
-                        if option.get('is_correct', False):
-                            correct_options.append(chr(65 + i))  # A, B, C, D...
                     
                     # 如果提供的答案与选项不一致，记录警告但使用提供的答案
                     if set(provided_answers) != set(correct_options):
                         print(f"Warning: Provided answer '{answer_text}' doesn't match is_correct flags {correct_options} for question: {item.get('body', '')[:50]}...")
-            
-            # 对于问答题，直接使用提供的答案
-            elif item.get('question_type') != 'choice':
+            else:
+                # 对于问答题，直接使用提供的答案
+                answer_text = item.get('answer', '')
                 if not answer_text:
                     print(f"Warning: No answer provided for question: {item.get('body', '')[:50]}...")
                     continue  # 跳过没有答案的问答题

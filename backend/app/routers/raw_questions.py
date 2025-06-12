@@ -38,7 +38,7 @@ def create_raw_question_with_answers_api(
     current_user: User = Depends(get_current_active_user),
     db: Session = Depends(get_db)
 ):
-    """事务性地创建原始问题和相关回答"""
+    """创建原始问题和相关回答"""
     try:
         # 转换回答数据格式
         answers_data = []
@@ -50,7 +50,6 @@ def create_raw_question_with_answers_api(
                 'answered_at': answer.answered_at
             })
         
-        # 调用CRUD函数
         result = crud_raw_question.create_raw_question_with_answers(
             db=db, 
             question_data=data.question, 

@@ -174,7 +174,7 @@ def create_raw_question(question: schemas.RawQuestionCreate, created_by: int = N
     return db_question
 
 def create_raw_question_with_answers(db: Session, question_data: schemas.RawQuestionCreate, answers_data: List[dict], created_by: int = None) -> dict:
-    """事务性地创建问题和相关回答"""
+    """创建问题和相关回答"""
     try:
         # 1. 创建问题
         question = create_raw_question(question_data, created_by)

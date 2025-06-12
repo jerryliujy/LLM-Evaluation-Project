@@ -893,7 +893,7 @@ const loadTableData = async () => {
       currentData.value = result.data.map(item => {
         // 处理标准答案摘要
         const stdAnswersSummary = item.std_answers && item.std_answers.length > 0 
-          ? item.std_answers.map((answer: any) => answer.answer).join('; ')
+          ? item.std_answers.map((answer: any) => answer.answer).join('\n')
           : '无标准答案';
 
         return {
