@@ -174,20 +174,40 @@ class LLMClient:
                 max_tokens=1000,
                 **kwargs
             )
-            
             evaluation_text = completion.choices[0].message.content
             
             # 尝试解析JSON格式的评测结果
             try:
-                evaluation_result = json.loads(evaluation_text)
+                # 清理可能的markdown格式标记
+                clean_text = evaluation_text.strip()
+                if clean_text.startswith('```json'):
+                    clean_text = clean_text.replace('```json', '').replace('```', '').strip()
+                elif clean_text.startswith('```'):
+                    clean_text = clean_text.replace('```', '').strip()
+                
+                # 尝试找到JSON部分
+                import re
+                json_match = re.search(r'\{.*\}', clean_text, re.DOTALL)
+                if json_match:
+                    json_str = json_match.group(0)
+                    # 替换可能的非标准引号
+                    json_str = json_str.replace('"', '"').replace('"', '"').replace(''', "'").replace(''', "'")
+                    evaluation_result = json.loads(json_str)
+                else:
+                    # 没有找到JSON格式，尝试直接解析
+                    evaluation_result = json.loads(clean_text)
+                
                 score = float(evaluation_result.get("score", 0))
                 reasoning = evaluation_result.get("reasoning", "")
                 feedback = evaluation_result.get("feedback", "")
-            except (json.JSONDecodeError, ValueError):
+                
+            except (json.JSONDecodeError, ValueError) as e:
+                logger.warning(f"Failed to parse JSON evaluation result: {str(e)}")
+                logger.warning(f"Raw evaluation text: {evaluation_text}")
                 # 如果不是JSON格式，尝试从文本中提取分数
                 score = self._extract_score_from_text(evaluation_text)
                 reasoning = evaluation_text
-                feedback = evaluation_text            # 计算成本
+                feedback = evaluation_text# 计算成本
             usage_info = {
                 "prompt_tokens": completion.usage.prompt_tokens if completion.usage else 0,
                 "completion_tokens": completion.usage.completion_tokens if completion.usage else 0,
@@ -213,36 +233,39 @@ class LLMClient:
                 "error": str(e),
                 "score": 0
             }
-    
     def _extract_score_from_text(self, text: str) -> float:
         """从文本中提取分数"""
         import re
         
         # 尝试匹配常见的分数格式
         patterns = [
-            r'(\d+(?:\.\d+)?)\s*分',
-            r'评分[：:]\s*(\d+(?:\.\d+)?)',
-            r'分数[：:]\s*(\d+(?:\.\d+)?)',
-            r'(\d+(?:\.\d+)?)\s*/\s*100',
-            r'(\d+(?:\.\d+)?)%'
+            r'"score"[:\s]*(\d+(?:\.\d+)?)',  # JSON格式中的score字段
+            r'score[:\s]*(\d+(?:\.\d+)?)',    # 普通格式的score
+            r'(\d+(?:\.\d+)?)\s*分',           # 中文"分"
+            r'评分[：:]\s*(\d+(?:\.\d+)?)',      # 评分：
+            r'分数[：:]\s*(\d+(?:\.\d+)?)',      # 分数：
+            r'(\d+(?:\.\d+)?)\s*/\s*100',      # X/100格式
+            r'(\d+(?:\.\d+)?)%',               # 百分比格式
+            r'(\d+(?:\.\d+)?)\s*points?',      # X points格式
+            r'\b(\d+(?:\.\d+)?)\b'             # 任意数字（最后备选）
         ]
         
         for pattern in patterns:
-            match = re.search(pattern, text)
-            if match:
+            matches = re.findall(pattern, text, re.IGNORECASE)
+            for match in matches:
                 try:
-                    score = float(match.group(1))
-                    # 如果是百分比格式，直接返回
-                    if '%' in match.group(0):
+                    score = float(match)
+                    # 如果分数在合理范围内，直接返回
+                    if 0 <= score <= 100:
                         return score
-                    # 如果分数大于100，假设是百分制
-                    if score > 100:
+                    # 如果分数大于100，可能是百分制
+                    elif score > 100:
                         return min(100, score)
-                    return score
                 except ValueError:
                     continue
         
         # 如果没有找到明确的分数，返回默认值
+        logger.warning(f"Could not extract score from text: {text[:200]}...")
         return 60.0
     
     async def close(self):

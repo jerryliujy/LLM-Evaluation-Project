@@ -11,12 +11,14 @@ from ..db.database import Base
 
 
 class TaskStatus(enum.Enum):
-    """评测任务状态"""
-    PENDING = "pending"          # 待开始
-    RUNNING = "running"          # 进行中
-    COMPLETED = "completed"      # 已完成
-    FAILED = "failed"           # 失败
-    CANCELLED = "cancelled"      # 已取消
+    """评测任务状态 - 5个阶段"""
+    CONFIG_PARAMS = "config_params"            # 阶段1：参数配置
+    CONFIG_PROMPTS = "config_prompts"          # 阶段2：提示词配置
+    GENERATING_ANSWERS = "generating_answers"  # 阶段3：生成答案中
+    EVALUATING_ANSWERS = "evaluating_answers"  # 阶段4：评测答案中
+    COMPLETED = "completed"                    # 阶段5：全部完成，可查看结果
+    FAILED = "failed"                          # 失败
+    CANCELLED = "cancelled"                    # 已取消
 
 
 class LLMEvaluationTask(Base):
@@ -32,7 +34,7 @@ class LLMEvaluationTask(Base):
     
     # 任务状态
     status = Column(SQLEnum(TaskStatus, values_callable=lambda x: [e.value for e in x]), 
-                   default=TaskStatus.PENDING, nullable=False, index=True)
+                   default=TaskStatus.CONFIG_PARAMS, nullable=False, index=True)
     progress = Column(Integer, server_default=text('0'), nullable=False)  # 进度百分比
     score = Column(DECIMAL(5, 2), nullable=True)  # 任务评分
     total_questions = Column(Integer, server_default=text('0'), nullable=False)
@@ -61,12 +63,11 @@ class LLMEvaluationTask(Base):
     # 错误和结果
     error_message = Column(Text, nullable=True)
     result_summary = Column(JSON, nullable=True)
-    
-    # 关系
+      # 关系
     dataset = relationship("Dataset")
     user = relationship("User")  # 创建者
     model = relationship("LLM", foreign_keys=[model_id], back_populates="evaluation_tasks")  # 评测模型
-    evaluation_llm = relationship("LLM", foreign_keys=[evaluation_llm_id])  # 评估模型
+    evaluation_llm = relationship("LLM", foreign_keys=[evaluation_llm_id], back_populates="evaluation_tasks_as_evaluator")  # 评估模型
     llm_answers = relationship("LLMAnswer", back_populates="task")
     
     def __repr__(self):

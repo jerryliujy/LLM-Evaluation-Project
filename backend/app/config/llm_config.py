@@ -32,7 +32,7 @@ DEFAULT_EVALUATION_PROMPTS = {
 标准答案：{correct_answer}
 待评估回答：{answer}
 
-请按照以下JSON格式给出评分：
+重要提示：请严格按照以下JSON格式返回评分结果，不要添加任何其他文字或格式标记：
 {{
     "score": 85,
     "reasoning": "答案正确，解释清晰合理，格式规范",
@@ -51,7 +51,7 @@ DEFAULT_EVALUATION_PROMPTS = {
 {f"参考答案：{correct_answer}" if correct_answer else ""}
 待评估回答：{answer}
 
-请按照以下JSON格式给出评分：
+重要提示：请严格按照以下JSON格式返回评分结果，不要添加任何其他文字或格式标记：
 {{
     "score": 85,
     "reasoning": "内容准确，覆盖全面，表达清晰",

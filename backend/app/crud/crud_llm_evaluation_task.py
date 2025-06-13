@@ -57,7 +57,7 @@ def create_llm_evaluation_task(
         enable_reasoning=task_data.enable_reasoning,
         evaluation_llm_id=task_data.evaluation_llm_id,
         evaluation_prompt=task_data.evaluation_prompt,
-        status=TaskStatus.PENDING,
+        status=TaskStatus.CONFIG_PARAMS,
         total_questions=total_questions,
         progress=0,
         completed_questions=0,
@@ -91,6 +91,8 @@ def get_llm_evaluation_task(db: Session, task_id: int) -> Optional[LLMEvaluation
     """获取LLM评测任务"""    
     return db.query(LLMEvaluationTask).options(
         joinedload(LLMEvaluationTask.dataset),
+        joinedload(LLMEvaluationTask.model),
+        joinedload(LLMEvaluationTask.evaluation_llm),
         joinedload(LLMEvaluationTask.user)
     ).filter(LLMEvaluationTask.id == task_id).first()
 
@@ -102,9 +104,11 @@ def get_user_evaluation_tasks(
     limit: int = 20,
     status: Optional[str] = None
 ) -> List[LLMEvaluationTask]:
-    """获取用户的评测任务列"""
+    """获取用户的评测任务列表"""
     query = db.query(LLMEvaluationTask).options(
-        joinedload(LLMEvaluationTask.dataset)
+        joinedload(LLMEvaluationTask.dataset),
+        joinedload(LLMEvaluationTask.model),
+        joinedload(LLMEvaluationTask.evaluation_llm)
     ).filter(LLMEvaluationTask.created_by == user_id)
     
     if status:
@@ -154,10 +158,9 @@ def update_llm_evaluation_task(
         for field, value in update_data.items():
             logger.info(f"Task {task_id}: 设置字段 {field} = {value}")
             setattr(task, field, value)
-        
-        # 自动设置时间戳
+          # 自动设置时间戳
         logger.info(f"Task {task_id}: 检查时间戳设置")
-        if task_update.status and task_update.status == TaskStatus.RUNNING and not task.started_at:
+        if task_update.status and task_update.status == TaskStatus.GENERATING_ANSWERS and not task.started_at:
             logger.info(f"Task {task_id}: 设置started_at时间戳")
             task.started_at = datetime.now(timezone.utc)
         elif task_update.status and task_update.status in [TaskStatus.COMPLETED, TaskStatus.FAILED, TaskStatus.CANCELLED] and not task.completed_at:
@@ -193,7 +196,7 @@ def delete_llm_evaluation_task(db: Session, task_id: int, user_id: int) -> bool:
         return False
       # 只允许删除未开始或已完成的任务
       
-    if task.status in [TaskStatus.PENDING.value, TaskStatus.COMPLETED.value, TaskStatus.FAILED.value, TaskStatus.CANCELLED.value]:
+    if task.status in [TaskStatus.CONFIG_PARAMS.value, TaskStatus.CONFIG_PROMPTS.value, TaskStatus.COMPLETED.value, TaskStatus.FAILED.value, TaskStatus.CANCELLED.value]:
         db.delete(task)
         db.commit()
         return True
@@ -207,7 +210,7 @@ def cancel_llm_evaluation_task(db: Session, task_id: int, user_id: int) -> Optio
         and_(
             LLMEvaluationTask.id == task_id,
             LLMEvaluationTask.created_by == user_id,
-            LLMEvaluationTask.status.in_([TaskStatus.PENDING.value, TaskStatus.RUNNING.value])
+            LLMEvaluationTask.status.in_([TaskStatus.CONFIG_PARAMS.value, TaskStatus.CONFIG_PROMPTS.value, TaskStatus.GENERATING_ANSWERS.value, TaskStatus.EVALUATING_ANSWERS.value])
         )
     ).first()
     
@@ -226,11 +229,10 @@ def get_task_progress(db: Session, task_id: int) -> Dict[str, Any]:
     task = db.query(LLMEvaluationTask).filter(LLMEvaluationTask.id == task_id).first()
     if not task:
         return {}
-    
-    # 计算预计剩余时间
+      # 计算预计剩余时间
     estimated_remaining_time = None
     questions_per_minute = None
-    if task.status == TaskStatus.RUNNING and task.started_at:
+    if task.status in [TaskStatus.GENERATING_ANSWERS, TaskStatus.EVALUATING_ANSWERS] and task.started_at:
         elapsed_time = (datetime.now() - task.started_at).total_seconds()
         if elapsed_time > 0 and task.completed_questions > 0:
             questions_per_minute = (task.completed_questions / elapsed_time) * 60

@@ -9,6 +9,27 @@ from decimal import Decimal
 from ..models.llm_evaluation_task import TaskStatus
 
 
+class SimpleDatasetInfo(BaseModel):
+    """简单数据集信息"""
+    id: int
+    name: str
+    description: Optional[str] = None
+    
+    class Config:
+        from_attributes = True
+
+
+class SimpleLLMInfo(BaseModel):
+    """简单模型信息"""
+    id: int
+    name: str
+    display_name: str
+    version: Optional[str] = None
+    
+    class Config:
+        from_attributes = True
+
+
 class TaskStatusEnum(str, Enum):
     """评测任务状态枚举"""
     PENDING = "pending"
@@ -114,6 +135,11 @@ class LLMEvaluationTaskResponse(LLMEvaluationTaskBase):
     completed_at: Optional[datetime] = None
     error_message: Optional[str] = None
     result_summary: Optional[Dict[str, Any]] = None
+    
+    # 关联信息
+    dataset: Optional[SimpleDatasetInfo] = None
+    model: Optional[SimpleLLMInfo] = None
+    evaluation_llm: Optional[SimpleLLMInfo] = None
     
     # 运行时信息
     estimated_remaining_time: Optional[int] = Field(None, description="预计剩余时间（秒）")

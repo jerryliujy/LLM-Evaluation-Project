@@ -9,7 +9,8 @@ class StdAnswer(Base):
     id = Column(Integer, primary_key=True, index=True)
     std_question_id = Column(Integer, ForeignKey("StdQuestion.id"), nullable=False, index=True)
     original_dataset_id = Column(Integer, ForeignKey("Dataset.id"), nullable=False, index=True)  # 最初来源的数据集ID（必须）
-    current_dataset_id = Column(Integer, ForeignKey("Dataset.id"), nullable=False, index=True)   # 当前所在的数据集ID（必须）    answer = Column(Text, nullable=False)
+    current_dataset_id = Column(Integer, ForeignKey("Dataset.id"), nullable=False, index=True)   # 当前所在的数据集ID（必须）    
+    answer = Column(Text, nullable=False)
     is_valid = Column(Boolean, server_default=text('1'), nullable=False, index=True)
     answered_by = Column(Integer, ForeignKey("User.id"), nullable=True, index=True)
     answered_at = Column(DateTime(timezone=True), server_default=text('CURRENT_TIMESTAMP'))

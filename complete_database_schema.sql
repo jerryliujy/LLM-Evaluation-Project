@@ -322,7 +322,7 @@ CREATE TABLE `LLMEvaluationTask` (
   `dataset_id` INT NOT NULL,
   `created_by` INT NOT NULL,
   `created_at` DATETIME NOT NULL DEFAULT CURRENT_TIMESTAMP,
-  `status` ENUM('pending', 'running', 'completed', 'failed', 'cancelled') NOT NULL DEFAULT 'pending',
+  `status` ENUM('config_params', 'config_prompts', 'generating_answers', 'evaluating_answers', 'completed', 'failed', 'cancelled') NOT NULL DEFAULT 'config_params',
   `progress` INT NOT NULL DEFAULT 0,
   `score` DECIMAL(5,2) DEFAULT NULL,
   `total_questions` INT NOT NULL DEFAULT 0,
@@ -395,7 +395,7 @@ CREATE TABLE `Evaluation` (
   `std_question_id` INT NOT NULL,
   `llm_answer_id` INT NOT NULL,
   `score` DECIMAL(5,2) DEFAULT NULL,
-  `evaluator_type` ENUM('user', 'llm', 'auto') NOT NULL,
+  `evaluator_type` ENUM('user', 'llm', 'autiiii) NOT NULL,
   `evaluator_id` INT DEFAULT NULL, -- 用户ID或LLM ID
   `evaluation_time` DATETIME NOT NULL DEFAULT CURRENT_TIMESTAMP,
   `notes` TEXT DEFAULT NULL,

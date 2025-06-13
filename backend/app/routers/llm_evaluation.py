@@ -15,6 +15,7 @@ from app.auth import get_current_user
 from app.models.user import User
 from app.models.dataset import Dataset
 from app.models.std_question import StdQuestion
+from app.models.std_answer import StdAnswer
 from app.models.llm import LLM
 from app.models.llm_answer import LLMAnswer
 from app.models.llm_evaluation_task import LLMEvaluationTask, TaskStatus
@@ -576,7 +577,7 @@ def cancel_evaluation_task(
             detail="Access denied"
         )
     
-    if task.status not in [TaskStatus.PENDING.value, TaskStatus.RUNNING.value]:
+    if task.status not in [TaskStatus.CONFIG_PARAMS.value, TaskStatus.CONFIG_PROMPTS.value, TaskStatus.GENERATING_ANSWERS.value, TaskStatus.EVALUATING_ANSWERS.value]:
         raise HTTPException(
             status_code=status.HTTP_400_BAD_REQUEST,
             detail="Task cannot be cancelled"
@@ -705,4 +706,260 @@ def download_task_results(
             "failed_count": task.failed_questions,
             "average_score": task.score  # 使用score字段
         }
+    }
+
+
+@router.put("/tasks/{task_id}/status", response_model=LLMEvaluationTaskResponse)
+def update_task_status(
+    task_id: int,
+    status_update: dict,
+    db: Session = Depends(get_db),
+    current_user: User = Depends(get_current_user)
+):
+    """更新任务状态 - 支持阶段性推进"""
+    # 获取任务
+    task = get_llm_evaluation_task(db=db, task_id=task_id)
+    
+    if not task:
+        raise HTTPException(
+            status_code=status.HTTP_404_NOT_FOUND,
+            detail="Task not found"
+        )
+    
+    # 验证用户权限
+    if task.created_by != current_user.id:
+        raise HTTPException(
+            status_code=status.HTTP_403_FORBIDDEN,
+            detail="Access denied"
+        )
+    
+    new_status = status_update.get('status')
+    if not new_status:
+        raise HTTPException(
+            status_code=status.HTTP_400_BAD_REQUEST,
+            detail="Status is required"
+        )    # 验证状态转换的合法性
+    valid_transitions = {
+        'config_params': ['config_prompts', 'cancelled'],
+        'config_prompts': ['generating_answers', 'cancelled'],
+        'generating_answers': ['evaluating_answers', 'failed', 'cancelled'],
+        'evaluating_answers': ['completed', 'failed', 'cancelled']
+    }
+    
+    current_status = task.status.value if hasattr(task.status, 'value') else task.status
+    if current_status in valid_transitions:
+        if new_status not in valid_transitions[current_status]:
+            raise HTTPException(
+                status_code=status.HTTP_400_BAD_REQUEST,
+                detail=f"Invalid status transition from {current_status} to {new_status}"
+            )
+    
+    # 更新任务状态
+    update_data = LLMEvaluationTaskUpdate(
+        status=new_status,
+        **{k: v for k, v in status_update.items() if k != 'status'}
+    )
+    
+    updated_task = update_llm_evaluation_task(db=db, task_id=task_id, task_update=update_data)
+    
+    if not updated_task:
+        raise HTTPException(
+            status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
+            detail="Failed to update task"
+        )
+    
+    return updated_task
+
+
+@router.post("/tasks/{task_id}/start-evaluation")
+def start_task_evaluation(
+    task_id: int,
+    evaluation_config: dict,
+    background_tasks: BackgroundTasks,
+    db: Session = Depends(get_db),
+    current_user: User = Depends(get_current_user)
+):
+    """启动评测阶段 - 对已生成的LLM答案进行评测"""
+    # 获取任务
+    task = get_llm_evaluation_task(db=db, task_id=task_id)
+    
+    if not task:
+        raise HTTPException(
+            status_code=status.HTTP_404_NOT_FOUND,
+            detail="Task not found"
+        )
+    
+    # 验证用户权限
+    if task.created_by != current_user.id:
+        raise HTTPException(
+            status_code=status.HTTP_403_FORBIDDEN,
+            detail="Access denied"
+        )
+      # 验证任务状态 - 只有evaluating_answers状态的任务可以启动评测
+    if task.status != TaskStatus.EVALUATING_ANSWERS:
+        raise HTTPException(
+            status_code=status.HTTP_400_BAD_REQUEST,
+            detail=f"Cannot start evaluation for task in status: {task.status.value}. Task must be in 'evaluating_answers' status."
+        )
+    
+    # 检查是否有LLM答案需要评测
+    answers = db.query(LLMAnswer).filter(LLMAnswer.task_id == task_id).all()
+    if not answers:
+        raise HTTPException(
+            status_code=status.HTTP_400_BAD_REQUEST,
+            detail="No LLM answers found for this task"
+        )
+    try:
+        # 更新评测配置（如果提供了新的评测prompt）
+        if evaluation_config.get('evaluation_prompt'):
+            update_data = LLMEvaluationTaskUpdate(
+                evaluation_prompt=evaluation_config.get('evaluation_prompt')
+            )
+            updated_task = update_llm_evaluation_task(db=db, task_id=task_id, task_update=update_data)
+        
+        # 启动后台评测任务
+        background_tasks.add_task(task_processor.process_answer_evaluation, task_id)
+        
+        return {
+            "message": "Evaluation started successfully",
+            "task_id": task_id,
+            "answers_count": len(answers),
+            "status": "evaluating_answers"
+        }
+        
+    except Exception as e:
+        logger.error(f"Failed to start evaluation for task {task_id}: {str(e)}")
+        raise HTTPException(
+            status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
+            detail="Failed to start evaluation"
+        )
+
+
+@router.get("/tasks/{task_id}/detailed-results")
+def get_task_detailed_results(
+    task_id: int,
+    db: Session = Depends(get_db),
+    current_user: User = Depends(get_current_user)
+):
+    """获取任务的详细结果，包括配置信息和每道题的得分"""
+    task = get_llm_evaluation_task(db=db, task_id=task_id)
+    
+    if not task:
+        raise HTTPException(
+            status_code=status.HTTP_404_NOT_FOUND,
+            detail="Task not found"
+        )
+    
+    if task.created_by != current_user.id:
+        raise HTTPException(
+            status_code=status.HTTP_403_FORBIDDEN,
+            detail="Access denied"
+        )
+    
+    # 获取所有LLM答案及其评测结果
+    llm_answers = db.query(LLMAnswer).filter(
+        LLMAnswer.task_id == task_id
+    ).all()
+    
+    # 构建详细结果
+    detailed_answers = []
+    total_score = 0
+    valid_scores = 0
+    
+    for answer in llm_answers:
+        # 获取标准问题
+        std_question = db.query(StdQuestion).filter(
+            StdQuestion.id == answer.std_question_id
+        ).first()
+        
+        # 获取评测结果
+        evaluations = db.query(Evaluation).filter(
+            Evaluation.llm_answer_id == answer.id
+        ).all()
+        
+        # 获取标准答案
+        std_answers = []
+        if std_question:
+            std_answers = db.query(StdAnswer).filter(
+                StdAnswer.std_question_id == std_question.id
+            ).all()
+        
+        # 计算平均分
+        answer_scores = [e.score for e in evaluations if e.score is not None]
+        avg_score = sum(answer_scores) / len(answer_scores) if answer_scores else None
+        
+        if avg_score is not None:
+            total_score += avg_score
+            valid_scores += 1
+        
+        detailed_answers.append({
+            "question_id": answer.std_question_id,
+            "question_text": std_question.body if std_question else "未知问题",
+            "question_type": getattr(std_question, 'type', 'text') if std_question else 'text',
+            "standard_answers": [
+                {
+                    "id": sa.id,
+                    "answer": sa.answer,
+                    "scoring_points": [
+                        {
+                            "answer": sp.answer,
+                            "point_order": sp.point_order
+                        } for sp in sa.scoring_points
+                    ] if hasattr(sa, 'scoring_points') else []
+                } for sa in std_answers
+            ],
+            "llm_answer": {
+                "id": answer.id,
+                "answer": answer.answer,
+                "prompt_used": answer.prompt_used,
+                "is_valid": answer.is_valid
+            },
+            "evaluations": [
+                {
+                    "id": e.id,
+                    "score": float(e.score) if e.score else None,
+                    "reasoning": e.reasoning,
+                    "feedback": e.feedback,
+                    "evaluator_type": e.evaluator_type.value if e.evaluator_type else None,
+                    "created_at": e.created_at.isoformat() if e.created_at else None
+                } for e in evaluations
+            ],
+            "average_score": avg_score
+        })
+    
+    # 计算总体统计
+    overall_average = total_score / valid_scores if valid_scores > 0 else 0
+    
+    return {
+        "task_info": {
+            "id": task.id,
+            "name": task.name,
+            "dataset_name": task.dataset.name if task.dataset else "未知数据集",
+            "model_name": task.model.display_name if task.model else "未知模型",
+            "model_version": task.model.version if task.model else None,
+            "status": task.status.value if hasattr(task.status, 'value') else task.status,
+            "created_at": task.created_at.isoformat(),
+            "started_at": task.started_at.isoformat() if task.started_at else None,
+            "completed_at": task.completed_at.isoformat() if task.completed_at else None,
+            "total_questions": task.total_questions,
+            "completed_questions": task.completed_questions,
+            "failed_questions": task.failed_questions
+        },
+        "configuration": {
+            "system_prompt": task.system_prompt,
+            "evaluation_prompt": task.evaluation_prompt,
+            "temperature": float(task.temperature) if task.temperature else None,
+            "max_tokens": task.max_tokens,
+            "top_k": task.top_k,
+            "enable_reasoning": task.enable_reasoning
+        },
+        "statistics": {
+            "total_answers": len(detailed_answers),
+            "valid_answers": len([a for a in detailed_answers if a["llm_answer"]["is_valid"]]),
+            "evaluated_answers": valid_scores,
+            "overall_average_score": round(overall_average, 2),
+            "total_score": round(total_score, 2),
+            "completion_rate": task.completed_questions / task.total_questions if task.total_questions > 0 else 0
+        },
+        "detailed_answers": detailed_answers
     }

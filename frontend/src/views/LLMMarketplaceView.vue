@@ -4,108 +4,20 @@
     <div class="page-header">
       <h1>LLM评测平台</h1>
       <div class="stats">
-        <span>数据集: {{ datasets.length }}</span>
         <span>任务: {{ tasks.length }}</span>
       </div>
     </div>
 
     <!-- 标签页 -->
-    <el-tabs v-model="activeTab" @tab-change="handleTabChange"><el-tab-pane name="marketplace">
-          <template #label>
-            <span class="tab-label">数据集市场</span>
-          </template>
-          
-          <!-- 搜索和筛选区域 -->
-          <div class="filters-section">
-            <div class="search-bar">
-              <el-input
-                v-model="searchQuery"
-                placeholder="搜索数据集..."
-                size="default"
-                @input="handleSearch"
-                clearable
-                class="search-input"
-              />
-              <el-button 
-                type="primary" 
-                size="default" 
-                @click="loadDatasets"
-                :loading="loading"
-                class="refresh-btn"
-              >
-                刷新
-              </el-button>
-            </div>
-          </div>
-
-          <!-- 数据集网格 -->
-          <div class="datasets-grid" v-loading="loading">
-            <el-empty 
-              v-if="datasets.length === 0 && !loading" 
-              description="暂无数据集"
-              :image-size="120"
-            >
-              <template #description>
-                <p>暂时没有可用的数据集</p>
-                <el-button type="primary" @click="loadDatasets">重新加载</el-button>
-              </template>
-            </el-empty>
-            
-            <div v-else class="grid-container">              
-              <div 
-                v-for="dataset in datasets" 
-                :key="dataset.id" 
-                class="dataset-card"
-              >
-                <div class="card-header">
-                  <div class="dataset-meta">
-                    <h3 class="dataset-name">{{ dataset.name }}</h3>
-                    <el-tag size="small" type="info">v{{ dataset.version }}</el-tag>
-                  </div>
-                </div>
-                
-                <div class="card-body">
-                  <p class="dataset-description">{{ dataset.description || '暂无描述' }}</p>
-                  
-                  <div class="dataset-stats">
-                    <div class="stat-item">
-                      <span>问题数量: {{ dataset.question_count || 0 }}</span>
-                    </div>
-                    <div class="stat-item">
-                      <span>创建时间: {{ formatDate(dataset.create_time) }}</span>
-                    </div>
-                  </div>
-                </div>
-
-                <div class="card-footer">
-                  <el-button 
-                    size="small" 
-                    @click="viewDataset(dataset)"
-                    class="action-btn"
-                  >
-                    查看详情
-                  </el-button>
-                  <el-button 
-                    type="primary" 
-                    size="small" 
-                    @click="startEvaluation(dataset)"
-                    class="action-btn"
-                  >
-                    开始评测
-                  </el-button>
-                </div>
-              </div>
-            </div>
-          </div>
-        </el-tab-pane>        
-        <el-tab-pane name="tasks">
+    <el-tabs v-model="activeTab" @tab-change="handleTabChange">
+      <el-tab-pane name="marketplace">
           <template #label>
             <span class="tab-label">我的任务</span>
           </template>
           
           <!-- 任务筛选器 -->
           <div class="task-filters">
-            <div class="filter-group">
+            <div class="filter-group">              
               <el-select 
                 v-model="taskStatusFilter" 
                 placeholder="任务状态" 
@@ -115,8 +27,10 @@
                 style="width: 200px;"
               >
                 <el-option label="全部任务" value="" />
-                <el-option label="等待中" value="pending" />
-                <el-option label="进行中" value="running" />
+                <el-option label="配置参数中" value="config_params" />
+                <el-option label="配置提示词中" value="config_prompts" />
+                <el-option label="生成答案中" value="generating_answers" />
+                <el-option label="评测答案中" value="evaluating_answers" />
                 <el-option label="已完成" value="completed" />
                 <el-option label="失败" value="failed" />
                 <el-option label="已取消" value="cancelled" />
@@ -190,10 +104,8 @@
                       <div class="info-value">{{ task.completed_questions || 0 }}</div>
                     </div>
                   </div>
-                </div>
-
-                <!-- 进度条 -->
-                <div v-if="task.status === 'running' || task.status === 'completed'" class="task-progress">
+                </div>                <!-- 进度条 -->
+                <div v-if="isTaskInProgress(task.status) || task.status === 'completed'" class="task-progress">
                   <div class="progress-info">
                     <span>进度</span>
                     <span>{{ task.progress || 0 }}%</span>
@@ -204,16 +116,21 @@
                     :stroke-width="8"
                     class="progress-bar"
                   />
-                </div>                <!-- 任务操作按钮 -->
+                </div>                
+                
+                <!-- 任务操作按钮 -->
                 <div class="task-actions">
+                  <!-- 继续任务按钮 -->
                   <el-button 
                     size="small" 
-                    @click="viewTaskProgress(task)"
-                    v-if="task.status === 'running'"
+                    type="primary"
+                    @click="continueTask(task)"
+                    v-if="canContinueTask(task.status)"
                     class="action-btn"
                   >
-                    查看进度
+                    继续任务
                   </el-button>
+                  <!-- 查看结果按钮 -->
                   <el-button 
                     size="small" 
                     type="success"
@@ -223,15 +140,17 @@
                   >
                     查看结果
                   </el-button>
+                  <!-- 取消任务按钮 -->
                   <el-button 
                     size="small" 
                     type="danger" 
                     @click="cancelTask(task)"
-                    v-if="task.status === 'running' || task.status === 'pending'"
+                    v-if="canCancelTask(task.status)"
                     class="action-btn"
                   >
                     取消任务
                   </el-button>
+                  <!-- 下载结果按钮 -->
                   <el-button 
                     size="small" 
                     type="primary" 
@@ -268,7 +187,8 @@
             </div>
           </div>
         
-        <div class="detail-content">          <div class="info-section">
+        <div class="detail-content">          
+          <div class="info-section">
             <h3>描述信息</h3>
             <p class="description-text">{{ selectedDataset.description || '暂无描述' }}</p>
           </div>
@@ -542,11 +462,35 @@ const downloadTaskResults = async (task: any) => {
   }
 }
 
+// 继续任务
+const continueTask = (task: any) => {
+  router.push({
+    name: 'LLMEvaluation',
+    params: { datasetId: task.dataset_id },
+    query: { taskId: task.id }
+  })
+}
+
+// 任务状态辅助函数
+const isTaskInProgress = (status: string): boolean => {
+  return ['generating_answers', 'evaluating_answers'].includes(status)
+}
+
+const canContinueTask = (status: string): boolean => {
+  return ['config_params', 'config_prompts', 'generating_answers', 'evaluating_answers'].includes(status)
+}
+
+const canCancelTask = (status: string): boolean => {
+  return ['config_params', 'config_prompts', 'generating_answers', 'evaluating_answers'].includes(status)
+}
+
 // 工具方法
 const getTaskStatusType = (status: string) => {
   const statusMap: Record<string, string> = {
-    'pending': 'info',
-    'running': 'warning',
+    'config_params': 'info',
+    'config_prompts': 'info', 
+    'generating_answers': 'warning',
+    'evaluating_answers': 'warning',
     'completed': 'success',
     'failed': 'danger',
     'cancelled': 'info'
@@ -556,8 +500,10 @@ const getTaskStatusType = (status: string) => {
 
 const getTaskStatusText = (status: string) => {
   const statusMap: Record<string, string> = {
-    'pending': '等待中',
-    'running': '进行中',
+    'config_params': '配置参数中',
+    'config_prompts': '配置提示词中',
+    'generating_answers': '生成答案中',
+    'evaluating_answers': '评测答案中', 
     'completed': '已完成',
     'failed': '失败',
     'cancelled': '已取消'

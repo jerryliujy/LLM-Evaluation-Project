@@ -46,21 +46,32 @@ export interface AvailableModel {
 
 export interface EvaluationTask {
   id: number;
-  task_name: string;
+  name?: string;  // 任务名称
+  task_name?: string;  // 兼容旧字段
   dataset_id: number;
   dataset?: MarketplaceDataset;
-  model_name: string;
+  model_id?: number;  // 模型ID
+  model_name?: string;  // 模型名称（兼容）
   status: string;
   progress: number;
-  current_question: number;
+  current_question?: number;
   total_questions: number;
-  successful_count: number;
-  failed_count: number;
+  successful_count?: number;
+  failed_count?: number;
+  completed_questions?: number;  // 新字段名
   average_score?: number;
   created_at: string;
   started_at?: string;
   completed_at?: string;
   error_message?: string;
+  
+  // 配置字段
+  system_prompt?: string;
+  temperature?: number;
+  max_tokens?: number;
+  top_k?: number;
+  enable_reasoning?: boolean;
+  evaluation_prompt?: string;
 }
 
 export interface TaskProgress {
@@ -91,7 +102,7 @@ export const llmEvaluationService = {  // 获取数据集市场列表
     skip?: number;
     limit?: number;
     search?: string;
-    all_datasets?: boolean;  // 新增：是否获取所有数据集
+    all_datasets?: boolean  // 新增：是否获取所有数据集
   } = {}): Promise<MarketplaceDataset[]> {
     const queryParams = new URLSearchParams();
     if (params.skip !== undefined) queryParams.append('skip', params.skip.toString());
@@ -143,6 +154,16 @@ export const llmEvaluationService = {  // 获取数据集市场列表
     return response.data;
   },
 
+  // 创建新任务
+  async createTask(taskData: {
+    task_name: string;
+    dataset_id: number;
+    model_config: any;
+  }): Promise<EvaluationTask> {
+    const response = await apiClient.post('/llm-evaluation/tasks', taskData);
+    return response.data;
+  },
+
   // 获取我的评测任务列表
   async getMyEvaluationTasks(params: {
     skip?: number;
@@ -176,9 +197,41 @@ export const llmEvaluationService = {  // 获取数据集市场列表
     return response.data;
   },
 
-  // 获取任务结果摘要
+  // 获取单个数据集详情
+  async getDatasetInfo(datasetId: number): Promise<MarketplaceDataset> {
+    const response = await apiClient.get(`/llm-evaluation/marketplace/datasets/${datasetId}`);
+    return response.data;
+  },
+
+  // 获取任务详情
+  async getTaskDetail(taskId: number): Promise<EvaluationTask> {
+    const response = await apiClient.get(`/llm-evaluation/tasks/${taskId}`);
+    return response.data;
+  },
+
+  // 获取任务结果
   async getTaskResults(taskId: number): Promise<any> {
     const response = await apiClient.get(`/llm-evaluation/tasks/${taskId}/results`);
+    return response.data;
+  },
+
+  // 获取任务详细结果
+  async getTaskDetailedResults(taskId: number): Promise<any> {
+    const response = await apiClient.get(`/llm-evaluation/tasks/${taskId}/detailed-results`);
+    return response.data;
+  },
+
+  // 更新任务状态
+  async updateTaskStatus(taskId: number, statusUpdate: { status: string; [key: string]: any }): Promise<EvaluationTask> {
+    const response = await apiClient.put(`/llm-evaluation/tasks/${taskId}/status`, statusUpdate);
+    return response.data;
+  },
+
+  // 启动评测阶段
+  async startTaskEvaluation(taskId: number, evaluationConfig: {
+    evaluation_prompt: string;
+  }): Promise<any> {
+    const response = await apiClient.post(`/llm-evaluation/tasks/${taskId}/start-evaluation`, evaluationConfig);
     return response.data;
   },
 

@@ -46,12 +46,11 @@ class LLMEvaluationTaskProcessor:
                 logger.error(f"Task {task_id}: 任务不存在")
                 return
             logger.info(f"Task {task_id}: 任务获取成功，状态: {task.status}")
-              
-            # 更新任务状态为运行中
-            logger.info(f"Task {task_id}: 步骤2 - 更新任务状态为RUNNING")
+                # 更新任务状态为生成答案中
+            logger.info(f"Task {task_id}: 步骤2 - 更新任务状态为GENERATING_ANSWERS")
             try:
                 update_data = LLMEvaluationTaskUpdate(
-                    status=TaskStatus.RUNNING,
+                    status=TaskStatus.GENERATING_ANSWERS,
                     started_at=datetime.now()
                 )
                 logger.info(f"Task {task_id}: 创建更新数据对象成功")
@@ -128,7 +127,6 @@ class LLMEvaluationTaskProcessor:
             
             completed_count = 0
             failed_count = 0
-            
             for i, question in enumerate(questions):
                 try:
                     logger.info(f"Processing question {i+1}/{len(questions)}: {question.id}")
@@ -138,13 +136,14 @@ class LLMEvaluationTaskProcessor:
                         logger.info(f"Task {task_id} was cancelled")
                         break
                     
-                    # 更新当前进度
-                    progress = int((i / len(questions)) * 100)
+                    # 更新当前进度 - 使用已完成的问题数量
+                    progress = int(((completed_count + failed_count) / len(questions)) * 100)
                     update_data = LLMEvaluationTaskUpdate(
                         progress=progress,
-                        completed_questions=i
+                        completed_questions=completed_count,
+                        failed_questions=failed_count
                     )
-                    update_llm_evaluation_task(db, task_id, update_data)                    
+                    update_llm_evaluation_task(db, task_id, update_data)
                     # 生成答案
                     start_time = time.time()
                     logger.info(f"Generating answer for question: {question.body[:100]}...")
@@ -230,20 +229,52 @@ class LLMEvaluationTaskProcessor:
                         
                         failed_count += 1
                         logger.error(f"Failed to get answer for question {question.id}: {answer_result.get('error')}")
-                
                 except Exception as e:
                     failed_count += 1
                     logger.error(f"Error processing question {question.id}: {str(e)}")
+                    
+                    # 记录失败的答案
+                    try:
+                        llm_answer = LLMAnswer(
+                            llm_id=llm.id,
+                            task_id=task_id,
+                            std_question_id=question.id,
+                            prompt_used=self._build_prompt(task.system_prompt if task.system_prompt else "", question.body),
+                            answer=f"处理失败: {str(e)}",
+                            is_valid=False
+                        )
+                        db.add(llm_answer)
+                        db.commit()
+                    except Exception as save_error:
+                        logger.error(f"Failed to save error answer: {str(save_error)}")
                 
                 # 小延迟避免API限流
                 await asyncio.sleep(0.1)
-              # 生成结果摘要
+            
+            # 最终更新任务状态 - 根据实际结果判断
+            total_processed = completed_count + failed_count
+            final_progress = int((total_processed / len(questions)) * 100) if len(questions) > 0 else 100            # 判断任务是否成功完成
+            if total_processed == len(questions):
+                if failed_count == 0:
+                    logger.info(f"Task {task_id}: 所有 {len(questions)} 个问题都成功生成答案")
+                    # 答案生成完成，进入评测状态
+                    final_status = TaskStatus.EVALUATING_ANSWERS
+                elif completed_count > 0:
+                    logger.info(f"Task {task_id}: {completed_count} 个问题成功，{failed_count} 个问题失败，答案生成完成")
+                    # 答案生成完成，进入评测状态
+                    final_status = TaskStatus.EVALUATING_ANSWERS
+                else:
+                    logger.error(f"Task {task_id}: 所有 {len(questions)} 个问题都失败")
+                    final_status = TaskStatus.FAILED
+            else:
+                logger.error(f"Task {task_id}: 只处理了 {total_processed}/{len(questions)} 个问题")
+                final_status = TaskStatus.FAILED# 生成结果摘要
             result_summary = self._generate_result_summary(db, task_id)
             
-            # 更新任务完成状态
+            # 更新最终任务状态
             update_data = LLMEvaluationTaskUpdate(
-                status=TaskStatus.COMPLETED,
-                progress=100,
+                status=final_status,
+                progress=final_progress,
                 completed_questions=completed_count,
                 failed_questions=failed_count,
                 completed_at=datetime.now(),
@@ -251,17 +282,223 @@ class LLMEvaluationTaskProcessor:
             )
             update_llm_evaluation_task(db, task_id, update_data)
             
+            logger.info(f"Task {task_id}: 最终状态更新完成 - 状态: {final_status.value}, 成功: {completed_count}, 失败: {failed_count}")
         except Exception as e:
             logger.error(f"Task {task_id} failed: {str(e)}")
+            import traceback
+            logger.error(f"Task {task_id} error traceback:\n{traceback.format_exc()}")
+            
             # 更新任务失败状态
             update_data = LLMEvaluationTaskUpdate(
                 status=TaskStatus.FAILED,
-                error_message=str(e)
+                error_message=str(e),
+                completed_at=datetime.now()
             )
             update_llm_evaluation_task(db, task_id, update_data)
         finally:
             db.close()
             logger.info(f"Task {task_id} completed")
+    
+    async def process_answer_evaluation_async(self, task_id: int):
+        """异步处理答案评测任务"""
+        from ..db.database import SessionLocal
+        db = SessionLocal()
+        
+        try:
+            logger.info(f"=== 开始处理答案评测任务 {task_id} ===")
+            
+            # 获取任务
+            task = get_llm_evaluation_task(db, task_id)
+            if not task:
+                logger.error(f"Task {task_id}: 任务不存在")
+                return
+            
+            logger.info(f"Task {task_id}: 开始评测，状态: {task.status}")
+            
+            # 获取所有待评测的LLM答案
+            llm_answers = db.query(LLMAnswer).filter(
+                LLMAnswer.task_id == task_id,
+                LLMAnswer.is_valid == True
+            ).all()
+            
+            if not llm_answers:
+                logger.error(f"Task {task_id}: 没有找到待评测的LLM答案")
+                update_data = LLMEvaluationTaskUpdate(
+                    status=TaskStatus.FAILED,
+                    error_message="没有找到待评测的LLM答案"
+                )
+                update_llm_evaluation_task(db, task_id, update_data)
+                return
+            
+            logger.info(f"Task {task_id}: 找到 {len(llm_answers)} 个待评测答案")
+              # 获取评测模型
+            evaluation_llm = None
+            if task.evaluation_llm_id:
+                evaluation_llm = db.query(LLM).filter(LLM.id == task.evaluation_llm_id).first()
+                if not evaluation_llm:
+                    logger.warning(f"Task {task_id}: 指定的评测模型不存在，使用原始模型")
+            
+            # 如果没有专门的评测模型，使用原始模型
+            if not evaluation_llm:
+                evaluation_llm = task.model
+                if not evaluation_llm:
+                    logger.error(f"Task {task_id}: 无法获取评测模型")
+                    update_data = LLMEvaluationTaskUpdate(
+                        status=TaskStatus.FAILED,
+                        error_message="无法获取评测模型"
+                    )
+                    update_llm_evaluation_task(db, task_id, update_data)
+                    return
+                logger.info(f"Task {task_id}: 使用原始模型进行评测: {evaluation_llm.name}")
+            else:
+                logger.info(f"Task {task_id}: 使用专门的评测模型: {evaluation_llm.name}")
+            
+            # 获取API密钥
+            api_key = self._decrypt_api_key(task.api_key_hash)
+            if not api_key:
+                logger.error(f"Task {task_id}: 没有可用的API密钥")
+                update_data = LLMEvaluationTaskUpdate(
+                    status=TaskStatus.FAILED,
+                    error_message="没有可用的API密钥"
+                )
+                update_llm_evaluation_task(db, task_id, update_data)
+                return
+            
+            # 获取LLM客户端
+            try:
+                llm_client = await get_llm_client(
+                    api_key=api_key,
+                    db_llm=evaluation_llm
+                )
+            except Exception as client_error:
+                logger.error(f"Task {task_id}: 创建评测LLM客户端失败: {str(client_error)}")
+                update_data = LLMEvaluationTaskUpdate(
+                    status=TaskStatus.FAILED,
+                    error_message=f"创建评测LLM客户端失败: {str(client_error)}"
+                )
+                update_llm_evaluation_task(db, task_id, update_data)
+                return
+            
+            # 处理每个LLM答案
+            completed_evaluations = 0
+            failed_evaluations = 0
+            total_score = 0
+            
+            for i, llm_answer in enumerate(llm_answers):
+                try:
+                    logger.info(f"Task {task_id}: 评测答案 {i+1}/{len(llm_answers)}")
+                    
+                    # 检查任务是否被取消
+                    current_task = get_llm_evaluation_task(db, task_id)
+                    if current_task.status == TaskStatus.CANCELLED:
+                        logger.info(f"Task {task_id}: 任务已取消")
+                        break
+                    
+                    # 获取标准问题和标准答案
+                    std_question = db.query(StdQuestion).filter(
+                        StdQuestion.id == llm_answer.std_question_id
+                    ).first()
+                    
+                    if not std_question:
+                        logger.warning(f"Task {task_id}: 答案 {llm_answer.id} 的标准问题不存在")
+                        failed_evaluations += 1
+                        continue
+                    
+                    # 获取标准答案
+                    std_answers = std_question.std_answers
+                    correct_answer = std_answers[0].answer if std_answers else ""
+                    
+                    # 调用评测LLM
+                    evaluation_result = await self._call_evaluation_llm(
+                        llm_client,
+                        std_question.body,
+                        llm_answer.answer,
+                        correct_answer,
+                        task.evaluation_prompt,
+                        getattr(std_question, 'type', 'text')
+                    )
+                    
+                    if evaluation_result["success"]:
+                        # 创建评测记录
+                        evaluation = Evaluation(
+                            std_question_id=std_question.id,
+                            llm_answer_id=llm_answer.id,
+                            score=evaluation_result["score"],
+                            evaluator_type=EvaluatorType.AUTO,
+                            evaluator_id=evaluation_llm.id,
+                            reasoning=evaluation_result["reasoning"],
+                            evaluation_prompt=evaluation_result.get("evaluation_prompt", task.evaluation_prompt)
+                        )
+                        db.add(evaluation)
+                        db.commit()
+                        
+                        completed_evaluations += 1
+                        total_score += evaluation_result["score"]
+                        
+                        logger.info(f"Task {task_id}: 答案 {llm_answer.id} 评测完成，得分: {evaluation_result['score']}")
+                    else:
+                        failed_evaluations += 1
+                        logger.error(f"Task {task_id}: 答案 {llm_answer.id} 评测失败: {evaluation_result.get('error')}")
+                    
+                    # 更新进度
+                    progress = int(((completed_evaluations + failed_evaluations) / len(llm_answers)) * 100)
+                    update_data = LLMEvaluationTaskUpdate(progress=progress)
+                    update_llm_evaluation_task(db, task_id, update_data)
+                    
+                    # 小延迟避免API限流
+                    await asyncio.sleep(0.1)
+                    
+                except Exception as e:
+                    failed_evaluations += 1
+                    logger.error(f"Task {task_id}: 处理答案 {llm_answer.id} 时发生错误: {str(e)}")
+                    continue
+            
+            # 计算平均分
+            avg_score = total_score / completed_evaluations if completed_evaluations > 0 else 0
+            
+            # 更新最终任务状态
+            if completed_evaluations > 0:
+                final_status = TaskStatus.COMPLETED
+                logger.info(f"Task {task_id}: 评测完成，成功: {completed_evaluations}, 失败: {failed_evaluations}, 平均分: {avg_score:.2f}")
+            else:
+                final_status = TaskStatus.FAILED
+                logger.error(f"Task {task_id}: 所有评测都失败")
+            
+            # 生成结果摘要
+            result_summary = {
+                "total_answers": len(llm_answers),
+                "completed_evaluations": completed_evaluations,
+                "failed_evaluations": failed_evaluations,
+                "average_score": avg_score,
+                "evaluation_success_rate": completed_evaluations / len(llm_answers) if len(llm_answers) > 0 else 0
+            }
+            
+            update_data = LLMEvaluationTaskUpdate(
+                status=final_status,
+                progress=100,
+                score=Decimal(str(avg_score)),
+                completed_at=datetime.now(),
+                result_summary=result_summary
+            )
+            update_llm_evaluation_task(db, task_id, update_data)
+            
+            logger.info(f"Task {task_id}: 评测任务完成")
+            
+        except Exception as e:
+            logger.error(f"Task {task_id}: 评测任务失败: {str(e)}")
+            import traceback
+            logger.error(f"Task {task_id}: 错误堆栈:\n{traceback.format_exc()}")
+            
+            # 更新任务失败状态
+            update_data = LLMEvaluationTaskUpdate(
+                status=TaskStatus.FAILED,
+                error_message=str(e),
+                completed_at=datetime.now()
+            )
+            update_llm_evaluation_task(db, task_id, update_data)
+        finally:
+            db.close()
+            logger.info(f"Task {task_id}: 评测任务处理完成")
     
     def _get_or_create_llm(self, db: Session, model_name: str, model_version: Optional[str] = None) -> LLM:
         """获取或创建LLM记录"""
@@ -457,6 +694,34 @@ class LLMEvaluationTaskProcessor:
             try:
                 from ..db.database import SessionLocal
                 db = SessionLocal()                
+                try:
+                    update_data = LLMEvaluationTaskUpdate(
+                        status=TaskStatus.FAILED,
+                        error_message=str(e),
+                        completed_at=datetime.now()
+                    )
+                    update_llm_evaluation_task(db, task_id, update_data)
+                finally:
+                    db.close()
+            except Exception as update_error:
+                logger.error(f"Failed to update task status: {str(update_error)}")
+    
+    def process_answer_evaluation(self, task_id: int):
+        """同步处理答案评测任务（用于FastAPI BackgroundTasks）"""
+        try:
+            # 在新的事件循环中运行异步任务
+            loop = asyncio.new_event_loop()
+            asyncio.set_event_loop(loop)
+            try:
+                loop.run_until_complete(self.process_answer_evaluation_async(task_id))
+            finally:
+                loop.close()
+        except Exception as e:
+            logger.error(f"Error in sync evaluation processing: {str(e)}")
+            # 更新任务状态为失败
+            try:
+                from ..db.database import SessionLocal
+                db = SessionLocal()
                 try:
                     update_data = LLMEvaluationTaskUpdate(
                         status=TaskStatus.FAILED,
