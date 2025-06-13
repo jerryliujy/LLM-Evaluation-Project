@@ -276,30 +276,6 @@ class LLMEvaluationTaskProcessor:
             ).first()
             
             logger.info(f"_get_or_create_llm: 查询结果: {llm is not None}")
-            
-            if not llm:
-                logger.info(f"_get_or_create_llm: LLM不存在，准备创建新的LLM记录")
-                
-                llm = LLM(
-                    name=model_name,
-                    display_name=model_name,  # 添加必需的字段
-                    provider="API",           # 添加必需的字段
-                    version=model_version or "default",
-                    affiliation="API"
-                )
-                logger.info(f"_get_or_create_llm: LLM对象创建成功，准备添加到数据库")
-                
-                db.add(llm)
-                logger.info(f"_get_or_create_llm: 已添加到session，准备commit")
-                
-                db.commit()
-                logger.info(f"_get_or_create_llm: commit成功，准备refresh")
-                
-                db.refresh(llm)
-                logger.info(f"_get_or_create_llm: refresh成功，LLM创建完成，ID: {llm.id}")
-            else:
-                logger.info(f"_get_or_create_llm: 找到现有LLM，ID: {llm.id}")
-            
             return llm
             
         except Exception as e:

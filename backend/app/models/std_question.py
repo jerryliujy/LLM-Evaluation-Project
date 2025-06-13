@@ -7,7 +7,8 @@ class StdQuestion(Base):
     __tablename__ = "StdQuestion"    
     id = Column(Integer, primary_key=True, index=True)
     original_dataset_id = Column(Integer, ForeignKey("Dataset.id"), nullable=False, index=True)  # 最初来源的数据集ID（必须）
-    current_dataset_id = Column(Integer, ForeignKey("Dataset.id"), nullable=False, index=True)   # 当前所在的数据集ID（必须）    body = Column(Text, nullable=False)  # 统一字段名为body
+    current_dataset_id = Column(Integer, ForeignKey("Dataset.id"), nullable=False, index=True)   # 当前所在的数据集ID（必须）    
+    body = Column(Text, nullable=False)  
     question_type = Column(String(50), nullable=False)
     is_valid = Column(Boolean, server_default=text('1'), nullable=False, index=True)
     created_at = Column(DateTime(timezone=True), server_default=text('CURRENT_TIMESTAMP'))

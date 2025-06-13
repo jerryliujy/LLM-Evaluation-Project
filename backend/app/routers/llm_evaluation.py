@@ -56,16 +56,15 @@ def get_marketplace_datasets(
     db: Session = Depends(get_db),
     current_user: User = Depends(get_current_user)
 ):
-    """获取公开数据集市场列表"""
-    # 根据参数决定是否限制数量
+    """获取公开数据集市场列表"""    # 根据参数决定是否限制数量
     actual_limit = None if all_datasets else limit
     
-    datasets = get_datasets_paginated(
+    datasets, total_count = get_datasets_paginated(
         db=db, 
         skip=skip, 
         limit=actual_limit,
         is_public=True,
-        search=search
+        search_query=search,
     )
     
     marketplace_datasets = []
@@ -156,6 +155,83 @@ def get_marketplace_dataset(
         is_public=dataset.is_public,
         created_by=dataset.created_by,
         create_time=dataset.create_time
+    )
+
+
+@router.get("/marketplace/datasets/{dataset_id}/download", response_model=DatasetDownloadResponse)
+def download_marketplace_dataset(
+    dataset_id: int,
+    format: str = "json",
+    db: Session = Depends(get_db),
+    current_user: User = Depends(get_current_user)
+):
+    """下载数据集的问题数据"""
+    # 验证数据集存在且公开
+    dataset = db.query(Dataset).filter(
+        Dataset.id == dataset_id,
+        Dataset.is_public == True
+    ).first()
+    
+    if not dataset:
+        raise HTTPException(
+            status_code=status.HTTP_404_NOT_FOUND,
+            detail="Dataset not found or not public"
+        )
+    
+    # 获取数据集的基本信息
+    question_count = db.query(StdQuestion).filter(
+        StdQuestion.current_dataset_id == dataset.id,
+        StdQuestion.is_valid == True
+    ).count()
+    
+    choice_question_count = db.query(StdQuestion).filter(
+        StdQuestion.current_dataset_id == dataset.id,
+        StdQuestion.is_valid == True,
+        StdQuestion.question_type == 'choice'
+    ).count()
+    
+    text_question_count = db.query(StdQuestion).filter(
+        StdQuestion.current_dataset_id == dataset.id,
+        StdQuestion.is_valid == True,
+        StdQuestion.question_type == 'text'
+    ).count()
+    
+    dataset_info = MarketplaceDatasetInfo(
+        id=dataset.id,
+        name=dataset.name,
+        description=dataset.description,
+        version=dataset.version,
+        question_count=question_count,
+        choice_question_count=choice_question_count,
+        text_question_count=text_question_count,
+        is_public=dataset.is_public,
+        created_by=dataset.created_by,
+        create_time=dataset.create_time
+    )
+    
+    # 获取数据集的问题
+    questions = db.query(StdQuestion).filter(
+        StdQuestion.current_dataset_id == dataset.id,
+        StdQuestion.is_valid == True
+    ).limit(100).all()  # 限制数量以防止过大的响应
+    
+    # 转换为响应格式
+    question_data = []
+    for question in questions:
+        question_info = {
+            "id": question.id,
+            "question": question.question,
+            "question_type": question.question_type,
+            "difficulty": question.difficulty,
+            "tags": question.tags,
+            "std_answer": question.std_answer,
+            "choices": question.choices
+        }
+        question_data.append(question_info)
+    
+    return DatasetDownloadResponse(
+        dataset_info=dataset_info,
+        questions=question_data
     )
 
 
@@ -416,7 +492,7 @@ def get_my_evaluation_tasks(
         user_id=current_user.id,
         skip=skip,
         limit=limit,
-        status_filter=status_filter
+        status=status_filter
     )
     
     return [LLMEvaluationTaskResponse.from_orm(task) for task in tasks]

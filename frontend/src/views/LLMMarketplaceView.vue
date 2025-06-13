@@ -1,151 +1,337 @@
 <template>
-  <div class="llm-marketplace">
-    <div class="header">
-      <h1>数据集市场</h1>
-      <p>浏览和下载公开数据集，进行大模型评测</p>
+  <div class="marketplace-container">
+    <!-- 头部标题 -->
+    <div class="page-header">
+      <h1>LLM评测平台</h1>
+      <div class="stats">
+        <span>数据集: {{ datasets.length }}</span>
+        <span>任务: {{ tasks.length }}</span>
+      </div>
     </div>
 
-    <!-- 搜索和筛选 -->
-    <div class="filters">
-      <el-row :gutter="20">
-        <el-col :span="8">
-          <el-input
-            v-model="searchQuery"
-            placeholder="搜索数据集..."
-            prefix-icon="el-icon-search"
-            @input="handleSearch"
-            clearable
-          />
-        </el-col>
-        <el-col :span="4">
-          <el-button type="primary" @click="loadDatasets">刷新</el-button>
-        </el-col>
-      </el-row>
-    </div>
+    <!-- 标签页 -->
+    <el-tabs v-model="activeTab" @tab-change="handleTabChange"><el-tab-pane name="marketplace">
+          <template #label>
+            <span class="tab-label">数据集市场</span>
+          </template>
+          
+          <!-- 搜索和筛选区域 -->
+          <div class="filters-section">
+            <div class="search-bar">
+              <el-input
+                v-model="searchQuery"
+                placeholder="搜索数据集..."
+                size="default"
+                @input="handleSearch"
+                clearable
+                class="search-input"
+              />
+              <el-button 
+                type="primary" 
+                size="default" 
+                @click="loadDatasets"
+                :loading="loading"
+                class="refresh-btn"
+              >
+                刷新
+              </el-button>
+            </div>
+          </div>
 
-    <!-- 数据集列表 -->
-    <div class="datasets-container">
-      <el-row :gutter="20">
-        <el-col 
-          v-for="dataset in datasets" 
-          :key="dataset.id" 
-          :span="8"
-          style="margin-bottom: 20px;"
-        >
-          <el-card class="dataset-card" shadow="hover">
-            <template #header>
-              <div class="card-header">
-                <span class="dataset-name">{{ dataset.name }}</span>
-                <el-tag size="small">v{{ dataset.version }}</el-tag>
-              </div>
-            </template>
+          <!-- 数据集网格 -->
+          <div class="datasets-grid" v-loading="loading">
+            <el-empty 
+              v-if="datasets.length === 0 && !loading" 
+              description="暂无数据集"
+              :image-size="120"
+            >
+              <template #description>
+                <p>暂时没有可用的数据集</p>
+                <el-button type="primary" @click="loadDatasets">重新加载</el-button>
+              </template>
+            </el-empty>
             
-            <div class="dataset-info">
-              <p class="description">{{ dataset.description }}</p>
-              
-              <div class="stats">
-                <el-row>
-                  <el-col :span="12">
+            <div v-else class="grid-container">              
+              <div 
+                v-for="dataset in datasets" 
+                :key="dataset.id" 
+                class="dataset-card"
+              >
+                <div class="card-header">
+                  <div class="dataset-meta">
+                    <h3 class="dataset-name">{{ dataset.name }}</h3>
+                    <el-tag size="small" type="info">v{{ dataset.version }}</el-tag>
+                  </div>
+                </div>
+                
+                <div class="card-body">
+                  <p class="dataset-description">{{ dataset.description || '暂无描述' }}</p>
+                  
+                  <div class="dataset-stats">
                     <div class="stat-item">
-                      <i class="el-icon-document"></i>
-                      <span>{{ dataset.question_count }} 个问题</span>
+                      <span>问题数量: {{ dataset.question_count || 0 }}</span>
                     </div>
-                  </el-col>
-                  <el-col :span="12">
                     <div class="stat-item">
-                      <i class="el-icon-time"></i>
-                      <span>{{ formatDate(dataset.create_time) }}</span>
+                      <span>创建时间: {{ formatDate(dataset.create_time) }}</span>
                     </div>
-                  </el-col>
-                </el-row>
+                  </div>
+                </div>
+
+                <div class="card-footer">
+                  <el-button 
+                    size="small" 
+                    @click="viewDataset(dataset)"
+                    class="action-btn"
+                  >
+                    查看详情
+                  </el-button>
+                  <el-button 
+                    type="primary" 
+                    size="small" 
+                    @click="startEvaluation(dataset)"
+                    class="action-btn"
+                  >
+                    开始评测
+                  </el-button>
+                </div>
               </div>
             </div>
+          </div>
+        </el-tab-pane>        
+        <el-tab-pane name="tasks">
+          <template #label>
+            <span class="tab-label">我的任务</span>
+          </template>
+          
+          <!-- 任务筛选器 -->
+          <div class="task-filters">
+            <div class="filter-group">
+              <el-select 
+                v-model="taskStatusFilter" 
+                placeholder="任务状态" 
+                clearable 
+                @change="loadTasks"
+                size="default"
+                style="width: 200px;"
+              >
+                <el-option label="全部任务" value="" />
+                <el-option label="等待中" value="pending" />
+                <el-option label="进行中" value="running" />
+                <el-option label="已完成" value="completed" />
+                <el-option label="失败" value="failed" />
+                <el-option label="已取消" value="cancelled" />
+              </el-select>
+              <el-button 
+                type="primary" 
+                size="default" 
+                @click="loadTasks"
+                :loading="tasksLoading"
+              >
+                刷新任务
+              </el-button>
+            </div>
+          </div>
 
-            <template #footer>
-              <div class="card-actions">
-                <el-button 
-                  type="primary" 
-                  size="small" 
-                  @click="viewDataset(dataset)"
-                >
-                  查看详情
+          <!-- 任务列表 -->
+          <div class="tasks-list" v-loading="tasksLoading">
+            <el-empty 
+              v-if="tasks.length === 0 && !tasksLoading" 
+              description="暂无评测任务"
+              :image-size="120"
+            >
+              <template #description>
+                <p>还没有创建任何评测任务</p>
+                <el-button type="primary" @click="activeTab = 'marketplace'">
+                  去创建任务
                 </el-button>
-                <el-button 
-                  type="success" 
-                  size="small" 
-                  @click="downloadDataset(dataset)"
-                  :loading="downloading[dataset.id]"
-                >
-                  下载数据集
-                </el-button>
+              </template>
+            </el-empty>
+            
+            <div v-else class="tasks-container">
+              <div 
+                v-for="task in tasks" 
+                :key="task.id" 
+                class="task-card"
+                :class="getTaskCardClass(task.status)"
+              >
+                <div class="task-header">
+                  <div class="task-title-section">
+                    <h4 class="task-title">
+                      {{ task.name || `评测任务 #${task.id}` }}
+                    </h4>
+                    <el-tag 
+                      :type="getTaskStatusType(task.status)" 
+                      size="small"
+                      class="status-tag"
+                    >
+                      {{ getTaskStatusText(task.status) }}
+                    </el-tag>
+                  </div>
+                  <div class="task-time">
+                    <el-icon><Clock /></el-icon>
+                    {{ formatDateTime(task.created_at) }}
+                  </div>
+                </div>                <div class="task-info">
+                  <div class="info-grid">
+                    <div class="info-item">
+                      <div class="info-label">数据集</div>
+                      <div class="info-value">{{ task.dataset?.name || '未知' }}</div>
+                    </div>
+                    <div class="info-item">
+                      <div class="info-label">模型</div>
+                      <div class="info-value">{{ task.model?.display_name || '未知' }}</div>
+                    </div>
+                    <div class="info-item">
+                      <div class="info-label">总题数</div>
+                      <div class="info-value">{{ task.total_questions || 0 }}</div>
+                    </div>
+                    <div class="info-item">
+                      <div class="info-label">完成数</div>
+                      <div class="info-value">{{ task.completed_questions || 0 }}</div>
+                    </div>
+                  </div>
+                </div>
+
+                <!-- 进度条 -->
+                <div v-if="task.status === 'running' || task.status === 'completed'" class="task-progress">
+                  <div class="progress-info">
+                    <span>进度</span>
+                    <span>{{ task.progress || 0 }}%</span>
+                  </div>
+                  <el-progress 
+                    :percentage="task.progress || 0" 
+                    :status="task.status === 'completed' ? 'success' : (task.status === 'failed' ? 'exception' : '')"
+                    :stroke-width="8"
+                    class="progress-bar"
+                  />
+                </div>                <!-- 任务操作按钮 -->
+                <div class="task-actions">
+                  <el-button 
+                    size="small" 
+                    @click="viewTaskProgress(task)"
+                    v-if="task.status === 'running'"
+                    class="action-btn"
+                  >
+                    查看进度
+                  </el-button>
+                  <el-button 
+                    size="small" 
+                    type="success"
+                    @click="viewTaskResults(task)"
+                    v-if="task.status === 'completed'"
+                    class="action-btn"
+                  >
+                    查看结果
+                  </el-button>
+                  <el-button 
+                    size="small" 
+                    type="danger" 
+                    @click="cancelTask(task)"
+                    v-if="task.status === 'running' || task.status === 'pending'"
+                    class="action-btn"
+                  >
+                    取消任务
+                  </el-button>
+                  <el-button 
+                    size="small" 
+                    type="primary" 
+                    @click="downloadTaskResults(task)"
+                    v-if="task.status === 'completed'"
+                    class="action-btn"
+                  >
+                    下载结果
+                  </el-button>
+                </div>
               </div>
-            </template>
-          </el-card>
-        </el-col>
-      </el-row>
-    </div>
-
-    <!-- 分页 -->
-    <div class="pagination">
-      <el-pagination
-        v-model:current-page="currentPage"
-        v-model:page-size="pageSize"
-        :page-sizes="[12, 24, 48]"
-        :total="totalDatasets"
-        layout="total, sizes, prev, pager, next, jumper"
-        @size-change="handleSizeChange"
-        @current-change="handleCurrentChange"
-      />
+            </div>
+          </div>
+        </el-tab-pane>
+      </el-tabs>
     </div>
 
     <!-- 数据集详情对话框 -->
     <el-dialog
       v-model="showDetailDialog"
       title="数据集详情"
-      width="70%"
+      width="80%"
       destroy-on-close
+      class="detail-dialog"
     >
-      <div v-if="selectedDataset" class="dataset-detail">
+      <div v-if="selectedDataset" class="dataset-detail">          
         <div class="detail-header">
-          <h3>{{ selectedDataset.name }}</h3>
-          <el-tag>版本 {{ selectedDataset.version }}</el-tag>
-        </div>
+            <div class="header-info">
+              <h2 class="detail-title">{{ selectedDataset.name }}</h2>
+              <div class="detail-tags">
+                <el-tag type="success" size="large">版本 {{ selectedDataset.version }}</el-tag>
+                <el-tag type="info" size="large">{{ selectedDataset.question_count || 0 }} 个问题</el-tag>
+              </div>
+            </div>
+          </div>
         
-        <div class="detail-info">
-          <p><strong>描述：</strong>{{ selectedDataset.description }}</p>
-          <p><strong>问题数量：</strong>{{ selectedDataset.question_count }}</p>
-          <p><strong>创建时间：</strong>{{ formatDate(selectedDataset.create_time) }}</p>
-        </div>
+        <div class="detail-content">          <div class="info-section">
+            <h3>描述信息</h3>
+            <p class="description-text">{{ selectedDataset.description || '暂无描述' }}</p>
+          </div>
 
-        <div class="sample-questions" v-if="sampleQuestions.length > 0">
-          <h4>示例问题</h4>
-          <div v-for="question in sampleQuestions" :key="question.id" class="question-item">
-            <p><strong>问题：</strong>{{ question.body }}</p>
-            <p><strong>类型：</strong>{{ question.question_type === 'choice' ? '选择题' : '文本题' }}</p>
-            <div v-if="question.answers && question.answers.length > 0">
-              <p><strong>标准答案：</strong></p>
-              <ul>
-                <li v-for="answer in question.answers.slice(0, 2)" :key="answer.id">
-                  {{ answer.answer }}
-                </li>
-              </ul>
+          <div class="info-section">
+            <h3>基本信息</h3>
+            <div class="info-grid">
+              <div class="info-card">
+                <div class="info-text">
+                  <div class="info-number">{{ selectedDataset.question_count || 0 }}</div>
+                  <div class="info-desc">问题数量</div>
+                </div>
+              </div>
+              <div class="info-card">
+                <div class="info-text">
+                  <div class="info-number">{{ formatDate(selectedDataset.create_time) }}</div>
+                  <div class="info-desc">创建时间</div>
+                </div>
+              </div>
+            </div>
+          </div>
+
+          <div class="info-section" v-if="sampleQuestions.length > 0">
+            <h3>示例问题</h3>
+            <div class="sample-questions">
+              <div v-for="(question, index) in sampleQuestions" :key="question.id" class="question-card">
+                <div class="question-header">
+                  <span class="question-index">Q{{ index + 1 }}</span>
+                  <el-tag size="small" :type="question.question_type === 'choice' ? 'warning' : 'info'">
+                    {{ question.question_type === 'choice' ? '选择题' : '文本题' }}
+                  </el-tag>
+                </div>
+                <div class="question-body">
+                  <p><strong>问题：</strong>{{ question.body }}</p>
+                  <div v-if="question.answers && question.answers.length > 0" class="answers-section">
+                    <p><strong>标准答案：</strong></p>
+                    <ul class="answers-list">
+                      <li v-for="answer in question.answers.slice(0, 2)" :key="answer.id">
+                        {{ answer.answer }}
+                      </li>
+                    </ul>
+                  </div>
+                </div>
+              </div>
             </div>
           </div>
         </div>
       </div>
 
-      <template #footer>
-        <div class="dialog-footer">
-          <el-button @click="showDetailDialog = false">关闭</el-button>
+      <template #footer>        <div class="dialog-footer">
+          <el-button size="large" @click="showDetailDialog = false">
+            关闭
+          </el-button>
           <el-button 
-            type="primary" 
+            size="large"
             @click="downloadDataset(selectedDataset)"
             :loading="downloading[selectedDataset?.id]"
           >
             下载数据集
           </el-button>
           <el-button 
-            type="success" 
+            type="primary" 
+            size="large"
             @click="startEvaluation(selectedDataset)"
           >
             开始评测
@@ -153,18 +339,19 @@
         </div>
       </template>
     </el-dialog>
-  </div>
 </template>
 
 <script setup lang="ts">
 import { ref, reactive, onMounted } from 'vue'
 import { ElMessage, ElMessageBox } from 'element-plus'
 import { useRouter } from 'vue-router'
+import { Clock } from '@element-plus/icons-vue'
 import apiClient from '@/services/api'
 
 const router = useRouter()
 
 // 响应式数据
+const activeTab = ref('marketplace')
 const datasets = ref<any[]>([])
 const totalDatasets = ref(0)
 const currentPage = ref(1)
@@ -172,6 +359,11 @@ const pageSize = ref(12)
 const searchQuery = ref('')
 const loading = ref(false)
 const downloading = reactive<Record<number, boolean>>({})
+
+// 任务相关数据
+const tasks = ref<any[]>([])
+const tasksLoading = ref(false)
+const taskStatusFilter = ref('')
 
 // 对话框相关
 const showDetailDialog = ref(false)
@@ -181,13 +373,22 @@ const sampleQuestions = ref<any[]>([])
 // 生命周期
 onMounted(() => {
   loadDatasets()
+  loadTasks()
 })
 
 // 方法
+const handleTabChange = (tabName: string) => {
+  if (tabName === 'tasks') {
+    loadTasks()
+  } else if (tabName === 'marketplace') {
+    loadDatasets()
+  }
+}
+
 const loadDatasets = async () => {
   loading.value = true
   try {
-    const response = await apiClient.get('/llm/marketplace/datasets', {
+    const response = await apiClient.get('/llm-evaluation/marketplace/datasets', {
       params: {
         skip: (currentPage.value - 1) * pageSize.value,
         limit: pageSize.value,
@@ -195,7 +396,6 @@ const loadDatasets = async () => {
       }
     })
     datasets.value = response.data
-    // 这里应该从响应头或者单独的API获取总数
     totalDatasets.value = response.data.length > 0 ? response.data.length * 10 : 0
   } catch (error) {
     console.error('加载数据集失败:', error)
@@ -205,19 +405,25 @@ const loadDatasets = async () => {
   }
 }
 
+const loadTasks = async () => {
+  tasksLoading.value = true
+  try {
+    const response = await apiClient.get('/llm-evaluation/tasks', {
+      params: {
+        status: taskStatusFilter.value || undefined
+      }
+    })
+    tasks.value = response.data
+  } catch (error) {
+    console.error('加载任务失败:', error)
+    ElMessage.error('加载任务失败')
+  } finally {
+    tasksLoading.value = false
+  }
+}
+
 const handleSearch = () => {
   currentPage.value = 1
-  loadDatasets()
-}
-
-const handleSizeChange = (size: number) => {
-  pageSize.value = size
-  currentPage.value = 1
-  loadDatasets()
-}
-
-const handleCurrentChange = (page: number) => {
-  currentPage.value = page
   loadDatasets()
 }
 
@@ -225,11 +431,10 @@ const viewDataset = async (dataset: any) => {
   selectedDataset.value = dataset
   showDetailDialog.value = true
   
-  // 加载示例问题
   try {
-    const response = await apiClient.get(`/llm/marketplace/datasets/${dataset.id}/download`)
+    const response = await apiClient.get(`/llm-evaluation/marketplace/datasets/${dataset.id}/download`)
     if (response.data.questions) {
-      sampleQuestions.value = response.data.questions.slice(0, 3) // 只显示前3个示例
+      sampleQuestions.value = response.data.questions.slice(0, 3)
     }
   } catch (error) {
     console.error('加载示例问题失败:', error)
@@ -239,11 +444,10 @@ const viewDataset = async (dataset: any) => {
 const downloadDataset = async (dataset: any) => {
   downloading[dataset.id] = true
   try {
-    const response = await apiClient.get(`/llm/marketplace/datasets/${dataset.id}/download`, {
+    const response = await apiClient.get(`/llm-evaluation/marketplace/datasets/${dataset.id}/download`, {
       params: { format: 'json' }
     })
     
-    // 创建下载链接
     const blob = new Blob([JSON.stringify(response.data, null, 2)], {
       type: 'application/json'
     })
@@ -273,137 +477,577 @@ const startEvaluation = (dataset: any) => {
   })
 }
 
+// 任务相关方法
+const viewTaskProgress = (task: any) => {
+  router.push({
+    name: 'LLMEvaluation',
+    params: { datasetId: task.dataset_id },
+    query: { taskId: task.id }
+  })
+}
+
+const viewTaskResults = (task: any) => {
+  router.push({
+    name: 'LLMEvaluation',
+    params: { datasetId: task.dataset_id },
+    query: { taskId: task.id, view: 'results' }
+  })
+}
+
+const cancelTask = async (task: any) => {
+  try {
+    await ElMessageBox.confirm(
+      `确定要取消任务 "${task.name || `#${task.id}`}" 吗？`,
+      '确认取消',
+      {
+        confirmButtonText: '确定',
+        cancelButtonText: '取消',
+        type: 'warning',
+      }
+    )
+    
+    await apiClient.post(`/llm-evaluation/tasks/${task.id}/cancel`)
+    ElMessage.success('任务已取消')
+    loadTasks()
+  } catch (error: any) {
+    if (error !== 'cancel') {
+      console.error('取消任务失败:', error)
+      ElMessage.error('取消任务失败')
+    }
+  }
+}
+
+const downloadTaskResults = async (task: any) => {
+  try {
+    const response = await apiClient.post(`/llm-evaluation/tasks/${task.id}/download`, {
+      format: 'json'
+    })
+    
+    const blob = new Blob([JSON.stringify(response.data, null, 2)], {
+      type: 'application/json'
+    })
+    const url = window.URL.createObjectURL(blob)
+    const link = document.createElement('a')
+    link.href = url
+    link.download = `task_${task.id}_results.json`
+    document.body.appendChild(link)
+    link.click()
+    document.body.removeChild(link)
+    window.URL.revokeObjectURL(url)
+    
+    ElMessage.success('结果下载成功')
+  } catch (error) {
+    console.error('下载结果失败:', error)
+    ElMessage.error('下载结果失败')
+  }
+}
+
+// 工具方法
+const getTaskStatusType = (status: string) => {
+  const statusMap: Record<string, string> = {
+    'pending': 'info',
+    'running': 'warning',
+    'completed': 'success',
+    'failed': 'danger',
+    'cancelled': 'info'
+  }
+  return statusMap[status] || 'info'
+}
+
+const getTaskStatusText = (status: string) => {
+  const statusMap: Record<string, string> = {
+    'pending': '等待中',
+    'running': '进行中',
+    'completed': '已完成',
+    'failed': '失败',
+    'cancelled': '已取消'
+  }
+  return statusMap[status] || '未知'
+}
+
+const getTaskCardClass = (status: string) => {
+  return `task-card-${status}`
+}
+
 const formatDate = (dateString: string) => {
   return new Date(dateString).toLocaleDateString('zh-CN')
+}
+
+const formatDateTime = (dateString: string) => {
+  return new Date(dateString).toLocaleString('zh-CN')
 }
 </script>
 
 <style scoped>
+/* 全局样式 */
 .llm-marketplace {
-  padding: 20px;
+  min-height: 100vh;
+  background-color: #f5f5f5;
+  padding: 0;
 }
 
+/* 页面头部 */
 .header {
-  text-align: center;
-  margin-bottom: 30px;
+  background: white;
+  padding: 30px 0;
+  margin-bottom: 20px;
+  border-bottom: 1px solid #e0e0e0;
 }
 
-.header h1 {
-  color: #303133;
-  margin-bottom: 10px;
-}
-
-.header p {
-  color: #909399;
-  font-size: 16px;
-}
-
-.filters {
-  margin-bottom: 30px;
-}
-
-.dataset-card {
-  height: 300px;
-  display: flex;
-  flex-direction: column;
-}
-
-.card-header {
+.header-content {
+  max-width: 1200px;
+  margin: 0 auto;
+  padding: 0 20px;
   display: flex;
   justify-content: space-between;
   align-items: center;
 }
 
-.dataset-name {
-  font-weight: bold;
-  font-size: 16px;
-}
-
-.dataset-info {
+.title-section {
   flex: 1;
+}
+
+.page-title {
+  font-size: 2rem;
+  font-weight: 600;
+  color: #333;
+  margin: 0 0 8px 0;
+}
+
+.page-subtitle {
+  font-size: 1rem;
+  color: #666;
+  margin: 0;
+}
+
+.header-stats {
   display: flex;
-  flex-direction: column;
-}
-
-.description {
-  color: #606266;
-  margin-bottom: 15px;
-  overflow: hidden;
-  text-overflow: ellipsis;
-  display: -webkit-box;
-  -webkit-line-clamp: 3;
-  -webkit-box-orient: vertical;
-}
-
-.stats {
-  margin-top: auto;
+  gap: 30px;
 }
 
 .stat-item {
   display: flex;
   align-items: center;
-  color: #909399;
-  font-size: 14px;
+  gap: 8px;
 }
 
-.stat-item i {
-  margin-right: 5px;
+.stat-label {
+  color: #666;
+  font-size: 0.9rem;
 }
 
-.card-actions {
+.stat-number {
+  font-size: 1.2rem;
+  font-weight: 600;
+  color: #409eff;
+}
+
+/* 标签页容器 */
+.tabs-container {
+  max-width: 1200px;
+  margin: 0 auto;
+  padding: 0 20px;
+}
+
+.custom-tabs {
+  background: white;
+  border-radius: 8px;
+  padding: 20px;
+  box-shadow: 0 2px 8px rgba(0, 0, 0, 0.1);
+}
+
+.tab-label {
+  font-size: 1rem;
+  font-weight: 500;
+}
+
+/* 搜索和筛选区域 */
+.filters-section {
+  margin-bottom: 20px;
+}
+
+.search-bar {
+  display: flex;
+  gap: 12px;
+  align-items: center;
+}
+
+.search-input {
+  flex: 1;
+  max-width: 400px;
+}
+
+.refresh-btn {
+  border-radius: 4px;
+}
+
+/* 数据集网格 */
+.datasets-grid {
+  min-height: 400px;
+}
+
+.grid-container {
+  display: grid;
+  grid-template-columns: repeat(auto-fill, minmax(320px, 1fr));
+  gap: 20px;
+}
+
+.dataset-card {
+  background: white;
+  border-radius: 8px;
+  padding: 20px;
+  box-shadow: 0 2px 8px rgba(0, 0, 0, 0.1);
+  transition: box-shadow 0.3s ease;
+  border: 1px solid #e0e0e0;
+}
+
+.dataset-card:hover {
+  box-shadow: 0 4px 16px rgba(0, 0, 0, 0.15);
+}
+
+.card-header {
+  display: flex;
+  align-items: center;
+  gap: 12px;
+  margin-bottom: 16px;
+}
+
+.dataset-meta {
+  flex: 1;
+}
+
+.dataset-name {
+  font-size: 1.1rem;
+  font-weight: 600;
+  color: #333;
+  margin: 0 0 6px 0;
+}
+
+.card-body {
+  margin-bottom: 20px;
+}
+
+.dataset-description {
+  color: #666;
+  line-height: 1.5;
+  margin-bottom: 16px;
+  height: 3em;
+  overflow: hidden;
+  display: -webkit-box;
+  -webkit-line-clamp: 2;
+  line-clamp: 2;
+  -webkit-box-orient: vertical;
+}
+
+.dataset-stats {
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+}
+
+.stat-item {
+  color: #888;
+  font-size: 0.9rem;
+}
+
+.card-footer {
+  display: flex;
+  gap: 8px;
+}
+
+.action-btn {
+  flex: 1;
+  border-radius: 4px;
+}
+
+/* 任务相关样式 */
+.task-filters {
+  margin-bottom: 20px;
+}
+
+.filter-group {
+  display: flex;
+  gap: 12px;
+  align-items: center;
+}
+
+.tasks-container {
+  display: flex;
+  flex-direction: column;
+  gap: 16px;
+}
+
+.task-card {
+  background: white;
+  border-radius: 8px;
+  padding: 20px;
+  box-shadow: 0 2px 8px rgba(0, 0, 0, 0.1);
+  border: 1px solid #e0e0e0;
+  border-left: 4px solid #e0e0e0;
+}
+
+.task-card-pending {
+  border-left-color: #409eff;
+}
+
+.task-card-running {
+  border-left-color: #e6a23c;
+}
+
+.task-card-completed {
+  border-left-color: #67c23a;
+}
+
+.task-card-failed {
+  border-left-color: #f56c6c;
+}
+
+.task-card-cancelled {
+  border-left-color: #909399;
+}
+
+.task-header {
   display: flex;
   justify-content: space-between;
+  align-items: flex-start;
+  margin-bottom: 16px;
 }
 
-.pagination {
+.task-title-section {
   display: flex;
-  justify-content: center;
-  margin-top: 30px;
+  align-items: center;
+  gap: 12px;
 }
 
+.task-title {
+  font-size: 1.1rem;
+  font-weight: 600;
+  color: #333;
+  margin: 0;
+}
+
+.task-time {
+  display: flex;
+  align-items: center;
+  gap: 4px;
+  color: #888;
+  font-size: 0.9rem;
+}
+
+.task-info {
+  margin-bottom: 16px;
+}
+
+.info-grid {
+  display: grid;
+  grid-template-columns: repeat(auto-fit, minmax(180px, 1fr));
+  gap: 12px;
+}
+
+.info-item {
+  display: flex;
+  flex-direction: column;
+  gap: 4px;
+}
+
+.info-label {
+  font-size: 0.9rem;
+  color: #666;
+  font-weight: 500;
+}
+
+.info-value {
+  font-weight: 600;
+  color: #333;
+}
+
+.task-progress {
+  margin-bottom: 16px;
+}
+
+.progress-info {
+  display: flex;
+  justify-content: space-between;
+  margin-bottom: 6px;
+  font-size: 0.9rem;
+  color: #666;
+}
+
+.task-actions {
+  display: flex;
+  gap: 8px;
+  flex-wrap: wrap;
+}
+
+/* 对话框样式 */
 .dataset-detail {
-  padding: 20px;
+  padding: 20px 0;
 }
 
 .detail-header {
   display: flex;
   align-items: center;
-  gap: 10px;
-  margin-bottom: 20px;
+  gap: 16px;
+  margin-bottom: 24px;
+  padding-bottom: 16px;
+  border-bottom: 1px solid #e0e0e0;
 }
 
-.detail-info {
-  margin-bottom: 30px;
+.header-info {
+  flex: 1;
 }
 
-.detail-info p {
-  margin-bottom: 10px;
+.detail-title {
+  font-size: 1.5rem;
+  font-weight: 600;
+  color: #333;
+  margin: 0 0 12px 0;
+}
+
+.detail-tags {
+  display: flex;
+  gap: 8px;
+}
+
+.detail-content {
+  display: flex;
+  flex-direction: column;
+  gap: 24px;
+}
+
+.info-section h3 {
+  font-size: 1.1rem;
+  font-weight: 600;
+  color: #333;
+  margin-bottom: 12px;
+}
+
+.description-text {
+  color: #666;
   line-height: 1.6;
+  font-size: 1rem;
+  background: #f9f9f9;
+  padding: 16px;
+  border-radius: 6px;
 }
 
-.sample-questions h4 {
-  margin-bottom: 15px;
-  color: #303133;
+.info-grid {
+  display: grid;
+  grid-template-columns: repeat(auto-fit, minmax(200px, 1fr));
+  gap: 16px;
 }
 
-.question-item {
-  padding: 15px;
-  border: 1px solid #ebeef5;
+.info-card {
+  background: #f9f9f9;
+  padding: 16px;
+  border-radius: 6px;
+  display: flex;
+  align-items: center;
+  gap: 12px;
+}
+
+.info-text {
+  flex: 1;
+}
+
+.info-number {
+  font-size: 1.2rem;
+  font-weight: 600;
+  color: #333;
+  margin-bottom: 4px;
+}
+
+.info-desc {
+  color: #666;
+  font-size: 0.9rem;
+}
+
+.sample-questions {
+  display: flex;
+  flex-direction: column;
+  gap: 16px;
+}
+
+.question-card {
+  background: #f9f9f9;
+  border-radius: 6px;
+  padding: 16px;
+  border-left: 3px solid #409eff;
+}
+
+.question-header {
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+  margin-bottom: 12px;
+}
+
+.question-index {
+  background: #409eff;
+  color: white;
+  padding: 4px 10px;
+  border-radius: 12px;
+  font-weight: 600;
+  font-size: 0.9rem;
+}
+
+.question-body p {
+  color: #333;
+  line-height: 1.6;
+  margin-bottom: 12px;
+}
+
+.answers-section {
+  background: white;
+  padding: 12px;
   border-radius: 4px;
-  margin-bottom: 15px;
+  margin-top: 8px;
 }
 
-.question-item p {
-  margin-bottom: 8px;
+.answers-list {
+  margin-left: 16px;
+  color: #666;
 }
 
-.question-item ul {
-  margin-left: 20px;
+.answers-list li {
+  margin-bottom: 4px;
+  line-height: 1.4;
 }
 
 .dialog-footer {
   display: flex;
+  gap: 12px;
   justify-content: flex-end;
-  gap: 10px;
+}
+
+/* 响应式设计 */
+@media (max-width: 768px) {
+  .header-content {
+    flex-direction: column;
+    gap: 16px;
+    text-align: center;
+  }
+  
+  .grid-container {
+    grid-template-columns: 1fr;
+  }
+  
+  .search-bar {
+    flex-direction: column;
+  }
+  
+  .task-header {
+    flex-direction: column;
+    gap: 8px;
+  }
+  
+  .info-grid {
+    grid-template-columns: 1fr;
+  }
+  
+  .detail-header {
+    flex-direction: column;
+    text-align: center;
+  }
 }
 </style>

@@ -1013,6 +1013,121 @@
           >
             <span v-if="submittingEvaluation">⏳ 提交中...</span>
             <span v-else>提交评测</span>
+          </button>        </div>
+      </div>
+    </div>    <!-- 评测进度弹窗 -->
+    <div v-if="showProgressDialog" class="modal-overlay" @click="closeProgressDialog">
+      <div class="progress-modal-content" @click.stop>
+        <div class="progress-modal-header">
+          <h3 v-if="currentTaskType === 'answer_generation'">🤖 答案生成中</h3>
+          <h3 v-else>⚖️ 评分进行中</h3>
+          <button @click="closeProgressDialog" class="modal-close">×</button>
+        </div>
+        
+        <div class="progress-modal-body">
+          <div v-if="evaluationTask" class="progress-info">
+            <div class="task-info">
+              <h4>{{ evaluationTask.task_name || '在线评测任务' }}</h4>
+              <div class="status-info">
+                <span class="status-badge" :class="getStatusType(evaluationTask.status)">
+                  {{ getStatusText(evaluationTask.status) }}
+                </span>
+              </div>
+            </div>
+
+            <!-- 进度条 -->
+            <div class="progress-section">
+              <div class="progress-stats">
+                <div class="stat-item">
+                  <span class="stat-label">总题数</span>
+                  <span class="stat-value">{{ evaluationTask.total_questions || 0 }}</span>
+                </div>
+                <div class="stat-item">
+                  <span class="stat-label">已完成</span>
+                  <span class="stat-value">{{ evaluationTask.completed_questions || 0 }}</span>
+                </div>
+                <div class="stat-item">
+                  <span class="stat-label">失败数</span>
+                  <span class="stat-value">{{ evaluationTask.failed_questions || 0 }}</span>
+                </div>
+              </div>
+              
+              <div class="progress-bar-container">
+                <div class="progress-bar">
+                  <div 
+                    class="progress-fill" 
+                    :style="{ width: (evaluationTask.progress || 0) + '%' }"
+                    :class="{ 
+                      'progress-success': evaluationTask.status === 'completed',
+                      'progress-error': evaluationTask.status === 'failed'
+                    }"
+                  ></div>
+                </div>
+                <div class="progress-text">
+                  {{ evaluationTask.progress || 0 }}%
+                </div>
+              </div>
+            </div>
+
+            <!-- 实时信息 -->
+            <div v-if="taskProgress" class="real-time-info">
+              <div class="info-grid">
+                <div class="info-item" v-if="taskProgress.questions_per_minute">
+                  <label>处理速度:</label>
+                  <span>{{ taskProgress.questions_per_minute.toFixed(1) }}题/分钟</span>
+                </div>
+                <div class="info-item" v-if="taskProgress.estimated_remaining_time">
+                  <label>预计剩余:</label>
+                  <span>{{ formatTime(taskProgress.estimated_remaining_time) }}</span>
+                </div>
+                <div class="info-item" v-if="taskProgress.average_score">
+                  <label>平均分数:</label>
+                  <span>{{ taskProgress.average_score.toFixed(1) }}分</span>
+                </div>
+              </div>
+            </div>
+
+            <!-- 最新回答预览 -->
+            <div v-if="taskProgress && taskProgress.latest_answer" class="latest-answer">
+              <div class="answer-preview">
+                <h5>最新回答预览</h5>
+                <div class="answer-content">
+                  {{ taskProgress.latest_answer.substring(0, 100) }}
+                  <span v-if="taskProgress.latest_answer.length > 100">...</span>
+                </div>
+                <div v-if="taskProgress.latest_score !== undefined" class="answer-score">
+                  得分: {{ taskProgress.latest_score }}分
+                </div>
+              </div>
+            </div>
+
+            <!-- 错误信息 -->
+            <div v-if="evaluationTask.status === 'failed' && evaluationTask.error_message" class="error-info">
+              <div class="error-card">
+                <h5>❌ 评测失败</h5>
+                <p>{{ evaluationTask.error_message }}</p>
+              </div>
+            </div>
+          </div>
+        </div>
+        
+        <div class="progress-modal-footer">
+          <button @click="backToMarketplaceFromProgress" class="btn btn-secondary">
+            返回主界面
+          </button>
+          <button 
+            v-if="evaluationTask && evaluationTask.status === 'running'" 
+            @click="pauseEvaluation" 
+            class="btn btn-warning"
+          >
+            暂停评测
+          </button>
+          <button 
+            v-if="evaluationTask && evaluationTask.status === 'completed'" 
+            @click="viewResultsFromProgress" 
+            class="btn btn-primary"
+          >
+            查看结果
           </button>
         </div>
       </div>
@@ -1150,6 +1265,8 @@ let progressTimer: number | null = null
 
 // 对话框相关
 const showEvaluationDialog = ref(false)
+const showProgressDialog = ref(false) // 新增进度弹窗控制
+const currentTaskType = ref<'answer_generation' | 'evaluation'>('answer_generation') // 跟踪当前任务类型
 const selectedAnswer = ref<any>(null)
 const answerEvaluations = ref<any[]>([])
 const manualEvaluation = reactive({
@@ -1235,8 +1352,17 @@ const estimatedCost = computed(() => {
 // 添加一个方法来查看任务进度
 const viewTaskProgress = () => {
   if (evaluationTask.value) {
-    // 跳转到结果页面
-    currentStep.value = 4
+    // 如果任务已完成，直接跳转到结果页面
+    if (evaluationTask.value.status === 'completed') {
+      currentStep.value = 4
+    } else {
+      // 否则显示进度弹窗
+      showProgressDialog.value = true
+      // 如果任务正在运行，开始轮询进度
+      if (evaluationTask.value.status === 'running') {
+        startProgressPolling()
+      }
+    }
   }
 }
 
@@ -1401,15 +1527,18 @@ const startAnswerGeneration = async () => {
       question_limit: answerGenerationOptions.question_limit_type === 'limit' ? answerGenerationOptions.question_limit : undefined
     }
     
-    console.log('Task Data to be sent:', JSON.stringify(taskData, null, 2))
-
-    // 调用API创建并启动任务
+    console.log('Task Data to be sent:', JSON.stringify(taskData, null, 2))    // 调用API创建并启动任务
     answerGenerationTask.value = await llmEvaluationService.createEvaluationTask(taskData)
     
     showMessage('答案生成任务已创建，开始生成...', 'success')
     
-    // 跳转到下一步
-    nextStep()
+    // 显示进度弹窗而不是跳转到下一步
+    evaluationTask.value = answerGenerationTask.value // 将答案生成任务赋值给评测任务以便进度弹窗使用
+    currentTaskType.value = 'answer_generation' // 设置任务类型为答案生成
+    showProgressDialog.value = true
+    
+    // 开始轮询进度
+    startProgressPolling()
     
   } catch (error: any) {
     console.error('启动答案生成失败:', error)
@@ -1420,7 +1549,8 @@ const startAnswerGeneration = async () => {
 }
 
 // 开始评测（新的评测阶段）
-const startEvaluation = async () => {  if (!answerGenerationTask.value || !isEvaluationConfigValid.value) {
+const startEvaluation = async () => {
+  if (!answerGenerationTask.value || !isEvaluationConfigValid.value) {
     showMessage('请完成答案生成并配置评测参数', 'error')
     return  
   }
@@ -1431,7 +1561,8 @@ const startEvaluation = async () => {  if (!answerGenerationTask.value || !isEva
   }
 
   starting.value = true
-  try {    console.log('Selected model:', selectedModel.value)
+  try {
+    console.log('Selected model:', selectedModel.value)
     console.log('Model ID:', modelConfig.model_id)
     console.log('Model Config:', modelConfig)
     
@@ -1454,12 +1585,14 @@ const startEvaluation = async () => {  if (!answerGenerationTask.value || !isEva
       question_limit: evaluationOptions.question_limit_type === 'limit' ? evaluationOptions.question_limit : undefined
     }
     
-    console.log('Evaluation Task Data to be sent:', JSON.stringify(taskData, null, 2))
-
+    console.log('Evaluation Task Data to be sent:', JSON.stringify(taskData, null, 2))    
     evaluationTask.value = await llmEvaluationService.createEvaluationTask(taskData)
     
     showMessage('评测任务已创建，开始评测...', 'success')
-    nextStep()
+    
+    // 显示进度弹窗而不是跳转到下一步
+    currentTaskType.value = 'evaluation' // 设置任务类型为评分
+    showProgressDialog.value = true
     
     // 开始轮询进度
     startProgressPolling()
@@ -1494,10 +1627,23 @@ const startProgressPolling = () => {
         progressTimer = null
         
         if (progress.status === 'completed') {
-          await loadTaskResults()
-          showMessage('评测任务完成！', 'success')
+          // 根据任务类型决定下一步操作
+          if (currentTaskType.value === 'answer_generation') {
+            showMessage('答案生成完成！', 'success')
+            // 关闭进度弹窗并跳转到评测配置步骤
+            showProgressDialog.value = false
+            nextStep() // 跳转到评测配置步骤（步骤3）
+          } else {
+            await loadTaskResults()
+            showMessage('评测任务完成！', 'success')
+            // 关闭进度弹窗并跳转到结果页面
+            showProgressDialog.value = false
+            nextStep() // 跳转到结果页面
+          }
         } else {
-          showMessage('评测任务失败', 'error')
+          const taskName = currentTaskType.value === 'answer_generation' ? '答案生成' : '评测'
+          showMessage(`${taskName}任务失败`, 'error')
+          showProgressDialog.value = false
         }
       }
     } catch (error) {
@@ -1532,7 +1678,30 @@ const pauseEvaluation = async () => {
 }
 
 const backToMarketplace = () => {
-  router.push('/llm-evaluation/marketplace')
+  router.push('/llm-marketplace')
+}
+
+// 进度弹窗相关方法
+const closeProgressDialog = () => {
+  showProgressDialog.value = false
+}
+
+const backToMarketplaceFromProgress = () => {
+  // 停止轮询
+  if (progressTimer) {
+    clearInterval(progressTimer)
+    progressTimer = null
+  }
+  
+  // 关闭弹窗并返回市场
+  showProgressDialog.value = false
+  router.push('/llm-marketplace')
+}
+
+const viewResultsFromProgress = () => {
+  // 关闭进度弹窗并跳转到结果页面
+  showProgressDialog.value = false
+  nextStep() // 跳转到结果页面
 }
 
 const getStatusType = (status: string) => {
@@ -2790,6 +2959,259 @@ const nextStepButtonText = computed(() => {
   to {
     opacity: 1;
     transform: translateY(0);
+  }
+}
+
+/* 进度弹窗样式 */
+.progress-modal-content {
+  background: white;
+  border-radius: 16px;
+  width: 90%;
+  max-width: 600px;
+  max-height: 80vh;
+  overflow-y: auto;
+  box-shadow: 0 20px 60px rgba(0, 0, 0, 0.3);
+  animation: modalSlideIn 0.3s ease;
+}
+
+.progress-modal-header {
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+  padding: 20px 24px;
+  border-bottom: 1px solid #e2e8f0;
+  background: linear-gradient(135deg, #f8f9fa 0%, #e9ecef 100%);
+  border-radius: 16px 16px 0 0;
+}
+
+.progress-modal-header h3 {
+  margin: 0;
+  color: #2d3748;
+  font-size: 18px;
+  font-weight: 600;
+}
+
+.progress-modal-body {
+  padding: 24px;
+}
+
+.progress-modal-footer {
+  display: flex;
+  justify-content: flex-end;
+  gap: 12px;
+  padding: 20px 24px;
+  border-top: 1px solid #e2e8f0;
+  background: #f8f9fa;
+  border-radius: 0 0 16px 16px;
+}
+
+.progress-info {
+  display: flex;
+  flex-direction: column;
+  gap: 20px;
+}
+
+.task-info {
+  text-align: center;
+  margin-bottom: 20px;
+}
+
+.task-info h4 {
+  margin: 0 0 8px 0;
+  color: #2d3748;
+  font-size: 16px;
+  font-weight: 600;
+}
+
+.status-info {
+  display: flex;
+  justify-content: center;
+}
+
+.progress-section {
+  margin: 20px 0;
+}
+
+.progress-stats {
+  display: flex;
+  justify-content: space-around;
+  margin-bottom: 16px;
+  padding: 16px;
+  background: linear-gradient(135deg, #f8f9fa 0%, #e9ecef 100%);
+  border-radius: 12px;
+}
+
+.stat-item {
+  text-align: center;
+}
+
+.stat-label {
+  display: block;
+  font-size: 12px;
+  color: #666;
+  margin-bottom: 4px;
+}
+
+.stat-value {
+  display: block;
+  font-size: 18px;
+  font-weight: 600;
+  color: #2d3748;
+}
+
+.progress-bar-container {
+  margin: 16px 0;
+}
+
+.progress-bar {
+  width: 100%;
+  height: 12px;
+  background: #e2e8f0;
+  border-radius: 6px;
+  overflow: hidden;
+  position: relative;
+}
+
+.progress-fill {
+  height: 100%;
+  background: linear-gradient(135deg, #667eea 0%, #764ba2 100%);
+  transition: width 0.3s ease;
+  border-radius: 6px;
+}
+
+.progress-fill.progress-success {
+  background: linear-gradient(135deg, #48bb78 0%, #38a169 100%);
+}
+
+.progress-fill.progress-error {
+  background: linear-gradient(135deg, #f56565 0%, #e53e3e 100%);
+}
+
+.progress-text {
+  text-align: center;
+  margin-top: 8px;
+  font-size: 14px;
+  color: #666;
+  font-weight: 500;
+}
+
+.real-time-info {
+  margin: 20px 0;
+  padding: 16px;
+  background: linear-gradient(135deg, #ebf8ff 0%, #e6fffa 100%);
+  border-radius: 12px;
+  border: 1px solid #bee3f8;
+}
+
+.info-grid {
+  display: grid;
+  grid-template-columns: repeat(auto-fit, minmax(150px, 1fr));
+  gap: 12px;
+}
+
+.info-item {
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+}
+
+.info-item label {
+  font-size: 14px;
+  color: #4a5568;
+  font-weight: 500;
+}
+
+.info-item span {
+  font-size: 14px;
+  color: #2d3748;
+  font-weight: 600;
+}
+
+.latest-answer {
+  margin: 20px 0;
+}
+
+.answer-preview {
+  padding: 16px;
+  background: linear-gradient(135deg, #f7fafc 0%, #edf2f7 100%);
+  border-radius: 12px;
+  border: 1px solid #e2e8f0;
+}
+
+.answer-preview h5 {
+  margin: 0 0 12px 0;
+  color: #2d3748;
+  font-size: 14px;
+  font-weight: 600;
+}
+
+.answer-content {
+  font-size: 14px;
+  color: #4a5568;
+  line-height: 1.5;
+  margin-bottom: 8px;
+}
+
+.answer-score {
+  font-size: 12px;
+  color: #667eea;
+  font-weight: 600;
+}
+
+.error-info {
+  margin: 20px 0;
+}
+
+.error-card {
+  padding: 16px;
+  background: linear-gradient(135deg, #fed7d7 0%, #fbb6ce 100%);
+  border-radius: 12px;
+  border: 1px solid #f56565;
+}
+
+.error-card h5 {
+  margin: 0 0 8px 0;
+  color: #742a2a;
+  font-size: 14px;
+  font-weight: 600;
+}
+
+.error-card p {
+  margin: 0;
+  color: #742a2a;
+  font-size: 14px;
+  line-height: 1.5;
+}
+
+@keyframes modalSlideIn {
+  from {
+    opacity: 0;
+    transform: translateY(-50px) scale(0.95);
+  }
+  to {
+    opacity: 1;
+    transform: translateY(0) scale(1);
+  }
+}
+
+/* 响应式设计 */
+@media (max-width: 768px) {
+  .progress-modal-content {
+    width: 95%;
+    margin: 20px;
+  }
+  
+  .progress-stats {
+    flex-direction: column;
+    gap: 12px;
+  }
+  
+  .progress-modal-footer {
+    flex-direction: column;
+  }
+  
+  .info-grid {
+    grid-template-columns: 1fr;
   }
 }
 </style>
