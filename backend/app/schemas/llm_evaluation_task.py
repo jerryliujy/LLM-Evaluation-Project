@@ -6,6 +6,7 @@ from typing import Optional, List, Dict, Any
 from datetime import datetime
 from enum import Enum
 from decimal import Decimal
+from ..models.llm_evaluation_task import TaskStatus
 
 
 class TaskStatusEnum(str, Enum):
@@ -87,7 +88,7 @@ class LLMEvaluationTaskUpdate(BaseModel):
     """更新LLM评测任务的Schema"""
     name: Optional[str] = None
     description: Optional[str] = None
-    status: Optional[TaskStatusEnum] = None
+    status: Optional[TaskStatus] = None
     progress: Optional[int] = None
     total_questions: Optional[int] = None
     completed_questions: Optional[int] = None
@@ -103,7 +104,7 @@ class LLMEvaluationTaskResponse(LLMEvaluationTaskBase):
     id: int
     created_by: int
     created_at: datetime
-    status: TaskStatusEnum
+    status: TaskStatus
     progress: int
     score: Optional[Decimal] = None
     total_questions: int
@@ -125,7 +126,7 @@ class LLMEvaluationTaskResponse(LLMEvaluationTaskBase):
 class LLMEvaluationTaskProgress(BaseModel):
     """LLM评测任务进度Schema"""
     task_id: int
-    status: TaskStatusEnum
+    status: TaskStatus
     progress: int
     total_questions: int
     completed_questions: int

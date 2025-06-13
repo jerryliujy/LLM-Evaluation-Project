@@ -1,4 +1,4 @@
-from sqlalchemy import Column, Integer, String, Text, DateTime, Boolean, ForeignKey
+from sqlalchemy import Column, Integer, String, Text, DateTime, Boolean, ForeignKey, text
 from sqlalchemy.orm import relationship
 from sqlalchemy.sql import func
 from ..db.database import Base
@@ -10,11 +10,11 @@ class VersionTag(Base):
     id = Column(Integer, primary_key=True, index=True)
     version_id = Column(Integer, ForeignKey("DatasetVersion.id"), nullable=False, index=True)
     version_question_id = Column(Integer, ForeignKey("VersionStdQuestion.id"), nullable=False, index=True)
-    tag_label = Column(String(100), ForeignKey("Tag.label"), nullable=False, index=True)
-    is_deleted = Column(Boolean, default=False, nullable=False)  # 是否被删除
-    is_new = Column(Boolean, default=False, nullable=False)  # 是否是新增的标签
+    tag_label = Column(String(100), ForeignKey("Tag.label"), nullable=False, index=True)    
+    is_deleted = Column(Boolean, server_default=text('0'), nullable=False)  # 是否被删除
+    is_new = Column(Boolean, server_default=text('0'), nullable=False)  # 是否是新增的标签
     
-    created_at = Column(DateTime(timezone=True), server_default=func.now())
+    created_at = Column(DateTime(timezone=True), server_default=text('CURRENT_TIMESTAMP'))
     
     # 关系
     version_question = relationship("VersionStdQuestion", back_populates="version_tags")

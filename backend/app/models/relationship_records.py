@@ -1,4 +1,4 @@
-from sqlalchemy import Column, Integer, ForeignKey, DateTime, String, Text
+from sqlalchemy import Column, Integer, ForeignKey, DateTime, String, Text, text
 from sqlalchemy.ext.declarative import declarative_base
 from sqlalchemy.orm import relationship
 from sqlalchemy.sql import func
@@ -9,9 +9,9 @@ class StdAnswerRawAnswerRecord(Base):
     __tablename__ = "StdAnswerRawAnswerRecord"
 
     id = Column(Integer, primary_key=True, index=True, autoincrement=True)
-    std_answer_id = Column(Integer, ForeignKey("StdAnswer.id"), nullable=False)
+    std_answer_id = Column(Integer, ForeignKey("StdAnswer.id"), nullable=False)    
     raw_answer_id = Column(Integer, ForeignKey("RawAnswer.id"), nullable=False)
-    created_at = Column(DateTime, nullable=False, server_default=func.now())
+    created_at = Column(DateTime, nullable=False, server_default=text('CURRENT_TIMESTAMP'))
     created_by = Column(String(100), nullable=True)
 
     # 关系

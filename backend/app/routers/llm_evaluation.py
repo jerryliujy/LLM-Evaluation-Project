@@ -332,7 +332,8 @@ async def create_evaluation_task(
             status_code=status.HTTP_404_NOT_FOUND,
             detail="Dataset not found"
         )
-      # 直接通过model_id查找LLM模型记录
+    
+    # 直接通过model_id查找LLM模型记录
     model_id = request.model_settings.model_id if hasattr(request.model_settings, 'model_id') else request.model_settings.get('model_id')
     print(f"Extracted model_id: {model_id}")
     

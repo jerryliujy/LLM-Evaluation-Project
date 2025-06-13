@@ -1,4 +1,4 @@
-from sqlalchemy import Column, Integer, String, Text, DateTime, Boolean, JSON, ForeignKey
+from sqlalchemy import Column, Integer, String, Text, DateTime, Boolean, JSON, ForeignKey, text
 from sqlalchemy.orm import relationship
 from sqlalchemy.sql import func
 from app.db.database import Base
@@ -14,10 +14,10 @@ class RawQuestion(Base):
     views = Column(String(20), nullable=True)  # 支持"1.1m"格式
     author = Column(String(255), nullable=True)    
     tags_json = Column(JSON, nullable=True)  # 原始JSON格式的tags，用于导入时临时存储
-    issued_at = Column(DateTime, nullable=True)
-    created_at = Column(DateTime(timezone=True), server_default=func.now())  # 记录入库时间
+    issued_at = Column(DateTime, nullable=True)    
+    created_at = Column(DateTime(timezone=True), server_default=text('CURRENT_TIMESTAMP'))  # 记录入库时间
     created_by = Column(Integer, ForeignKey("User.id"), nullable=True, index=True)  # 创建者用户ID
-    is_deleted = Column(Boolean, default=False, nullable=False, index=True)
+    is_deleted = Column(Boolean, server_default=text('0'), nullable=False, index=True)
     
     # 关系
     raw_answers = relationship("RawAnswer", back_populates="question", cascade="all, delete-orphan", lazy="selectin")

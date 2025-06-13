@@ -1,4 +1,4 @@
-from sqlalchemy import Column, Integer, String, DateTime, Boolean, Enum, DECIMAL, Text
+from sqlalchemy import Column, Integer, String, DateTime, Boolean, Enum, DECIMAL, Text, text
 from sqlalchemy.sql import func
 from sqlalchemy.orm import relationship
 from app.db.database import Base
@@ -12,14 +12,14 @@ class LLM(Base):
     provider = Column(String(100), nullable=False, index=True)
     api_endpoint = Column(String(500), nullable=True)
     default_temperature = Column(DECIMAL(3,2), default=0.7)
-    max_tokens = Column(Integer, default=4000)
+    max_tokens = Column(Integer, default=4000)    
     top_k = Column(Integer, default=50)
-    enable_reasoning = Column(Boolean, nullable=False, default=False)
+    enable_reasoning = Column(Boolean, nullable=False, server_default=text('0'))
     cost_per_1k_tokens = Column(DECIMAL(8,6), default=0.0006)
     description = Column(Text, nullable=True)
     version = Column(String(50), nullable=True)
     affiliation = Column(String(100), nullable=True)
-    is_active = Column(Boolean, nullable=False, default=True, index=True)
+    is_active = Column(Boolean, nullable=False, server_default=text('1'), index=True)
     
     # 关系
     evaluation_tasks = relationship("LLMEvaluationTask", foreign_keys="LLMEvaluationTask.model_id", back_populates="model")

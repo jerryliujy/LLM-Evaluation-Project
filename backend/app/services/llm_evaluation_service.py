@@ -18,7 +18,7 @@ from ..models.llm import LLM
 from ..models.llm_answer import LLMAnswer
 from ..models.evaluation import Evaluation, EvaluatorType
 from ..crud.crud_llm_evaluation_task import update_llm_evaluation_task, get_llm_evaluation_task
-from ..schemas.llm_evaluation_task import LLMEvaluationTaskUpdate, TaskStatusEnum
+from ..schemas.llm_evaluation_task import LLMEvaluationTaskUpdate
 from .llm_client_service import get_llm_client, LLMClient
 from ..config.llm_config import get_api_key_from_env
 
@@ -43,10 +43,9 @@ class LLMEvaluationTaskProcessor:
             if not task:
                 logger.error(f"Task {task_id} not found")
                 return
-            logger.info(f"Task {task_id} status: {task.status}")
-              # 更新任务状态为运行中
+            logger.info(f"Task {task_id} status: {task.status}")              # 更新任务状态为运行中
             update_data = LLMEvaluationTaskUpdate(
-                status=TaskStatusEnum.RUNNING,
+                status=TaskStatus.RUNNING,
                 started_at=datetime.now()
             )
             update_llm_evaluation_task(db, task_id, update_data)
@@ -74,17 +73,36 @@ class LLMEvaluationTaskProcessor:
               # 获取或创建LLM记录
             llm = self._get_or_create_llm(db, task.model.name if task.model else task.model_name, 
                                           task.model.version if task.model else "default")
-            logger.info(f"Using LLM: {llm.name} (ID: {llm.id})")
-            
-            # 获取LLM客户端
+            logger.info(f"Using LLM: {llm.name} (ID: {llm.id})")      # 获取LLM客户端
             api_key = self._decrypt_api_key(task.api_key_hash)
-            logger.info(f"Decrypted API key: {'*' * (len(api_key) - 4) + api_key[-4:] if len(api_key) > 4 else '****'}")
+            logger.info(f"API key found: {bool(api_key)}")
+            if api_key:
+                logger.info(f"API key length: {len(api_key)}")
+                logger.info(f"API key prefix: {api_key[:10]}..." if len(api_key) > 10 else f"API key: {api_key}")
             
-            llm_client = await get_llm_client(
-                api_key=api_key,
-                db_llm=task.model  # 传递数据库模型信息
-            )
-            logger.info(f"Created LLM client for model: {llm_client.model_name}")
+            if not api_key:
+                logger.error("No API key available for task")
+                update_data = LLMEvaluationTaskUpdate(
+                    status=TaskStatus.FAILED,
+                    error_message="No API key available"
+                )
+                update_llm_evaluation_task(db, task_id, update_data)
+                return
+            
+            try:
+                llm_client = await get_llm_client(
+                    api_key=api_key,
+                    db_llm=task.model  # 传递数据库模型信息
+                )
+                logger.info(f"Created LLM client for model: {llm_client.model_name}")
+            except Exception as client_error:
+                logger.error(f"Failed to create LLM client: {str(client_error)}")
+                update_data = LLMEvaluationTaskUpdate(
+                    status=TaskStatus.FAILED,
+                    error_message=f"Failed to create LLM client: {str(client_error)}"
+                )
+                update_llm_evaluation_task(db, task_id, update_data)
+                return
             
             completed_count = 0
             failed_count = 0
@@ -92,10 +110,9 @@ class LLMEvaluationTaskProcessor:
             for i, question in enumerate(questions):
                 try:
                     logger.info(f"Processing question {i+1}/{len(questions)}: {question.id}")
-                    
-                    # 检查任务是否被取消
+                          # 检查任务是否被取消
                     current_task = get_llm_evaluation_task(db, task_id)
-                    if current_task.status == TaskStatus.CANCELLED:
+                    if current_task.status == TaskStatus.CANCELLED.value:
                         logger.info(f"Task {task_id} was cancelled")
                         break
                     
@@ -181,12 +198,12 @@ class LLMEvaluationTaskProcessor:
                 
                 # 小延迟避免API限流
                 await asyncio.sleep(0.1)
-            
-            # 生成结果摘要
+              # 生成结果摘要
             result_summary = self._generate_result_summary(db, task_id)
-              # 更新任务完成状态
+            
+            # 更新任务完成状态
             update_data = LLMEvaluationTaskUpdate(
-                status=TaskStatusEnum.COMPLETED,
+                status=TaskStatus.COMPLETED,
                 progress=100,
                 completed_questions=completed_count,
                 failed_questions=failed_count,
@@ -196,10 +213,9 @@ class LLMEvaluationTaskProcessor:
             update_llm_evaluation_task(db, task_id, update_data)
             
         except Exception as e:
-            logger.error(f"Task {task_id} failed: {str(e)}")
-            # 更新任务失败状态
+            logger.error(f"Task {task_id} failed: {str(e)}")            # 更新任务失败状态
             update_data = LLMEvaluationTaskUpdate(
-                status=TaskStatusEnum.FAILED,
+                status=TaskStatus.FAILED,
                 error_message=str(e)
             )
             update_llm_evaluation_task(db, task_id, update_data)
@@ -231,10 +247,18 @@ class LLMEvaluationTaskProcessor:
         """构建完整的提示词"""
         if system_prompt:
             return f"{system_prompt}\n\n用户问题: {question_body}"
-        return question_body
+        return question_body    
     
     def _decrypt_api_key(self, api_key_hash: Optional[str]) -> Optional[str]:
-        """解密API密钥 (简化实现，实际应使用安全的加密算法)"""
+        """解密API密钥 (临时实现：直接返回存储的密钥)，实际应该要进行加密"""
+        if not api_key_hash:
+            # 尝试从环境变量获取默认密钥
+            default_key = get_api_key_from_env('QWEN_API_KEY')
+            if default_key:
+                logger.info("Using default API key from environment")
+                return default_key
+            return None
+        # 临时实现：直接返回存储的API密钥（不安全，仅用于测试）
         # TODO: 实现真实的解密逻辑
         return api_key_hash
     
@@ -388,14 +412,13 @@ class LLMEvaluationTaskProcessor:
             finally:
                 loop.close()
         except Exception as e:
-            logger.error(f"Error in sync task processing: {str(e)}")
-            # 更新任务状态为失败
+            logger.error(f"Error in sync task processing: {str(e)}")            # 更新任务状态为失败
             try:
                 from ..db.database import SessionLocal
                 db = SessionLocal()                
                 try:
                     update_data = LLMEvaluationTaskUpdate(
-                        status=TaskStatusEnum.FAILED,
+                        status=TaskStatus.FAILED,
                         error_message=str(e),
                         completed_at=datetime.now()
                     )

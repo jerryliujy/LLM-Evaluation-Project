@@ -1,7 +1,7 @@
 """
 LLM Evaluation Task models for managing background evaluation processes
 """
-from sqlalchemy import Column, Integer, String, Text, DateTime, Boolean, ForeignKey, DECIMAL, JSON, Enum as SQLEnum
+from sqlalchemy import Column, Integer, String, Text, DateTime, Boolean, ForeignKey, DECIMAL, JSON, Enum as SQLEnum, text
 from sqlalchemy.sql import func
 from sqlalchemy.orm import relationship
 from datetime import datetime
@@ -28,9 +28,9 @@ class LLMEvaluationTask(Base):
     description = Column(Text, nullable=True)  # 任务描述
     dataset_id = Column(Integer, ForeignKey("Dataset.id"), nullable=False, index=True)
     created_by = Column(Integer, ForeignKey("User.id"), nullable=False, index=True)
-    created_at = Column(DateTime, server_default=func.now(), index=True)
-    # 任务状态
-    status = Column(SQLEnum(TaskStatus), default=TaskStatus.PENDING, nullable=False, index=True)
+    created_at = Column(DateTime, server_default=text('CURRENT_TIMESTAMP'), index=True)    # 任务状态
+    status = Column(SQLEnum(TaskStatus, values_callable=lambda x: [e.value for e in x]),  # 数据库是字符串类型，需要从枚举对象转换
+                   default=TaskStatus.PENDING, nullable=False, index=True)
     progress = Column(Integer, default=0, nullable=False)  # 进度百分比
     score = Column(DECIMAL(5, 2), nullable=True)  # 任务评分
     total_questions = Column(Integer, default=0, nullable=False)
@@ -42,9 +42,9 @@ class LLMEvaluationTask(Base):
     # Prompt配置
     system_prompt = Column(Text, nullable=True)  # 系统prompt
     temperature = Column(DECIMAL(3, 2), default=0.7)  # 温度参数
-    max_tokens = Column(Integer, default=2000)  # 最大token数
+    max_tokens = Column(Integer, default=2000)  # 最大token数    
     top_k = Column(Integer, default=50)  # Top-K采样
-    enable_reasoning = Column(Boolean, default=False, nullable=False)  # 启用推理模式
+    enable_reasoning = Column(Boolean, server_default=text('0'), nullable=False)  # 启用推理模式
     
     # 自动评估配置
     evaluation_llm_id = Column(Integer, ForeignKey("LLM.id"), nullable=True, index=True)  # 评估LLM

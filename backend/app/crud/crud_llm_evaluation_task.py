@@ -5,7 +5,7 @@ from sqlalchemy.orm import Session, joinedload
 from sqlalchemy import and_, desc, func
 from typing import List, Optional, Dict, Any
 import hashlib
-from datetime import datetime, timedelta
+from datetime import datetime, timedelta, timezone
 
 from ..models.llm_evaluation_task import LLMEvaluationTask, TaskStatus
 from ..models.llm_answer import LLMAnswer
@@ -13,7 +13,7 @@ from ..models.dataset import Dataset
 from ..models.std_question import StdQuestion
 from ..schemas.llm_evaluation_task import (
     LLMEvaluationTaskCreate, LLMEvaluationTaskUpdate,
-    ModelConfigRequest, TaskStatusEnum
+    ModelConfigRequest
 )
 
 
@@ -28,15 +28,16 @@ def create_llm_evaluation_task(
     user_id: int
 ) -> LLMEvaluationTask:
     """创建LLM评测任务"""
-    # 获取数据集中的问题数�?
+    # 获取数据集中的问题数
     total_questions = db.query(func.count(StdQuestion.id)).filter(
         StdQuestion.current_dataset_id == task_data.dataset_id,
         StdQuestion.is_valid == True
-    ).scalar() or 0
-      # 处理API密钥
+    ).scalar() or 0    
+    # 处理API密钥 - 临时直接存储，实际应该使用可逆加密
     api_key_hash = None
     if task_data.api_key:
-        api_key_hash = hash_api_key(task_data.api_key)
+        # TODO: 使用可逆加密而不是直接存储
+        api_key_hash = task_data.api_key  # 临时解决方案：直接存储
     
     # 创建任务
     task = LLMEvaluationTask(
@@ -49,7 +50,7 @@ def create_llm_evaluation_task(
         system_prompt=task_data.system_prompt,
         temperature=task_data.temperature,
         max_tokens=task_data.max_tokens,
-        top_k=task_data.top_k,
+        top_k=task_data.top_k,        
         enable_reasoning=task_data.enable_reasoning,
         evaluation_llm_id=task_data.evaluation_llm_id,
         evaluation_prompt=task_data.evaluation_prompt,
@@ -122,12 +123,11 @@ def update_llm_evaluation_task(
     
     update_data = task_update.model_dump(exclude_unset=True)
     for field, value in update_data.items():
-        setattr(task, field, value)
-      # 自动设置时间戳
-    if task_update.status and task_update.status.value == TaskStatus.RUNNING.value and not task.started_at:
-        task.started_at = datetime.utcnow()
-    elif task_update.status and task_update.status.value in [TaskStatus.COMPLETED.value, TaskStatus.FAILED.value, TaskStatus.CANCELLED.value] and not task.completed_at:
-        task.completed_at = datetime.utcnow()
+        setattr(task, field, value)    # 自动设置时间戳
+    if task_update.status and task_update.status == TaskStatus.RUNNING and not task.started_at:
+        task.started_at = datetime.now(timezone.utc)
+    elif task_update.status and task_update.status in [TaskStatus.COMPLETED, TaskStatus.FAILED, TaskStatus.CANCELLED] and not task.completed_at:
+        task.completed_at = datetime.now(timezone.utc)
     
     db.commit()
     db.refresh(task)
@@ -145,8 +145,8 @@ def delete_llm_evaluation_task(db: Session, task_id: int, user_id: int) -> bool:
     
     if not task:
         return False
-    
-    # 只允许删除未开始或已完成的任务
+      # 只允许删除未开始或已完成的任务
+      
     if task.status in [TaskStatus.PENDING.value, TaskStatus.COMPLETED.value, TaskStatus.FAILED.value, TaskStatus.CANCELLED.value]:
         db.delete(task)
         db.commit()
@@ -167,9 +167,8 @@ def cancel_llm_evaluation_task(db: Session, task_id: int, user_id: int) -> Optio
     
     if not task:
         return None
-    
-    task.status = TaskStatus.CANCELLED.value
-    task.completed_at = datetime.utcnow()
+    task.status = TaskStatus.CANCELLED
+    task.completed_at = datetime.now(timezone.utc)
     
     db.commit()
     db.refresh(task)
@@ -185,7 +184,7 @@ def get_task_progress(db: Session, task_id: int) -> Dict[str, Any]:
     # 计算预计剩余时间
     estimated_remaining_time = None
     questions_per_minute = None
-    if task.status == TaskStatus.RUNNING.value and task.started_at:
+    if task.status == TaskStatus.RUNNING and task.started_at:
         elapsed_time = (datetime.now() - task.started_at).total_seconds()
         if elapsed_time > 0 and task.completed_questions > 0:
             questions_per_minute = (task.completed_questions / elapsed_time) * 60
@@ -200,7 +199,7 @@ def get_task_progress(db: Session, task_id: int) -> Dict[str, Any]:
         latest_llm_answer = sorted(task.llm_answers, key=lambda x: x.answered_at, reverse=True)[0]
         latest_answer = latest_llm_answer.answer[:100] + "..." if len(latest_llm_answer.answer) > 100 else latest_llm_answer.answer
         
-        # 获取最新评�?
+        # 获取最新评分
         if latest_llm_answer.evaluations:
             latest_evaluation = sorted(latest_llm_answer.evaluations, key=lambda x: x.evaluation_time, reverse=True)[0]
             latest_score = latest_evaluation.score
