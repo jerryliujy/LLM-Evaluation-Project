@@ -6,6 +6,7 @@ from fastapi import APIRouter, Depends, HTTPException, status, BackgroundTasks, 
 from sqlalchemy.orm import Session
 from typing import List, Optional, Dict, Any
 import json
+import logging
 from datetime import datetime
 from decimal import Decimal
 
@@ -38,6 +39,9 @@ from app.services.llm_evaluation_service import LLMEvaluationTaskProcessor
 from app.config.llm_config import get_default_system_prompt, get_default_evaluation_prompt
 
 router = APIRouter(prefix="/api/llm-evaluation", tags=["LLM Evaluation"])
+
+# 创建logger实例
+logger = logging.getLogger(__name__)
 
 # 创建任务处理器实例
 task_processor = LLMEvaluationTaskProcessor()
@@ -367,18 +371,33 @@ async def create_evaluation_task(
         enable_reasoning=get_config_value(request.model_settings, 'enable_reasoning', False),
         evaluation_llm_id=request.evaluation_config.get('evaluation_llm_id') if request.is_auto_score and request.evaluation_config else None,
         evaluation_prompt=request.evaluation_config.get('evaluation_prompt') if request.is_auto_score and request.evaluation_config else None,
-        api_key=get_config_value(request.model_settings, 'api_key')
-    )
+        api_key=get_config_value(request.model_settings, 'api_key')    )
     
     # 创建任务
-    task = create_llm_evaluation_task(db=db, task_data=task_data, user_id=current_user.id)
+    logger.info(f"开始创建LLM评测任务: {request.task_name}")
+    try:
+        task = create_llm_evaluation_task(db=db, task_data=task_data, user_id=current_user.id)
+        logger.info(f"任务创建成功，任务ID: {task.id}")
+    except Exception as create_error:
+        logger.error(f"创建任务失败: {str(create_error)}")
+        import traceback
+        logger.error(f"创建任务错误堆栈:\n{traceback.format_exc()}")
+        raise HTTPException(status_code=500, detail=f"创建任务失败: {str(create_error)}")
     
     # 添加后台任务
-    background_tasks.add_task(
-        task_processor.process_evaluation_task,
-        task.id,
-        request.question_limit
-    )
+    logger.info(f"开始添加后台任务，任务ID: {task.id}")
+    try:
+        background_tasks.add_task(
+            task_processor.process_evaluation_task,
+            task.id,
+            request.question_limit
+        )
+        logger.info(f"后台任务添加成功，任务ID: {task.id}")
+    except Exception as bg_error:
+        logger.error(f"添加后台任务失败: {str(bg_error)}")
+        import traceback
+        logger.error(f"后台任务错误堆栈:\n{traceback.format_exc()}")
+        # 即使后台任务失败，也要返回任务，但状态会是FAILED
     
     return LLMEvaluationTaskResponse.from_orm(task)
 
@@ -449,16 +468,13 @@ def get_task_progress_endpoint(
         )
     
     progress_data = get_task_progress(db=db, task_id=task_id)
-    
     return LLMEvaluationTaskProgress(
         task_id=task.id,
         status=task.status,
         progress=task.progress,
-        current_question=task.completed_questions,  # 使用completed_questions作为当前问题数
         total_questions=task.total_questions,
-        successful_count=task.completed_questions,  # 使用completed_questions
-        failed_count=task.failed_questions,
-        average_score=task.score,  # 使用score字段
+        completed_questions=task.completed_questions,
+        failed_questions=task.failed_questions,
         **progress_data
     )
 

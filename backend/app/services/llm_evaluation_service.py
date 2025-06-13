@@ -6,6 +6,7 @@ import json
 import time
 import hashlib
 from typing import Dict, Any, Optional, List
+from sqlalchemy import text
 from sqlalchemy.orm import Session
 from datetime import datetime
 from decimal import Decimal
@@ -34,43 +35,64 @@ class LLMEvaluationTaskProcessor:
     async def process_evaluation_task_async(self, task_id: int, question_limit: Optional[int] = None):
         """异步处理评测任务"""
         from ..db.database import SessionLocal
-        db = SessionLocal()
+        db = SessionLocal()        
         try:
-            logger.info(f"Starting evaluation task {task_id}")
+            logger.info(f"=== 开始处理评测任务 {task_id} ===")
             
             # 获取任务
+            logger.info(f"Task {task_id}: 步骤1 - 获取任务信息")
             task = get_llm_evaluation_task(db, task_id)
             if not task:
-                logger.error(f"Task {task_id} not found")
+                logger.error(f"Task {task_id}: 任务不存在")
                 return
-            logger.info(f"Task {task_id} status: {task.status}")              # 更新任务状态为运行中
-            update_data = LLMEvaluationTaskUpdate(
-                status=TaskStatus.RUNNING,
-                started_at=datetime.now()
-            )
-            update_llm_evaluation_task(db, task_id, update_data)
-            logger.info(f"Updated task {task_id} status to RUNNING")
+            logger.info(f"Task {task_id}: 任务获取成功，状态: {task.status}")
+              
+            # 更新任务状态为运行中
+            logger.info(f"Task {task_id}: 步骤2 - 更新任务状态为RUNNING")
+            try:
+                update_data = LLMEvaluationTaskUpdate(
+                    status=TaskStatus.RUNNING,
+                    started_at=datetime.now()
+                )
+                logger.info(f"Task {task_id}: 创建更新数据对象成功")
+                
+                result = update_llm_evaluation_task(db, task_id, update_data)
+                logger.info(f"Task {task_id}: 更新任务状态完成，结果: {result is not None}")
+                
+            except Exception as update_error:
+                logger.error(f"Task {task_id}: 更新任务状态时发生错误: {str(update_error)}")
+                import traceback
+                logger.error(f"Task {task_id}: 更新状态错误堆栈:\n{traceback.format_exc()}")
+                raise            logger.info(f"Task {task_id}: 更新任务状态为RUNNING成功")
             
             # 获取数据集问题
-            questions = db.query(StdQuestion).filter(
-                StdQuestion.current_dataset_id == task.dataset_id,
-                StdQuestion.is_valid == True
-            ).order_by(StdQuestion.id).all()
-            
-            logger.info(f"Found {len(questions)} questions for dataset {task.dataset_id}")
-            
-            if question_limit:
-                questions = questions[:question_limit]
-                logger.info(f"Limited to {len(questions)} questions")
-            
-            if not questions:
-                logger.error(f"No questions found for dataset {task.dataset_id}")
-                return
+            logger.info(f"Task {task_id}: 步骤3 - 获取数据集问题")
+            try:
+                questions = db.query(StdQuestion).filter(
+                    StdQuestion.current_dataset_id == task.dataset_id,
+                    StdQuestion.is_valid == True
+                ).order_by(StdQuestion.id).all()
+                
+                logger.info(f"Task {task_id}: 找到 {len(questions)} 个问题，数据集ID: {task.dataset_id}")
+                
+                if question_limit:
+                    questions = questions[:question_limit]
+                    logger.info(f"Task {task_id}: 限制为 {len(questions)} 个问题")
+                
+                if not questions:
+                    logger.error(f"Task {task_id}: 数据集 {task.dataset_id} 中没有找到问题")
+                    return
+                    
+            except Exception as query_error:
+                logger.error(f"Task {task_id}: 查询数据集问题时发生错误: {str(query_error)}")
+                import traceback
+                logger.error(f"Task {task_id}: 查询问题错误堆栈:\n{traceback.format_exc()}")
+                raise
             
             # 更新总问题数
             update_data = LLMEvaluationTaskUpdate(total_questions=len(questions))
             update_llm_evaluation_task(db, task_id, update_data)
-              # 获取或创建LLM记录
+            # 获取或创建LLM记录
             llm = self._get_or_create_llm(db, task.model.name if task.model else task.model_name, 
                                           task.model.version if task.model else "default")
             logger.info(f"Using LLM: {llm.name} (ID: {llm.id})")      # 获取LLM客户端
@@ -110,7 +132,7 @@ class LLMEvaluationTaskProcessor:
             for i, question in enumerate(questions):
                 try:
                     logger.info(f"Processing question {i+1}/{len(questions)}: {question.id}")
-                          # 检查任务是否被取消
+                    # 检查任务是否被取消
                     current_task = get_llm_evaluation_task(db, task_id)
                     if current_task.status == TaskStatus.CANCELLED.value:
                         logger.info(f"Task {task_id} was cancelled")
@@ -122,7 +144,8 @@ class LLMEvaluationTaskProcessor:
                         progress=progress,
                         completed_questions=i
                     )
-                    update_llm_evaluation_task(db, task_id, update_data)                    # 生成答案
+                    update_llm_evaluation_task(db, task_id, update_data)                    
+                    # 生成答案
                     start_time = time.time()
                     logger.info(f"Generating answer for question: {question.body[:100]}...")
                     
@@ -149,23 +172,39 @@ class LLMEvaluationTaskProcessor:
                     )
                     response_time = int((time.time() - start_time) * 1000)  # 毫秒
                     logger.info(f"Got answer result - success: {answer_result['success']}")
-                    
                     if answer_result["success"]:
-                        logger.info(f"Answer: {answer_result['answer'][:100]}...")
+                        logger.info(f"Task {task_id}: 第{i+1}题 - 获得成功答案: {answer_result['answer'][:100]}...")
                         
                         # 创建LLM答案记录
-                        llm_answer = LLMAnswer(
-                            llm_id=llm.id,
-                            task_id=task_id,  # 使用task_id作为evaluation_task_id
-                            std_question_id=question.id,
-                            prompt_used=self._build_prompt(system_prompt, question.body),
-                            answer=answer_result["answer"],
-                            is_valid=True
-                        )
-                        db.add(llm_answer)
-                        db.commit()
-                        db.refresh(llm_answer)
-                        logger.info(f"Saved LLM answer with ID: {llm_answer.id}")
+                        logger.info(f"Task {task_id}: 第{i+1}题 - 开始创建LLMAnswer对象")
+                        try:
+                            llm_answer = LLMAnswer(
+                                llm_id=llm.id,
+                                task_id=task_id,  # 使用task_id作为evaluation_task_id
+                                std_question_id=question.id,
+                                prompt_used=self._build_prompt(system_prompt, question.body),
+                                answer=answer_result["answer"],
+                                is_valid=True
+                            )
+                            logger.info(f"Task {task_id}: 第{i+1}题 - LLMAnswer对象创建成功")
+                            
+                            logger.info(f"Task {task_id}: 第{i+1}题 - 开始添加到数据库")
+                            db.add(llm_answer)
+                            logger.info(f"Task {task_id}: 第{i+1}题 - 已添加到session，开始commit")
+                            
+                            db.commit()
+                            logger.info(f"Task {task_id}: 第{i+1}题 - commit成功，开始refresh")
+                            
+                            db.refresh(llm_answer)
+                            logger.info(f"Task {task_id}: 第{i+1}题 - LLM答案保存成功，ID: {llm_answer.id}")
+                            
+                        except Exception as save_error:
+                            logger.error(f"Task {task_id}: 第{i+1}题 - 保存LLM答案时发生错误: {str(save_error)}")
+                            import traceback
+                            logger.error(f"Task {task_id}: 第{i+1}题 - 保存答案错误堆栈:\n{traceback.format_exc()}")
+                            # 回滚事务
+                            db.rollback()
+                            raise
                         
                         completed_count += 1
                         
@@ -213,35 +252,61 @@ class LLMEvaluationTaskProcessor:
             update_llm_evaluation_task(db, task_id, update_data)
             
         except Exception as e:
-            logger.error(f"Task {task_id} failed: {str(e)}")            # 更新任务失败状态
+            logger.error(f"Task {task_id} failed: {str(e)}")
+            # 更新任务失败状态
             update_data = LLMEvaluationTaskUpdate(
                 status=TaskStatus.FAILED,
                 error_message=str(e)
             )
             update_llm_evaluation_task(db, task_id, update_data)
-        
         finally:
             db.close()
             logger.info(f"Task {task_id} completed")
     
     def _get_or_create_llm(self, db: Session, model_name: str, model_version: Optional[str] = None) -> LLM:
         """获取或创建LLM记录"""
-        llm = db.query(LLM).filter(
-            LLM.name == model_name,
-            LLM.version == model_version or "default"
-        ).first()
-        
-        if not llm:
-            llm = LLM(
-                name=model_name,
-                version=model_version or "default",
-                affiliation="API"
-            )
-            db.add(llm)
-            db.commit()
-            db.refresh(llm)
-        
-        return llm
+        try:
+            logger.info(f"_get_or_create_llm: 开始查找LLM，model_name={model_name}, model_version={model_version}")
+            
+            # 修复查询条件 - 分别处理有版本号和默认版本的情况
+            version_to_search = model_version or text("default")
+            llm = db.query(LLM).filter(
+                LLM.name == model_name,
+                LLM.version == version_to_search
+            ).first()
+            
+            logger.info(f"_get_or_create_llm: 查询结果: {llm is not None}")
+            
+            if not llm:
+                logger.info(f"_get_or_create_llm: LLM不存在，准备创建新的LLM记录")
+                
+                llm = LLM(
+                    name=model_name,
+                    display_name=model_name,  # 添加必需的字段
+                    provider="API",           # 添加必需的字段
+                    version=model_version or "default",
+                    affiliation="API"
+                )
+                logger.info(f"_get_or_create_llm: LLM对象创建成功，准备添加到数据库")
+                
+                db.add(llm)
+                logger.info(f"_get_or_create_llm: 已添加到session，准备commit")
+                
+                db.commit()
+                logger.info(f"_get_or_create_llm: commit成功，准备refresh")
+                
+                db.refresh(llm)
+                logger.info(f"_get_or_create_llm: refresh成功，LLM创建完成，ID: {llm.id}")
+            else:
+                logger.info(f"_get_or_create_llm: 找到现有LLM，ID: {llm.id}")
+            
+            return llm
+            
+        except Exception as e:
+            logger.error(f"_get_or_create_llm: 出错: {str(e)}")
+            import traceback
+            logger.error(f"_get_or_create_llm: 错误堆栈:\n{traceback.format_exc()}")
+            raise
     
     def _build_prompt(self, system_prompt: Optional[str], question_body: str) -> str:
         """构建完整的提示词"""

@@ -5,6 +5,7 @@ from sqlalchemy.orm import Session, joinedload
 from sqlalchemy import and_, desc, func
 from typing import List, Optional, Dict, Any
 import hashlib
+import logging
 from datetime import datetime, timedelta, timezone
 
 from ..models.llm_evaluation_task import LLMEvaluationTask, TaskStatus
@@ -15,6 +16,8 @@ from ..schemas.llm_evaluation_task import (
     LLMEvaluationTaskCreate, LLMEvaluationTaskUpdate,
     ModelConfigRequest
 )
+
+logger = logging.getLogger(__name__)
 
 
 def hash_api_key(api_key: str) -> str:
@@ -58,12 +61,29 @@ def create_llm_evaluation_task(
         total_questions=total_questions,
         progress=0,
         completed_questions=0,
-        failed_questions=0
-    )
+        failed_questions=0    )
     
+    logger.info(f"创建LLMEvaluationTask对象成功，准备添加到数据库")
     db.add(task)
-    db.commit()
-    db.refresh(task)
+    logger.info(f"已添加到session，准备commit")
+    
+    try:
+        db.commit()
+        logger.info(f"commit成功，准备refresh")
+    except Exception as commit_error:
+        logger.error(f"commit失败: {str(commit_error)}")
+        import traceback
+        logger.error(f"commit错误堆栈:\n{traceback.format_exc()}")
+        raise
+    
+    try:
+        db.refresh(task)
+        logger.info(f"refresh成功，任务创建完成")
+    except Exception as refresh_error:
+        logger.error(f"refresh失败: {str(refresh_error)}")
+        import traceback
+        logger.error(f"refresh错误堆栈:\n{traceback.format_exc()}")
+        raise
     return task
 
 
@@ -117,21 +137,47 @@ def update_llm_evaluation_task(
     task_update: LLMEvaluationTaskUpdate
 ) -> Optional[LLMEvaluationTask]:
     """更新LLM评测任务"""
-    task = db.query(LLMEvaluationTask).filter(LLMEvaluationTask.id == task_id).first()
-    if not task:
-        return None
+    logger.info(f"Task {task_id}: 开始update_llm_evaluation_task")
     
-    update_data = task_update.model_dump(exclude_unset=True)
-    for field, value in update_data.items():
-        setattr(task, field, value)    # 自动设置时间戳
-    if task_update.status and task_update.status == TaskStatus.RUNNING and not task.started_at:
-        task.started_at = datetime.now(timezone.utc)
-    elif task_update.status and task_update.status in [TaskStatus.COMPLETED, TaskStatus.FAILED, TaskStatus.CANCELLED] and not task.completed_at:
-        task.completed_at = datetime.now(timezone.utc)
-    
-    db.commit()
-    db.refresh(task)
-    return task
+    try:
+        task = db.query(LLMEvaluationTask).filter(LLMEvaluationTask.id == task_id).first()
+        logger.info(f"Task {task_id}: 查询任务结果: {task is not None}")
+        
+        if not task:
+            logger.error(f"Task {task_id}: 任务不存在")
+            return None
+        
+        logger.info(f"Task {task_id}: 当前任务状态: {task.status}")
+        
+        update_data = task_update.model_dump(exclude_unset=True)
+        logger.info(f"Task {task_id}: 准备更新的数据: {update_data}")
+        for field, value in update_data.items():
+            logger.info(f"Task {task_id}: 设置字段 {field} = {value}")
+            setattr(task, field, value)
+        
+        # 自动设置时间戳
+        logger.info(f"Task {task_id}: 检查时间戳设置")
+        if task_update.status and task_update.status == TaskStatus.RUNNING and not task.started_at:
+            logger.info(f"Task {task_id}: 设置started_at时间戳")
+            task.started_at = datetime.now(timezone.utc)
+        elif task_update.status and task_update.status in [TaskStatus.COMPLETED, TaskStatus.FAILED, TaskStatus.CANCELLED] and not task.completed_at:
+            logger.info(f"Task {task_id}: 设置completed_at时间戳")
+            task.completed_at = datetime.now(timezone.utc)
+        
+        logger.info(f"Task {task_id}: 准备执行db.commit()")
+        db.commit()
+        logger.info(f"Task {task_id}: db.commit()成功，准备执行db.refresh()")
+        
+        db.refresh(task)
+        logger.info(f"Task {task_id}: db.refresh()成功，更新完成")
+        return task
+        
+    except Exception as e:
+        logger.error(f"Task {task_id}: update_llm_evaluation_task出错: {str(e)}")
+        import traceback
+        logger.error(f"Task {task_id}: update错误堆栈:\n{traceback.format_exc()}")
+        db.rollback()
+        raise
 
 
 def delete_llm_evaluation_task(db: Session, task_id: int, user_id: int) -> bool:

@@ -2,6 +2,22 @@ from fastapi import FastAPI
 from .db import database
 from . import models  # Import models module
 from fastapi.middleware.cors import CORSMiddleware
+import logging
+
+# 配置日志
+logging.basicConfig(
+    level=logging.INFO,
+    format='%(asctime)s - %(name)s - %(levelname)s - %(message)s',
+    handlers=[
+        logging.StreamHandler(),  # 输出到控制台
+        logging.FileHandler('llm_evaluation.log', encoding='utf-8')  # 输出到文件
+    ]
+)
+
+# 设置特定模块的日志级别
+logging.getLogger('app.crud.crud_llm_evaluation_task').setLevel(logging.INFO)
+logging.getLogger('app.routers.llm_evaluation').setLevel(logging.INFO)
+logging.getLogger('app.services.llm_evaluation_service').setLevel(logging.INFO)
 
 models.Base.metadata.create_all(bind=database.engine)
 

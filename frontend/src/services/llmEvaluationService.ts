@@ -119,7 +119,9 @@ export const llmEvaluationService = {  // 获取数据集市场列表
   async getAvailableModels(): Promise<AvailableModel[]> {
     const response = await apiClient.get('/llm-evaluation/models');
     return response.data;
-  },  // 创建评测任务
+  },  
+  
+  // 创建评测任务
   async createEvaluationTask(taskData: {
     task_name: string;
     dataset_id: number;
@@ -192,7 +194,8 @@ export const llmEvaluationService = {  // 获取数据集市场列表
     });
     return response.data;
   },
-  // Prompt模板相关（现在使用硬编码模板）
+
+  // Prompt模板相关
   async getPromptTemplates(params: {
     template_type?: 'system' | 'evaluation';
   } = {}): Promise<any[]> {
