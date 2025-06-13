@@ -331,7 +331,8 @@ class LLMEvaluationTaskProcessor:
                 return
             
             logger.info(f"Task {task_id}: 找到 {len(llm_answers)} 个待评测答案")
-              # 获取评测模型
+            
+            # 获取评测模型
             evaluation_llm = None
             if task.evaluation_llm_id:
                 evaluation_llm = db.query(LLM).filter(LLM.id == task.evaluation_llm_id).first()
@@ -415,7 +416,7 @@ class LLMEvaluationTaskProcessor:
                         llm_answer.answer,
                         correct_answer,
                         task.evaluation_prompt,
-                        getattr(std_question, 'type', 'text')
+                        getattr(std_question, 'type', 'text')                    
                     )
                     
                     if evaluation_result["success"]:
@@ -424,7 +425,7 @@ class LLMEvaluationTaskProcessor:
                             std_question_id=std_question.id,
                             llm_answer_id=llm_answer.id,
                             score=evaluation_result["score"],
-                            evaluator_type=EvaluatorType.AUTO,
+                            evaluator_type=EvaluatorType.LLM,
                             evaluator_id=evaluation_llm.id,
                             reasoning=evaluation_result["reasoning"],
                             evaluation_prompt=evaluation_result.get("evaluation_prompt", task.evaluation_prompt)
@@ -573,7 +574,7 @@ class LLMEvaluationTaskProcessor:
                 llm_answer.answer,
                 std_answers[0].answer if std_answers else "",
                 evaluation_prompt,
-                question.type if hasattr(question, 'type') else "text"
+                question.type if hasattr(question, 'type') else "text"            
             )
             
             if evaluation_result["success"]:
@@ -582,7 +583,7 @@ class LLMEvaluationTaskProcessor:
                     std_question_id=question.id,
                     llm_answer_id=llm_answer.id,
                     score=evaluation_result["score"],
-                    evaluator_type=EvaluatorType.AUTO,
+                    evaluator_type=EvaluatorType.LLM,
                     evaluator_id=evaluation_llm_id,
                     reasoning=evaluation_result["reasoning"],
                     evaluation_prompt=evaluation_result["evaluation_prompt"]

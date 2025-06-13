@@ -14,8 +14,6 @@ class EvaluatorType(enum.Enum):
     """评估者类型枚举"""
     USER = "user"
     LLM = "llm"
-    AUTO = "auto"  # 自动评估
-
 
 class Evaluation(Base):
     """评估表 - 对LLM回答进行评估"""
@@ -25,10 +23,11 @@ class Evaluation(Base):
     std_question_id = Column(Integer, ForeignKey("StdQuestion.id"), nullable=False, index=True)
     llm_answer_id = Column(Integer, ForeignKey("LLMAnswer.id"), nullable=False, index=True)
     score = Column(DECIMAL(5, 2), nullable=True)  # 评分 (0-100)
-    evaluator_type = Column(Enum(EvaluatorType), nullable=False)  # 评估者类型
-    evaluator_id = Column(Integer, ForeignKey("LLM.id"), nullable=True)  # 用户ID或LLM ID
+    evaluator_type = Column(Enum(EvaluatorType), values_callable=lambda x: [e.value for e in x], 
+                            default=EvaluatorType.LLM, nullable=False)   # 评估者类型
+    evaluator_id = Column(Integer, ForeignKey("LLM.id") or ForeignKey("User.id"), nullable=True)  # 用户ID或LLM ID
     evaluation_time = Column(DateTime(timezone=True), server_default=text('CURRENT_TIMESTAMP'), index=True)
-    notes = Column(Text, nullable=True)  # 评估备注
+    notes = Column(Text, nullable=True)      # 评估备注
     reasoning = Column(Text, nullable=True)  # 评估理由（特别用于自动评估）
     evaluation_prompt = Column(Text, nullable=True)  # 使用的评估提示词
     is_valid = Column(Boolean, server_default=text('1'), nullable=False)

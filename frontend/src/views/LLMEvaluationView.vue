@@ -615,156 +615,8 @@
           </button>
         </div>
       </div>    
-    </div>    <!-- 步骤5: 查看结果 -->
-    <div v-if="currentStep === 4" class="step-content">
-      <div class="content-card">
-        <div class="card-header">
-          <h3>▶️ 准备开始评测</h3>
-          <p>确认配置信息并启动在线评测任务</p>
-        </div>
-        
-        <!-- 配置摘要 -->
-        <div class="config-summary-section">
-          <h4>📋 配置摘要</h4>
-          <div class="summary-grid">
-            <div class="summary-item-card">
-              <div class="summary-item">
-                <div class="summary-icon">
-                  📁
-                </div>
-                <div class="summary-details">
-                  <h5>数据集</h5>
-                  <p>{{ currentDataset?.name }}</p>
-                  <div class="summary-meta">
-                    <span class="tag">{{ currentDataset?.question_count }} 题</span>
-                    <span class="tag tag-success">v{{ currentDataset?.version }}</span>
-                  </div>
-                </div>
-              </div>
-            </div>
-
-            <div class="summary-item-card">
-              <div class="summary-item">
-                <div class="summary-icon">
-                  💻
-                </div>
-                <div class="summary-details">
-                  <h5>模型</h5>
-                  <p>{{ selectedModel?.display_name }}</p>
-                  <div class="summary-meta">
-                    <span class="tag">{{ selectedModel?.provider }}</span>
-                    <span class="tag tag-info">{{ modelConfig.max_tokens }} tokens</span>
-                  </div>
-                </div>
-              </div>
-            </div>            <div class="summary-item-card">
-              <div class="summary-item">
-                <div class="summary-icon">
-                  🛠️
-                </div>                <div class="summary-details">
-                  <h5>参数配置</h5>
-                  <p>温度: {{ modelConfig.temperature }} | Top-K: {{ modelConfig.top_k }}</p>
-                  <div class="summary-meta">
-                    <span v-if="modelConfig.enable_reasoning" class="tag tag-warning">推理模式</span>
-                  </div>
-                </div>
-              </div>
-            </div>
-          </div>
-        </div>
-
-        <!-- 评测选项 -->
-        <div class="evaluation-options-section">
-          <h4>⚙️ 评测选项</h4>
-          <div class="options-card">
-            <div class="form-group">
-              <label class="form-label">任务名称</label>
-              <input 
-                v-model="evaluationOptions.task_name" 
-                type="text"
-                class="form-input"
-                placeholder="为这次评测起个名称（可选）"
-              />
-            </div>
-            
-            <div class="form-group">
-              <label class="form-label">评测范围</label>
-              <div class="range-options">
-                <div class="radio-group">
-                  <label class="radio-option">
-                    <input 
-                      type="radio" 
-                      v-model="evaluationOptions.question_limit_type" 
-                      value="all"
-                    />
-                    <span>📋 全部问题</span>
-                  </label>
-                  <label class="radio-option">
-                    <input 
-                      type="radio" 
-                      v-model="evaluationOptions.question_limit_type" 
-                      value="limit"
-                    />
-                    <span>🔢 限制数量</span>
-                  </label>
-                </div>
-                <input 
-                  v-if="evaluationOptions.question_limit_type === 'limit'"
-                  v-model.number="evaluationOptions.question_limit"
-                  type="number"
-                  :min="1"
-                  :max="currentDataset?.question_count"
-                  class="form-input limit-input"
-                />
-              </div>
-            </div>
-            
-            <div class="form-group">
-              <label class="form-label">自动评分</label>
-              <div class="auto-score-option">
-                <label class="switch">
-                  <input 
-                    type="checkbox" 
-                    v-model="evaluationOptions.is_auto_score"
-                  />
-                  <span class="slider"></span>
-                </label>
-                <div class="option-description">
-                  ℹ️ 开启后将自动对选择题进行评分，文本题可手动评分
-                </div>
-              </div>
-            </div>
-          </div>
-        </div>
-        
-        <!-- 费用预估 -->
-        <div class="cost-estimation" v-if="selectedModel && selectedModel.pricing">
-          <h4>💰 费用预估</h4>
-          <div class="cost-card">
-            <div class="cost-details">
-              <div class="cost-item">
-                <span>预计Token消耗:</span>
-                <span>{{ estimatedTokens }} tokens</span>
-              </div>
-              <div class="cost-item">
-                <span>预估费用:</span>
-                <span class="cost-value">¥ {{ estimatedCost }}</span>
-              </div>
-            </div>
-          </div>
-        </div>
-        
-        <div class="step-actions">
-          <button @click="prevStep" class="btn btn-secondary">
-            ← 上一步
-          </button>
-          <button @click="startEvaluation" :disabled="starting" class="btn btn-primary start-btn">
-            <span v-if="starting">⏳ 启动中...</span>
-            <span v-else>▶️ 开始评测</span>
-          </button>
-        </div>
-      </div>
-    </div>    <!-- 步骤5: 评测结果和进度 -->
+    </div>    
+    <!-- 步骤5: 查看结果 -->
     <div v-if="currentStep === 4" class="step-content">
       <div class="evaluation-results">
         <!-- 加载状态 -->
@@ -995,7 +847,7 @@
                             {{ evaluation.score || '-' }}
                           </span>
                           <span class="evaluator-type">
-                            {{ evaluation.evaluator_type === 'llm' ? '自动' : '人工' }}
+                            {{ evaluation.evaluator_type === 'llm' ? 'LLM' : '人工' }}
                           </span>
                         </div>
                         <div class="average-score">
@@ -1145,9 +997,8 @@
             <div v-for="evaluation in answerEvaluations" :key="evaluation.id" class="evaluation-item">
               <div class="evaluation-card">
                 <div class="eval-header">
-                  <span class="score">{{ evaluation.score }}分</span>
-                  <span class="eval-type" :class="evaluation.evaluator_type === 'user' ? 'user-eval' : 'auto-eval'">
-                    {{ evaluation.evaluator_type === 'user' ? '人工评测' : '自动评测' }}
+                  <span class="score">{{ evaluation.score }}分</span>                  <span class="eval-type" :class="evaluation.evaluator_type === 'user' ? 'user-eval' : 'llm-eval'">
+                    {{ evaluation.evaluator_type === 'user' ? '人工评测' : 'LLM评测' }}
                   </span>
                 </div>
                 <div v-if="evaluation.feedback" class="feedback">
@@ -1212,7 +1063,8 @@
           >
             <span v-if="submittingEvaluation">⏳ 提交中...</span>
             <span v-else>提交评测</span>
-          </button>        </div>
+          </button>        
+        </div>
       </div>
     </div>    <!-- 评测进度弹窗 -->
     <div v-if="showProgressDialog" class="modal-overlay" @click="closeProgressDialog">
@@ -1650,6 +1502,7 @@ const initializeView = async () => {
     const datasetId = route.params.datasetId as string
     const taskId = route.query.taskId as string
     const step = route.query.step as string
+    const view = route.query.view as string
     
     if (!datasetId) {
       showMessage('未指定数据集', 'error')
@@ -1667,7 +1520,12 @@ const initializeView = async () => {
     
     // 如果有taskId，说明是从任务列表恢复的
     if (taskId) {
-      await resumeTask(parseInt(taskId))
+      // 检查是否直接查看结果
+      if (view === 'results') {
+        await resumeTaskForResults(parseInt(taskId))
+      } else {
+        await resumeTask(parseInt(taskId))
+      }
     } else if (step) {
       // 如果只有step参数，直接跳转到对应步骤
       currentStep.value = parseInt(step) - 1
@@ -1769,10 +1627,51 @@ const resumeTask = async (taskId: number) => {
       showMessage('继续配置模型参数', 'info')
     }
     
-    console.log(`任务恢复完成: ${task.name || `任务#${taskId}`}, 当前步骤: ${currentStep.value}`)
-  } catch (error) {
+    console.log(`任务恢复完成: ${task.name || `任务#${taskId}`}, 当前步骤: ${currentStep.value}`)  } catch (error) {
     console.error('恢复任务失败:', error)
     showMessage('恢复任务失败', 'error')
+  }
+}
+
+// 恢复任务用于查看结果
+const resumeTaskForResults = async (taskId: number) => {
+  try {
+    // 从后端获取任务详情
+    const task = await llmEvaluationService.getTaskDetail(taskId)
+    
+    if (!task) {
+      showMessage('任务不存在', 'error')
+      return
+    }
+    
+    console.log('查看任务结果:', task.name, '状态:', task.status)
+    
+    // 设置evaluationTask
+    evaluationTask.value = task
+    
+    // 直接跳转到结果页面
+    currentStep.value = 4
+    
+    // 根据任务状态加载相应的结果
+    if (task.status === 'completed') {
+      // 已完成任务，加载详细结果
+      await loadTaskDetailedResults()
+      showMessage('正在查看评测结果', 'success')
+    } else if (task.status === 'failed') {
+      // 失败任务，显示错误信息
+      showMessage('任务执行失败', 'error')
+    } else if (task.status === 'generating_answers' || task.status === 'evaluating_answers') {
+      // 正在进行的任务，显示进度
+      showMessage('任务正在进行中', 'info')
+    } else {
+      // 其他状态的任务
+      showMessage('任务未完成，无法查看结果', 'warning')
+    }
+    
+    console.log(`结果查看完成: ${task.name || `任务#${taskId}`}`)
+  } catch (error) {
+    console.error('加载任务结果失败:', error)
+    showMessage('加载任务结果失败', 'error')
   }
 }
 
@@ -2391,86 +2290,160 @@ const downloadResults = async () => {
 /* 全局样式 */
 .llm-evaluation {
   min-height: 100vh;
-  background: linear-gradient(135deg, #f5f7fa 0%, #c3cfe2 100%);
+  background: linear-gradient(135deg, #f8f9fa 0%, #e9ecef 100%);
   position: relative;
-}
-
-/* 顶部导航栏 */
-.top-nav {
-  background: rgba(255, 255, 255, 0.95);
-  backdrop-filter: blur(20px);
-  border-bottom: 1px solid rgba(255, 255, 255, 0.2);
-  padding: 20px 0;
-  position: sticky;
-  top: 0;
-  z-index: 1000;
-}
-
-.nav-content {
-  max-width: 1200px;
-  margin: 0 auto;
-  padding: 0 20px;
-  display: flex;
-  justify-content: space-between;
-  align-items: center;
-}
-
-.nav-left .back-btn {
-  color: #667eea;
-  font-weight: 500;
-  text-decoration: none;
-  padding: 8px 16px;
-  border-radius: 8px;
-  transition: all 0.3s ease;
-}
-
-.nav-left .back-btn:hover {
-  background: rgba(102, 126, 234, 0.1);
-  transform: translateX(-2px);
-}
-
-.nav-center {
-  text-align: center;
-}
-
-.nav-center h1 {
-  font-size: 28px;
-  font-weight: 700;
-  background: linear-gradient(135deg, #667eea 0%, #764ba2 100%);
-  -webkit-background-clip: text;
-  background-clip: text;
-  -webkit-text-fill-color: transparent;
-  margin: 0 0 5px 0;
-}
-
-.nav-center p {
-  color: #666;
-  margin: 0;
-  font-size: 14px;
-}
-
-/* 主要内容区域 */
-.main-content {
-  max-width: 1200px;
-  margin: 0 auto;
+  font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, sans-serif;
   padding: 20px;
 }
 
-/* 内容卡片 */
+/* 顶部标题栏 */
+.header {
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+  margin-bottom: 30px;
+  padding: 20px 0;
+  border-bottom: 2px solid rgba(102, 126, 234, 0.1);
+}
+
+.header-left {
+  display: flex;
+  align-items: center;
+  gap: 20px;
+}
+
+.back-btn {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  padding: 10px 16px;
+  background: linear-gradient(135deg, #6c757d 0%, #5a6268 100%);
+  color: white;
+  border: none;
+  border-radius: 8px;
+  font-size: 14px;
+  font-weight: 500;
+  cursor: pointer;
+  transition: all 0.3s ease;
+  box-shadow: 0 2px 4px rgba(0, 0, 0, 0.1);
+}
+
+.back-btn:hover {
+  transform: translateY(-1px);
+  box-shadow: 0 4px 12px rgba(0, 0, 0, 0.15);
+}
+
+.header h2 {
+  margin: 0;
+  color: #2c3e50;
+  font-size: 28px;
+  font-weight: 600;
+  background: linear-gradient(135deg, #667eea 0%, #764ba2 100%);
+  -webkit-background-clip: text;
+  -webkit-text-fill-color: transparent;
+  background-clip: text;
+}
+
+.progress-btn {
+  padding: 10px 20px;
+  background: linear-gradient(135deg, #17a2b8 0%, #138496 100%);
+  color: white;
+  border: none;
+  border-radius: 8px;
+  font-size: 14px;
+  font-weight: 500;
+  cursor: pointer;
+  transition: all 0.3s ease;
+  box-shadow: 0 2px 4px rgba(0, 0, 0, 0.1);
+}
+
+.progress-btn:hover {
+  transform: translateY(-1px);
+  box-shadow: 0 4px 12px rgba(0, 0, 0, 0.15);
+}
+
+/* 步骤指示器 */
+.steps-container {
+  margin-bottom: 30px;
+}
+
+.steps-wrapper {
+  display: flex;
+  justify-content: center;
+  gap: 20px;
+  padding: 20px;
+  background: rgba(255, 255, 255, 0.8);
+  border-radius: 12px;
+  box-shadow: 0 2px 8px rgba(0, 0, 0, 0.05);
+}
+
+.step-item {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  gap: 8px;
+  padding: 16px 20px;
+  border-radius: 10px;
+  transition: all 0.3s ease;
+  position: relative;
+  min-width: 120px;
+}
+
+.step-item.active {
+  background: linear-gradient(135deg, #667eea 0%, #764ba2 100%);
+  color: white;
+  transform: translateY(-2px);
+  box-shadow: 0 4px 15px rgba(102, 126, 234, 0.3);
+}
+
+.step-item.locked {
+  opacity: 0.6;
+  background: #f8f9fa;
+  color: #6c757d;
+}
+
+.step-number {
+  width: 32px;
+  height: 32px;
+  border-radius: 50%;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  font-weight: 600;
+  font-size: 14px;
+  background: rgba(255, 255, 255, 0.2);
+}
+
+.step-item.active .step-number {
+  background: rgba(255, 255, 255, 0.3);
+}
+
+.step-title {
+  font-size: 13px;
+  font-weight: 500;
+  text-align: center;
+  line-height: 1.2;
+}
+
+/* 步骤内容 */
+.step-content {
+  max-width: 1000px;
+  margin: 0 auto;
+}
+
 .content-card {
   background: rgba(255, 255, 255, 0.95);
   backdrop-filter: blur(20px);
-  border-radius: 20px;
+  border-radius: 16px;
   padding: 30px;
-  margin-bottom: 30px;
-  box-shadow: 0 20px 40px rgba(0, 0, 0, 0.1);
+  box-shadow: 0 4px 20px rgba(0, 0, 0, 0.08);
   border: 1px solid rgba(255, 255, 255, 0.2);
   transition: all 0.3s ease;
 }
 
 .content-card:hover {
-  transform: translateY(-5px);
-  box-shadow: 0 30px 60px rgba(0, 0, 0, 0.15);
+  transform: translateY(-2px);
+  box-shadow: 0 8px 30px rgba(0, 0, 0, 0.12);
 }
 
 .card-header {
@@ -2481,43 +2454,94 @@ const downloadResults = async () => {
 }
 
 .card-header h3 {
-  font-size: 24px;
-  font-weight: 700;
-  background: linear-gradient(135deg, #667eea 0%, #764ba2 100%);
-  -webkit-background-clip: text;
-  background-clip: text;
-  -webkit-text-fill-color: transparent;
   margin: 0 0 10px 0;
+  color: #2c3e50;
+  font-size: 24px;
+  font-weight: 600;
 }
 
 .card-header p {
-  color: #666;
-  font-size: 16px;
   margin: 0;
+  color: #6c757d;
+  font-size: 16px;
+}
+
+/* 数据集摘要 */
+.dataset-summary {
+  margin-bottom: 30px;
+}
+
+.summary-card {
+  background: linear-gradient(135deg, #e3f2fd 0%, #bbdefb 100%);
+  border-radius: 12px;
+  padding: 20px;
+  border: 1px solid #90caf9;
+}
+
+.summary-content {
+  display: flex;
+  align-items: center;
+  gap: 20px;
+}
+
+.summary-info h4 {
+  margin: 0 0 8px 0;
+  color: #1565c0;
+  font-size: 18px;
+  font-weight: 600;
+}
+
+.summary-info p {
+  margin: 0 0 12px 0;
+  color: #1976d2;
+  font-size: 14px;
+  line-height: 1.4;
 }
 
 .summary-tags {
   display: flex;
   gap: 8px;
-  margin-top: 8px;
 }
 
-.summary-tags .tag {
-  display: inline-block;
+.tag {
   padding: 4px 12px;
-  border-radius: 12px;
+  border-radius: 20px;
   font-size: 12px;
   font-weight: 500;
-  background: #f0f2f5;
-  color: #606266;
+  background: rgba(255, 255, 255, 0.8);
+  color: #1565c0;
+  border: 1px solid rgba(21, 101, 192, 0.2);
 }
 
-.summary-tags .tag-success {
-  background: linear-gradient(135deg, #e6fffa 0%, #c7f9e9 100%);
-  color: #67c23a;
+.tag-success {
+  background: linear-gradient(135deg, #c8e6c9 0%, #a5d6a7 100%);
+  color: #2e7d32;
+  border-color: #4caf50;
 }
 
-/* 表单控件 */
+/* 配置区域 */
+.config-section {
+  margin-bottom: 30px;
+}
+
+.config-section h4 {
+  margin: 0 0 15px 0;
+  color: #2c3e50;
+  font-size: 18px;
+  font-weight: 600;
+  display: flex;
+  align-items: center;
+  gap: 8px;
+}
+
+.config-card {
+  background: #f8f9fa;
+  border-radius: 12px;
+  padding: 20px;
+  border: 1px solid #e9ecef;
+}
+
+/* 表单样式 */
 .form-group {
   margin-bottom: 20px;
 }
@@ -2525,103 +2549,36 @@ const downloadResults = async () => {
 .form-label {
   display: block;
   margin-bottom: 8px;
-  font-weight: 600;
-  color: #2d3748;
+  color: #495057;
+  font-weight: 500;
   font-size: 14px;
 }
 
-.form-input, .form-select, .form-textarea {
+.required {
+  color: #dc3545;
+}
+
+.form-input,
+.form-select {
   width: 100%;
   padding: 12px 16px;
-  border: 2px solid #e2e8f0;
-  border-radius: 12px;
+  border: 2px solid #e9ecef;
+  border-radius: 8px;
   font-size: 14px;
   transition: all 0.3s ease;
-  background: rgba(255, 255, 255, 0.8);
-  backdrop-filter: blur(10px);
-  box-sizing: border-box;
+  background: white;
 }
 
-/* 禁用状态样式 */
-.form-input:disabled, .form-select:disabled, .form-textarea:disabled {
-  background: #f8f9fa !important;
-  color: #6c757d !important;
-  border-color: #e2e8f0 !important;
-  cursor: not-allowed !important;
-  opacity: 0.7;
-  box-shadow: none !important;
-  transform: none !important;
-}
-
-.form-range:disabled {
-  opacity: 0.5;
-  cursor: not-allowed;
-}
-
-.form-range:disabled::-webkit-slider-thumb {
-  background: #6c757d;
-  cursor: not-allowed;
-  box-shadow: none;
-}
-
-.form-range:disabled::-moz-range-thumb {
-  background: #6c757d;
-  cursor: not-allowed;
-  box-shadow: none;
-}
-
-/* 禁用状态的复选框 */
-input[type="checkbox"]:disabled {
-  opacity: 0.5;
-  cursor: not-allowed;
-}
-
-input[type="checkbox"]:disabled + label {
-  color: #6c757d;
-  cursor: not-allowed;
-}
-
-.form-input:focus, .form-select:focus, .form-textarea:focus {
+.form-input:focus,
+.form-select:focus {
   outline: none;
   border-color: #667eea;
-  background: rgba(255, 255, 255, 0.95);
-  box-shadow: 0 0 0 4px rgba(102, 126, 234, 0.1);
+  box-shadow: 0 0 0 3px rgba(102, 126, 234, 0.1);
 }
 
-/* 禁用状态样式 */
-.form-input:disabled, .form-select:disabled, .form-textarea:disabled {
-  background: #f8f9fa !important;
-  color: #6c757d !important;
-  border-color: #e2e8f0 !important;
-  cursor: not-allowed !important;
-  opacity: 0.7;
-  box-shadow: none !important;
-}
-
-.form-range:disabled {
-  opacity: 0.5;
-  cursor: not-allowed;
-}
-
-.form-range:disabled::-webkit-slider-thumb {
-  background: #6c757d;
-  cursor: not-allowed;
-  box-shadow: none;
-}
-
-.form-range:disabled::-moz-range-thumb {
-  background: #6c757d;
-  cursor: not-allowed;
-  box-shadow: none;
-}
-
-/* 禁用状态的复选框 */
-input[type="checkbox"]:disabled {
-  opacity: 0.5;
-  cursor: not-allowed;
-}
-
-input[type="checkbox"]:disabled + label {
+.form-input:disabled,
+.form-select:disabled {
+  background: #f8f9fa;
   color: #6c757d;
   cursor: not-allowed;
 }
@@ -2630,111 +2587,332 @@ input[type="checkbox"]:disabled + label {
   width: 100%;
   height: 6px;
   border-radius: 3px;
-  background: #e2e8f0;
+  background: #e9ecef;
   outline: none;
-  appearance: none;
+  -webkit-appearance: none;
 }
 
 .form-range::-webkit-slider-thumb {
+  -webkit-appearance: none;
   appearance: none;
   width: 20px;
   height: 20px;
   border-radius: 50%;
-  background: linear-gradient(135deg, #667eea, #764ba2);
+  background: #667eea;
   cursor: pointer;
-  box-shadow: 0 4px 8px rgba(102, 126, 234, 0.3);
+  box-shadow: 0 2px 4px rgba(0, 0, 0, 0.2);
 }
 
 .form-range::-moz-range-thumb {
   width: 20px;
   height: 20px;
   border-radius: 50%;
-  background: linear-gradient(135deg, #667eea, #764ba2);
+  background: #667eea;
   cursor: pointer;
   border: none;
-  box-shadow: 0 4px 8px rgba(102, 126, 234, 0.3);
+  box-shadow: 0 2px 4px rgba(0, 0, 0, 0.2);
 }
 
-/* 按钮样式 */
-.btn {
-  display: inline-flex;
-  align-items: center;
-  justify-content: center;
-  padding: 12px 24px;
-  border-radius: 12px;
-  border: none;
+.range-labels {
+  display: flex;
+  justify-content: space-between;
+  margin-top: 8px;
+  font-size: 12px;
+  color: #6c757d;
+}
+
+.form-checkbox {
+  margin-right: 8px;
+  transform: scale(1.2);
+}
+
+.form-tip {
+  margin-top: 6px;
+  font-size: 12px;
+  color: #6c757d;
+  font-style: italic;
+}
+
+/* 模型详情 */
+.model-details {
+  margin-top: 15px;
+}
+
+.alert {
+  padding: 12px 16px;
+  border-radius: 8px;
+  border-left: 4px solid;
   font-size: 14px;
+  line-height: 1.4;
+}
+
+.alert-info {
+  background: #e3f2fd;
+  border-left-color: #2196f3;
+  color: #1565c0;
+}
+
+/* 数据集分析 */
+.dataset-analysis {
+  margin-bottom: 30px;
+}
+
+.dataset-analysis h4 {
+  margin: 0 0 20px 0;
+  color: #2c3e50;
+  font-size: 18px;
   font-weight: 600;
-  cursor: pointer;
-  transition: all 0.3s ease;
-  text-decoration: none;
-  min-height: 44px;
-  gap: 8px;
 }
 
-.btn:disabled {
-  opacity: 0.6;
-  cursor: not-allowed;
-  transform: none !important;
+.type-analysis-grid {
+  display: grid;
+  grid-template-columns: repeat(auto-fit, minmax(200px, 1fr));
+  gap: 20px;
 }
 
-.btn-primary {
-  background: linear-gradient(135deg, #667eea 0%, #764ba2 100%);
-  color: white;
-  box-shadow: 0 8px 25px rgba(102, 126, 234, 0.3);
-}
-
-.btn-primary:hover:not(:disabled) {
-  transform: translateY(-2px);
-  box-shadow: 0 12px 35px rgba(102, 126, 234, 0.4);
-}
-
-.btn-secondary {
+.analysis-card {
   background: linear-gradient(135deg, #f8f9fa 0%, #e9ecef 100%);
-  color: #495057;
-  border: 2px solid #dee2e6;
+  border-radius: 12px;
+  padding: 20px;
+  text-align: center;
+  border: 1px solid #dee2e6;
+  transition: all 0.3s ease;
 }
 
-.btn-secondary:hover:not(:disabled) {
-  background: linear-gradient(135deg, #e9ecef 0%, #dee2e6 100%);
-  transform: translateY(-1px);
+.analysis-card:hover {
+  transform: translateY(-2px);
   box-shadow: 0 4px 15px rgba(0, 0, 0, 0.1);
 }
 
-.btn-success {
-  background: linear-gradient(135deg, #28a745 0%, #20c997 100%);
-  color: white;
-  box-shadow: 0 8px 25px rgba(40, 167, 69, 0.3);
+.analysis-header {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  gap: 10px;
+  margin-bottom: 10px;
 }
 
-.btn-success:hover:not(:disabled) {
-  transform: translateY(-2px);
-  box-shadow: 0 12px 35px rgba(40, 167, 69, 0.4);
+.analysis-icon {
+  font-size: 24px;
 }
 
-.btn-warning {
-  background: linear-gradient(135deg, #ffc107 0%, #fd7e14 100%);
-  color: white;
-  box-shadow: 0 8px 25px rgba(255, 193, 7, 0.3);
+.analysis-title {
+  margin: 0;
+  color: #495057;
+  font-size: 16px;
+  font-weight: 600;
 }
 
-.btn-warning:hover:not(:disabled) {
-  transform: translateY(-2px);
-  box-shadow: 0 12px 35px rgba(255, 193, 7, 0.4);
+.analysis-count {
+  font-size: 28px;
+  font-weight: 700;
+  color: #667eea;
+  margin-bottom: 5px;
 }
 
-.btn-danger {
-  background: linear-gradient(135deg, #dc3545 0%, #c82333 100%);
-  color: white;
-  box-shadow: 0 8px 25px rgba(220, 53, 69, 0.3);
+.analysis-desc {
+  font-size: 12px;
+  color: #6c757d;
+  margin: 0;
 }
 
-.btn-danger:hover:not(:disabled) {
-  transform: translateY(-2px);
-  box-shadow: 0 12px 35px rgba(220, 53, 69, 0.4);
+/* Prompt配置 */
+.prompt-container {
+  margin-bottom: 30px;
 }
 
-/* 步骤操作按钮 */
+.tabs {
+  display: flex;
+  gap: 2px;
+  margin-bottom: 20px;
+  background: #e9ecef;
+  border-radius: 8px;
+  padding: 4px;
+}
+
+.tab-button {
+  flex: 1;
+  padding: 12px 20px;
+  border: none;
+  background: transparent;
+  color: #6c757d;
+  font-size: 14px;
+  font-weight: 500;
+  cursor: pointer;
+  border-radius: 6px;
+  transition: all 0.3s ease;
+}
+
+.tab-button.active {
+  background: white;
+  color: #667eea;
+  box-shadow: 0 2px 4px rgba(0, 0, 0, 0.1);
+}
+
+.prompt-section {
+  background: #f8f9fa;
+  border-radius: 12px;
+  padding: 20px;
+  border: 1px solid #e9ecef;
+}
+
+.prompt-header {
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+  margin-bottom: 20px;
+  padding-bottom: 15px;
+  border-bottom: 1px solid #dee2e6;
+}
+
+.header-left {
+  display: flex;
+  align-items: center;
+  gap: 12px;
+}
+
+.header-left .icon {
+  font-size: 20px;
+}
+
+.header-left h4 {
+  margin: 0 0 5px 0;
+  color: #2c3e50;
+  font-size: 16px;
+  font-weight: 600;
+}
+
+.header-left p {
+  margin: 0;
+  color: #6c757d;
+  font-size: 13px;
+}
+
+.prompt-editor {
+  position: relative;
+}
+
+.prompt-textarea {
+  width: 100%;
+  min-height: 200px;
+  padding: 16px;
+  border: 2px solid #e9ecef;
+  border-radius: 8px;
+  font-size: 14px;
+  line-height: 1.5;
+  resize: vertical;
+  font-family: 'Monaco', 'Menlo', 'Ubuntu Mono', monospace;
+  background: white;
+  transition: all 0.3s ease;
+}
+
+.prompt-textarea:focus {
+  outline: none;
+  border-color: #667eea;
+  box-shadow: 0 0 0 3px rgba(102, 126, 234, 0.1);
+}
+
+.editor-info {
+  display: flex;
+  justify-content: flex-end;
+  margin-top: 8px;
+}
+
+.char-count {
+  font-size: 12px;
+  color: #6c757d;
+}
+
+/* Prompt预览 */
+.prompt-preview {
+  margin-bottom: 30px;
+}
+
+.prompt-preview h4 {
+  margin: 0 0 15px 0;
+  color: #2c3e50;
+  font-size: 18px;
+  font-weight: 600;
+}
+
+.preview-card {
+  background: white;
+  border-radius: 12px;
+  padding: 20px;
+  border: 1px solid #e9ecef;
+  box-shadow: 0 2px 8px rgba(0, 0, 0, 0.05);
+}
+
+.preview-content {
+  display: flex;
+  flex-direction: column;
+  gap: 15px;
+}
+
+.message-item {
+  display: flex;
+  gap: 12px;
+  padding: 12px;
+  border-radius: 8px;
+  background: #f8f9fa;
+}
+
+.message-item.system {
+  background: #e3f2fd;
+  border-left: 4px solid #2196f3;
+}
+
+.message-item.user {
+  background: #f3e5f5;
+  border-left: 4px solid #9c27b0;
+}
+
+.message-label {
+  font-size: 12px;
+  font-weight: 600;
+  color: #6c757d;
+  min-width: 60px;
+}
+
+.message-content {
+  flex: 1;
+  font-size: 14px;
+  line-height: 1.5;
+  color: #495057;
+  white-space: pre-wrap;
+}
+
+/* 生成选项 */
+.generation-options {
+  margin-bottom: 30px;
+}
+
+.generation-options h4 {
+  margin: 0 0 20px 0;
+  color: #2c3e50;
+  font-size: 18px;
+  font-weight: 600;
+}
+
+.options-grid {
+  display: grid;
+  grid-template-columns: repeat(auto-fit, minmax(250px, 1fr));
+  gap: 20px;
+}
+
+.option-item {
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+}
+
+.option-item label {
+  font-size: 14px;
+  font-weight: 500;
+  color: #495057;
+}
+
+/* 步骤操作 */
 .step-actions {
   display: flex;
   justify-content: space-between;
@@ -2744,664 +2922,419 @@ input[type="checkbox"]:disabled + label {
   border-top: 2px solid rgba(102, 126, 234, 0.1);
 }
 
-.btn-large {
+/* 基础按钮样式 */
+.btn {
+  display: inline-flex;
+  align-items: center;
+  gap: 8px;
+  padding: 12px 24px;
+  border: none;
+  border-radius: 8px;
+  font-size: 14px;
+  font-weight: 500;
+  text-decoration: none;
+  transition: all 0.3s ease;
+  cursor: pointer;
+  box-shadow: 0 2px 4px rgba(0, 0, 0, 0.1);
+  text-align: center;
+  white-space: nowrap;
+}
+
+.btn:hover {
+  transform: translateY(-1px);
+  box-shadow: 0 4px 12px rgba(0, 0, 0, 0.15);
+}
+
+.btn:active {
+  transform: translateY(0);
+}
+
+.btn.btn-primary {
+  background: linear-gradient(135deg, #667eea 0%, #764ba2 100%);
+  color: white;
+}
+
+.btn.btn-success {
+  background: linear-gradient(135deg, #48bb78 0%, #38a169 100%);
+  color: white;
+}
+
+.btn.btn-secondary {
+  background: linear-gradient(135deg, #e2e8f0 0%, #cbd5e0 100%);
+  color: #4a5568;
+}
+
+.btn.btn-info {
+  background: linear-gradient(135deg, #4299e1 0%, #3182ce 100%);
+  color: white;
+}
+
+.btn.btn-warning {
+  background: linear-gradient(135deg, #ed8936 0%, #dd6b20 100%);
+  color: white;
+}
+
+.btn.btn-danger {
+  background: linear-gradient(135deg, #f56565 0%, #e53e3e 100%);
+  color: white;
+}
+
+.btn.btn-small {
+  padding: 8px 16px;
+  font-size: 12px;
+  border-radius: 6px;
+}
+
+.btn.btn-large {
   padding: 16px 32px;
   font-size: 16px;
-  font-weight: 700;
+  border-radius: 10px;
 }
 
-/* 表格样式 */
-.data-table {
-  width: 100%;
-  border-collapse: collapse;
-  background: rgba(255, 255, 255, 0.95);
-  border-radius: 12px;
-  overflow: hidden;
-  box-shadow: 0 4px 15px rgba(0, 0, 0, 0.05);
+.btn:disabled {
+  opacity: 0.6;
+  cursor: not-allowed;
+  transform: none !important;
+  box-shadow: none !important;
 }
 
-.data-table th,
-.data-table td {
-  padding: 12px 16px;
-  text-align: left;
-  border-bottom: 1px solid #e2e8f0;
+.btn:disabled:hover {
+  transform: none;
+  box-shadow: 0 2px 4px rgba(0, 0, 0, 0.1);
 }
 
-.data-table th {
-  background: linear-gradient(135deg, #f8f9fa 0%, #e9ecef 100%);
-  font-weight: 600;
-  color: #495057;
-  font-size: 14px;
-}
-
-.data-table tr:hover {
-  background: rgba(102, 126, 234, 0.05);
-}
-
-.data-table tr:last-child td {
-  border-bottom: none;
-}
-
-/* 分页控件 */
-.pagination-container {
+/* 进度弹窗 */
+.progress-dialog {
+  position: fixed;
+  top: 0;
+  left: 0;
+  right: 0;
+  bottom: 0;
+  background: rgba(0, 0, 0, 0.5);
   display: flex;
-  justify-content: space-between;
   align-items: center;
-  margin-top: 20px;
-  padding: 20px;
-  background: rgba(255, 255, 255, 0.8);
-  border-radius: 12px;
-  backdrop-filter: blur(10px);
+  justify-content: center;
+  z-index: 1000;
+  backdrop-filter: blur(5px);
 }
 
-.pagination-info {
-  font-size: 14px;
-  color: #666;
+.progress-content {
+  background: white;
+  border-radius: 16px;
+  padding: 30px;
+  max-width: 500px;
+  width: 90%;
+  text-align: center;
+  box-shadow: 0 10px 40px rgba(0, 0, 0, 0.2);
+  animation: slideIn 0.3s ease-out;
 }
 
-.total-info {
-  font-size: 14px;
-  color: #666;
+@keyframes slideIn {
+  from {
+    opacity: 0;
+    transform: translateY(-20px) scale(0.95);
+  }
+  to {
+    opacity: 1;
+    transform: translateY(0) scale(1);
+  }
+}
+
+.progress-header {
+  margin-bottom: 20px;
+}
+
+.progress-header h3 {
+  margin: 0 0 10px 0;
+  color: #2c3e50;
+  font-size: 20px;
+  font-weight: 600;
+}
+
+.progress-status {
+  display: inline-block;
+  padding: 6px 12px;
+  border-radius: 20px;
+  font-size: 12px;
   font-weight: 500;
+  margin-bottom: 20px;
 }
 
-/* 进度条 */
-.progress-container {
-  margin: 20px 0;
+.progress-status.status-primary {
+  background: linear-gradient(135deg, #667eea 0%, #764ba2 100%);
+  color: white;
+}
+
+.progress-status.status-success {
+  background: linear-gradient(135deg, #48bb78 0%, #38a169 100%);
+  color: white;
+}
+
+.progress-status.status-danger {
+  background: linear-gradient(135deg, #f56565 0%, #e53e3e 100%);
+  color: white;
+}
+
+.progress-status.status-warning {
+  background: linear-gradient(135deg, #ed8936 0%, #dd6b20 100%);
+  color: white;
 }
 
 .progress-bar {
   width: 100%;
   height: 8px;
-  background: #e2e8f0;
+  background: #e9ecef;
   border-radius: 4px;
   overflow: hidden;
+  margin-bottom: 15px;
 }
 
 .progress-fill {
   height: 100%;
   background: linear-gradient(135deg, #667eea 0%, #764ba2 100%);
-  transition: width 0.3s ease;
   border-radius: 4px;
+  transition: width 0.3s ease;
 }
 
-.progress-text {
-  text-align: center;
-  margin-top: 8px;
-  font-size: 14px;
-  color: #666;
-  font-weight: 500;
-}
-
-/* 状态徽章 */
-.status-badge {
-  display: inline-flex;
-  align-items: center;
-  padding: 4px 12px;
-  border-radius: 20px;
-  font-size: 12px;
-  font-weight: 600;
-  gap: 4px;
-}
-
-.status-running {
-  background: linear-gradient(135deg, #ffc107, #fd7e14);
-  color: white;
-}
-
-.status-completed {
-  background: linear-gradient(135deg, #28a745, #20c997);
-  color: white;
-}
-
-.status-failed {
-  background: linear-gradient(135deg, #dc3545, #c82333);
-  color: white;
-}
-
-/* 评测详情样式 */
-.evaluation-detail {
-  padding: 20px 30px;
-}
-
-.answer-info {
-  margin-bottom: 20px;
-}
-
-.answer-info h4 {
-  margin: 0 0 8px 0;
-  color: #2d3748;
-  font-size: 16px;
-  font-weight: 600;
-}
-
-.answer-info p {
-  margin: 0 0 16px 0;
-  color: #4a5568;
-  line-height: 1.6;
-  background: #f7fafc;
-  padding: 12px 16px;
-  border-radius: 8px;
-  border: 1px solid #e2e8f0;
-}
-
-.evaluations {
-  margin-bottom: 20px;
-}
-
-.evaluation-item {
-  margin-bottom: 16px;
-}
-
-.evaluation-card {
-  background: #f8fafc;
-  border-radius: 12px;
-  padding: 16px;
-  border: 1px solid #e2e8f0;
-}
-
-.eval-header {
+.progress-info {
   display: flex;
   justify-content: space-between;
-  align-items: center;
-  margin-bottom: 12px;
-}
-
-.score {
-  font-size: 18px;
-  font-weight: 700;
-  color: #667eea;
-}
-
-.eval-type {
-  padding: 4px 8px;
-  border-radius: 12px;
-  font-size: 12px;
-  font-weight: 600;
-}
-
-.user-eval {
-  background: linear-gradient(135deg, #667eea, #764ba2);
-  color: white;
-}
-
-.auto-eval {
-  background: linear-gradient(135deg, #28a745, #20c997);
-  color: white;
-}
-
-.feedback, .criteria {
-  margin-bottom: 8px;
-}
-
-.feedback p, .criteria p {
-  margin: 0;
-  color: #4a5568;
+  margin-bottom: 20px;
   font-size: 14px;
-  line-height: 1.5;
+  color: #6c757d;
 }
 
-.manual-evaluation {
-  border-top: 1px solid #e2e8f0;
-  padding-top: 20px;
-}
-
-.manual-evaluation h4 {
-  margin: 0 0 16px 0;
-  color: #2d3748;
-  font-size: 16px;
-  font-weight: 600;
-}
-
-/* 详细结果页面样式 */
-.detailed-results {
-  max-width: 1400px;
-  margin: 0 auto;
-  padding: 20px;
-}
-
-.loading-state {
+.progress-actions {
   display: flex;
-  flex-direction: column;
-  align-items: center;
+  gap: 12px;
   justify-content: center;
-  min-height: 300px;
-  color: #666;
 }
 
-.loading-spinner {
-  width: 40px;
-  height: 40px;
-  border: 4px solid #f3f3f3;
-  border-top: 4px solid #667eea;
-  border-radius: 50%;
-  animation: spin 1s linear infinite;
-  margin-bottom: 16px;
+/* 结果页面样式 */
+.results-container {
+  max-width: 1200px;
+  margin: 0 auto;
 }
 
-@keyframes spin {
-  0% { transform: rotate(0deg); }
-  100% { transform: rotate(360deg); }
-}
-
-/* 任务信息部分 */
-.task-info-section {
-  background: white;
+.task-info-section,
+.configuration-section,
+.prompts-section,
+.statistics-section,
+.detailed-answers-section {
+  background: rgba(255, 255, 255, 0.95);
+  backdrop-filter: blur(20px);
   border-radius: 16px;
   padding: 24px;
   margin-bottom: 24px;
   box-shadow: 0 4px 20px rgba(0, 0, 0, 0.08);
+  border: 1px solid rgba(255, 255, 255, 0.2);
+  transition: all 0.3s ease;
+}
+
+.task-info-section:hover,
+.configuration-section:hover,
+.prompts-section:hover,
+.statistics-section:hover,
+.detailed-answers-section:hover {
+  transform: translateY(-2px);
+  box-shadow: 0 8px 30px rgba(0, 0, 0, 0.12);
 }
 
 .section-header {
   display: flex;
-  justify-content: space-between;
   align-items: center;
+  gap: 12px;
   margin-bottom: 20px;
-  padding-bottom: 12px;
-  border-bottom: 2px solid #f7fafc;
+  padding-bottom: 15px;
+  border-bottom: 2px solid rgba(102, 126, 234, 0.1);
 }
 
 .section-header h3 {
   margin: 0;
-  color: #2d3748;
+  color: #2c3e50;
   font-size: 20px;
   font-weight: 600;
 }
 
-.task-info-grid {
-  display: grid;
-  grid-template-columns: 1fr 1fr;
-  gap: 24px;
+.section-icon {
+  font-size: 24px;
 }
 
-.info-card {
-  background: #f8fafc;
-  border-radius: 12px;
-  padding: 20px;
-}
-
-.info-item {
-  display: flex;
-  justify-content: space-between;
-  align-items: center;
-  margin-bottom: 12px;
-}
-
-.info-item label {
-  font-weight: 600;
-  color: #4a5568;
-  font-size: 14px;
-}
-
-.info-item span {
-  color: #2d3748;
-  font-weight: 500;
-}
-
-.model-version {
-  background: #e6fffa;
-  color: #38b2ac;
-  padding: 2px 8px;
-  border-radius: 4px;
-  font-size: 12px;
-  margin-left: 8px;
-}
-
-/* 配置参数部分 */
-.configuration-section {
-  background: white;
-  border-radius: 16px;
-  padding: 24px;
-  margin-bottom: 24px;
-  box-shadow: 0 4px 20px rgba(0, 0, 0, 0.08);
-}
-
-.config-grid {
-  display: grid;
-  grid-template-columns: 1fr;
-  gap: 20px;
-}
-
-.config-card {
-  background: #f8fafc;
-  border-radius: 12px;
-  padding: 20px;
-}
-
-.config-card h4 {
-  margin: 0 0 16px 0;
-  color: #2d3748;
-  font-size: 16px;
-  font-weight: 600;
-}
-
-.config-items {
-  display: grid;
-  grid-template-columns: repeat(auto-fit, minmax(200px, 1fr));
-  gap: 16px;
-}
-
-.config-item {
-  display: flex;
-  justify-content: space-between;
-  align-items: center;
-  padding: 8px 0;
-}
-
-.config-item label {
-  font-weight: 500;
-  color: #4a5568;
-}
-
-.config-item span {
-  color: #2d3748;
-  font-weight: 600;
-}
-
-.boolean-value.enabled {
-  color: #38a169;
-}
-
-.boolean-value.disabled {
-  color: #e53e3e;
-}
-
-/* 提示词部分 */
-.prompts-section {
-  background: white;
-  border-radius: 16px;
-  padding: 24px;
-  margin-bottom: 24px;
-  box-shadow: 0 4px 20px rgba(0, 0, 0, 0.08);
-}
-
-.prompts-grid {
-  display: grid;
-  grid-template-columns: 1fr 1fr;
-  gap: 24px;
-}
-
-.prompt-card {
-  background: #f8fafc;
-  border-radius: 12px;
-  padding: 20px;
-}
-
-.prompt-card h4 {
-  margin: 0 0 12px 0;
-  color: #2d3748;
-  font-size: 16px;
-  font-weight: 600;
-}
-
-.prompt-content {
-  background: white;
-  border-radius: 8px;
-  padding: 16px;
-  border: 1px solid #e2e8f0;
-  max-height: 200px;
-  overflow-y: auto;
-}
-
-.prompt-content pre {
-  margin: 0;
-  white-space: pre-wrap;
-  word-wrap: break-word;
-  font-family: 'SF Mono', Monaco, 'Cascadia Code', 'Roboto Mono', Consolas, 'Courier New', monospace;
-  font-size: 13px;
-  line-height: 1.4;
-  color: #2d3748;
-}
-
-/* 统计概览部分 */
-.statistics-section {
-  background: white;
-  border-radius: 16px;
-  padding: 24px;
-  margin-bottom: 24px;
-  box-shadow: 0 4px 20px rgba(0, 0, 0, 0.08);
-}
-
+/* 统计卡片 */
 .stats-grid {
   display: grid;
   grid-template-columns: repeat(auto-fit, minmax(200px, 1fr));
   gap: 20px;
+  margin-bottom: 20px;
 }
 
 .stat-card {
-  background: linear-gradient(135deg, #f8fafc 0%, #e6fffa 100%);
+  background: linear-gradient(135deg, #f8f9fa 0%, #e9ecef 100%);
   border-radius: 12px;
   padding: 20px;
   text-align: center;
-  transition: transform 0.3s ease, box-shadow 0.3s ease;
+  border: 1px solid #dee2e6;
+  transition: all 0.3s ease;
 }
 
 .stat-card:hover {
   transform: translateY(-2px);
-  box-shadow: 0 8px 25px rgba(0, 0, 0, 0.1);
-}
-
-.stat-card.overall-score {
-  background: linear-gradient(135deg, #fed7d7 0%, #feb2b2 100%);
-}
-
-.stat-icon {
-  font-size: 32px;
-  margin-bottom: 8px;
-}
-
-.stat-info {
-  display: flex;
-  flex-direction: column;
-  align-items: center;
+  box-shadow: 0 4px 15px rgba(0, 0, 0, 0.1);
 }
 
 .stat-value {
-  font-size: 28px;
+  font-size: 32px;
   font-weight: 700;
-  color: #2d3748;
-  margin-bottom: 4px;
+  color: #667eea;
+  margin-bottom: 8px;
 }
 
 .stat-label {
   font-size: 14px;
-  color: #4a5568;
+  color: #6c757d;
   font-weight: 500;
 }
 
-/* 详细答案列表部分 */
-.detailed-answers-section {
-  background: white;
-  border-radius: 16px;
-  padding: 24px;
-  margin-bottom: 24px;
-  box-shadow: 0 4px 20px rgba(0, 0, 0, 0.08);
+/* 详细结果表格 */
+.detailed-results {
+  margin-top: 20px;
 }
 
-.section-actions {
-  display: flex;
-  align-items: center;
-  gap: 12px;
-}
-
-.answers-table-container {
-  overflow-x: auto;
-  margin: 20px 0;
-  border-radius: 12px;
-  border: 1px solid #e2e8f0;
-}
-
-.detailed-answers-table {
+.results-table {
   width: 100%;
   border-collapse: collapse;
   background: white;
+  border-radius: 12px;
+  overflow: hidden;
+  box-shadow: 0 2px 8px rgba(0, 0, 0, 0.05);
 }
 
-.detailed-answers-table th {
-  background: #f7fafc;
-  padding: 16px 12px;
+.results-table th {
+  background: linear-gradient(135deg, #667eea 0%, #764ba2 100%);
+  color: white;
+  padding: 12px 16px;
   text-align: left;
   font-weight: 600;
-  color: #2d3748;
   font-size: 14px;
-  border-bottom: 2px solid #e2e8f0;
 }
 
-.detailed-answers-table td {
-  padding: 16px 12px;
-  border-bottom: 1px solid #e2e8f0;
-  vertical-align: top;
+.results-table td {
+  padding: 12px 16px;
+  border-bottom: 1px solid #e9ecef;
+  font-size: 14px;
+  color: #495057;
 }
 
-.detailed-answers-table tr:hover {
-  background: #f8fafc;
+.results-table tr:hover {
+  background: #f8f9fa;
 }
 
-.question-type-badge {
-  display: inline-block;
+.results-table tr:last-child td {
+  border-bottom: none;
+}
+
+/* 分数样式 */
+.score-value {
+  font-weight: 600;
   padding: 4px 8px;
   border-radius: 6px;
   font-size: 12px;
-  font-weight: 500;
+  box-shadow: 0 1px 3px rgba(0, 0, 0, 0.1);
+  transition: all 0.2s ease;
 }
 
-.question-type-badge.choice {
-  background: #e6fffa;
-  color: #38b2ac;
-}
-
-.question-type-badge.text {
-  background: #fed7e2;
-  color: #d53f8c;
-}
-
-.question-cell {
-  max-width: 300px;
-}
-
-.question-text {
-  font-size: 14px;
-  line-height: 1.4;
-  color: #2d3748;
-  overflow: hidden;
-  display: -webkit-box;
-  -webkit-line-clamp: 3;
-  line-clamp: 3;
-  -webkit-box-orient: vertical;
-}
-
-.answer-cell {
-  max-width: 250px;
-}
-
-.answer-text {
-  font-size: 13px;
-  line-height: 1.4;
-  color: #4a5568;
-  overflow: hidden;
-  display: -webkit-box;
-  -webkit-line-clamp: 3;
-  line-clamp: 3;
-  -webkit-box-orient: vertical;
-}
-
-.invalid-badge {
-  background: #fed7d7;
-  color: #e53e3e;
-  padding: 2px 6px;
-  border-radius: 4px;
-  font-size: 11px;
-  margin-top: 4px;
-  display: inline-block;
-}
-
-.standard-answers-cell {
-  max-width: 200px;
-}
-
-.standard-answer {
-  margin-bottom: 8px;
-  padding: 8px;
-  background: #f7fafc;
-  border-radius: 6px;
-}
-
-.std-answer-text {
-  font-size: 13px;
-  color: #2d3748;
-  margin-bottom: 4px;
-}
-
-.scoring-points {
-  display: flex;
-  flex-wrap: wrap;
-  gap: 4px;
-}
-
-.scoring-point {
-  background: #e6fffa;
-  color: #38b2ac;
-  padding: 2px 6px;
-  border-radius: 4px;
-  font-size: 11px;
-}
-
-.score-cell {
-  min-width: 120px;
-}
-
-.evaluation-score {
-  display: flex;
-  align-items: center;
-  gap: 6px;
-  margin-bottom: 4px;
-}
-
-.score-value {
-  font-weight: 600;
-  font-size: 16px;
+.score-value:hover {
+  transform: scale(1.05);
+  box-shadow: 0 2px 6px rgba(0, 0, 0, 0.15);
 }
 
 .score-value.score-excellent {
-  color: #38a169;
+  background: linear-gradient(135deg, #c6f6d5 0%, #9ae6b4 100%);
+  color: #22543d;
+  border: 1px solid #68d391;
 }
 
 .score-value.score-good {
-  color: #3182ce;
+  background: linear-gradient(135deg, #bee3f8 0%, #90cdf4 100%);
+  color: #2a4365;
+  border: 1px solid #63b3ed;
 }
 
 .score-value.score-fair {
-  color: #d69e2e;
+  background: linear-gradient(135deg, #feebc8 0%, #fbd38d 100%);
+  color: #744210;
+  border: 1px solid #f6ad55;
 }
 
 .score-value.score-poor {
-  color: #e53e3e;
+  background: linear-gradient(135deg, #fed7d7 0%, #feb2b2 100%);
+  color: #742a2a;
+  border: 1px solid #fc8181;
 }
 
 .score-value.score-none {
+  background: #f7fafc;
   color: #a0aec0;
+  border: 1px solid #e2e8f0;
 }
 
 .evaluator-type {
-  background: #edf2f7;
-  color: #4a5568;
-  padding: 2px 6px;
-  border-radius: 4px;
-  font-size: 11px;
+  font-size: 10px;
+  color: #718096;
+  background: #f1f5f9;
+  padding: 2px 4px;
+  border-radius: 3px;
 }
 
 .average-score {
+  font-size: 11px;
+  color: #4a5568;
   font-weight: 600;
-  color: #2d3748;
-  margin-top: 4px;
   padding-top: 4px;
   border-top: 1px solid #e2e8f0;
+  margin-top: 4px;
 }
 
 .no-score {
   color: #a0aec0;
   font-style: italic;
+  font-size: 12px;
+}
+
+/* 分页控件 */
+.pagination {
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+  margin-top: 20px;
+  padding-top: 16px;
+  border-top: 1px solid #e2e8f0;
+}
+
+.pagination-controls {
+  display: flex;
+  gap: 8px;
+  align-items: center;
+}
+
+.page-info {
+  color: #4a5568;
+  font-size: 14px;
+  margin: 0 12px;
+}
+
+.page-size-select {
+  padding: 6px 12px;
+  border: 1px solid #e2e8f0;
+  border-radius: 6px;
+  background: white;
+  font-size: 12px;
+  color: #4a5568;
+}
+
+.total-info {
+  color: #718096;
+  font-size: 12px;
 }
 
 /* 操作按钮部分 */
@@ -3410,41 +3343,61 @@ input[type="checkbox"]:disabled + label {
   gap: 16px;
   justify-content: center;
   margin-top: 32px;
+  padding-top: 24px;
+  border-top: 2px solid rgba(102, 126, 234, 0.1);
 }
 
-.simple-progress {
-  max-width: 800px;
-  margin: 0 auto;
-  padding: 20px;
+/* 动画效果 */
+.detailed-results > * {
+  animation: fadeInUp 0.6s ease-out;
 }
 
-/* 响应式设计 */
-@media (max-width: 768px) {
-  .task-info-grid,
-  .prompts-grid {
-    grid-template-columns: 1fr;
+.detailed-results > *:nth-child(1) {
+  animation-delay: 0.1s;
+}
+
+.detailed-results > *:nth-child(2) {
+  animation-delay: 0.2s;
+}
+
+.detailed-results > *:nth-child(3) {
+  animation-delay: 0.3s;
+}
+
+.detailed-results > *:nth-child(4) {
+  animation-delay: 0.4s;
+}
+
+.detailed-results > *:nth-child(5) {
+  animation-delay: 0.5s;
+}
+
+@keyframes fadeInUp {
+  from {
+    opacity: 0;
+    transform: translateY(20px);
   }
-  
-  .stats-grid {
-    grid-template-columns: repeat(auto-fit, minmax(150px, 1fr));
+  to {
+    opacity: 1;
+    transform: translateY(0);
   }
-  
-  .config-items {
-    grid-template-columns: 1fr;
-  }
-  
-  .detailed-answers-table {
-    font-size: 12px;
-  }
-  
-  .detailed-answers-table th,
-  .detailed-answers-table td {
-    padding: 8px 6px;
-  }
-  
-  .result-actions {
-    flex-direction: column;
-    align-items: center;
-  }
+}
+
+/* 卡片悬浮效果 */
+.task-info-section,
+.configuration-section,
+.prompts-section,
+.statistics-section,
+.detailed-answers-section {
+  transition: all 0.3s ease;
+}
+
+.task-info-section:hover,
+.configuration-section:hover,
+.prompts-section:hover,
+.statistics-section:hover,
+.detailed-answers-section:hover {
+  transform: translateY(-2px);
+  box-shadow: 0 8px 30px rgba(0, 0, 0, 0.12);
 }
 </style>

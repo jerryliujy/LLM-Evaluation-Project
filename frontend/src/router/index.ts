@@ -102,12 +102,12 @@ const routes: Array<RouteRecordRaw> = [
     meta: { requiresAuth: true, role: 'user' },
     props: true
   },
-  {
-    path: "/llm-task-evaluation",
-    name: "LLMTaskEvaluation",
-    component: () => import("../views/LLMTaskEvaluationView.vue"),
-    meta: { requiresAuth: true, role: 'user' }
-  },
+  // {
+  //   path: "/llm-task-evaluation",
+  //   name: "LLMTaskEvaluation",
+  //   component: () => import("../views/LLMTaskEvaluationView.vue"),
+  //   meta: { requiresAuth: true, role: 'user' }
+  // },
 ];
 
 const router = createRouter({

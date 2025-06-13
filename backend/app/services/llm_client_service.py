@@ -5,6 +5,7 @@ LLM客户端服务 - 支持OpenAI兼容的API调用
 import os
 import asyncio
 import logging
+import string
 from typing import Dict, Any, Optional, List, Union
 from openai import AsyncOpenAI
 from decimal import Decimal
@@ -153,6 +154,8 @@ class LLMClient:
             # 构建评测提示词
             if not evaluation_prompt:
                 evaluation_prompt = get_default_evaluation_prompt(question_type)
+
+            evaluation_prompt = string.Template(evaluation_prompt)
             
             # 格式化评测提示词
             evaluation_content = evaluation_prompt.format(
@@ -187,7 +190,7 @@ class LLMClient:
                 
                 # 尝试找到JSON部分
                 import re
-                json_match = re.search(r'\{.*\}', clean_text, re.DOTALL)
+                json_match = re.search(r'\{{.*\}}', clean_text, re.DOTALL)
                 if json_match:
                     json_str = json_match.group(0)
                     # 替换可能的非标准引号
@@ -207,7 +210,8 @@ class LLMClient:
                 # 如果不是JSON格式，尝试从文本中提取分数
                 score = self._extract_score_from_text(evaluation_text)
                 reasoning = evaluation_text
-                feedback = evaluation_text# 计算成本
+                feedback = evaluation_text# 计算成o
+                
             usage_info = {
                 "prompt_tokens": completion.usage.prompt_tokens if completion.usage else 0,
                 "completion_tokens": completion.usage.completion_tokens if completion.usage else 0,

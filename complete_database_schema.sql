@@ -395,7 +395,7 @@ CREATE TABLE `Evaluation` (
   `std_question_id` INT NOT NULL,
   `llm_answer_id` INT NOT NULL,
   `score` DECIMAL(5,2) DEFAULT NULL,
-  `evaluator_type` ENUM('user', 'llm', 'autiiii) NOT NULL,
+  `evaluator_type` ENUM('user', 'llm') NOT NULL,
   `evaluator_id` INT DEFAULT NULL, -- 用户ID或LLM ID
   `evaluation_time` DATETIME NOT NULL DEFAULT CURRENT_TIMESTAMP,
   `notes` TEXT DEFAULT NULL,
