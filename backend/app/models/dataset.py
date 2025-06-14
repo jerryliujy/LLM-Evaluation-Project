@@ -13,6 +13,5 @@ class Dataset(Base):
     is_public = Column(Boolean, server_default=text('1'))  # 是否公开
     create_time = Column(DateTime(timezone=True), server_default=text('CURRENT_TIMESTAMP'))
     version = Column(Integer, default=1, nullable=False, index=True)
-      # 关系
+    
     creator = relationship("User", back_populates="datasets")
-    versions = relationship("DatasetVersion", back_populates="dataset")

@@ -63,8 +63,8 @@ async def get_std_questions_overview(
     if dataset_id is not None:
         query = query.filter(
             and_(
-                StdQuestion.original_dataset_id <= dataset_id,
-                StdQuestion.current_dataset_id >= dataset_id
+                StdQuestion.dataset_id <= dataset_id,
+                StdQuestion.is_valid == True
             )
         )
       # 添加搜索查询过滤
@@ -205,8 +205,8 @@ async def get_std_questions_overview(
     if dataset_id is not None:
         total_query = total_query.filter(
             and_(
-                StdQuestion.original_dataset_id <= dataset_id,
-                StdQuestion.current_dataset_id >= dataset_id
+                StdQuestion.dataset_id <= dataset_id,
+                StdQuestion.is_valid == True
             )
         )
       # 添加与主查询相同的搜索过滤条件

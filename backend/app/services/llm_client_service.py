@@ -172,7 +172,7 @@ class LLMClient:
 标准答案：{correct_answer or "无"}
 
 请按照JSON格式返回评分结果：
-{{"score": 分数(0-100), "reasoning": "评分理由", "feedback": "反馈建议"}}
+{{"score": 分数(0-100), "reasoning": "评分理由"}}
 """
             
             messages = [
@@ -203,7 +203,6 @@ class LLMClient:
                 
                 score = float(evaluation_result.get("score", 0))
                 reasoning = evaluation_result.get("reasoning", "")
-                feedback = evaluation_result.get("feedback", "")
                 
             except (json.JSONDecodeError, ValueError) as e:
                 logger.warning(f"Failed to parse JSON evaluation result: {str(e)}")
@@ -211,7 +210,6 @@ class LLMClient:
                 # 如果不是JSON格式，尝试从文本中提取分数
                 score = self._extract_score_from_text(evaluation_text)
                 reasoning = evaluation_text
-                feedback = evaluation_text
                 
             usage_info = {
                 "prompt_tokens": completion.usage.prompt_tokens if completion.usage else 0,
@@ -224,7 +222,6 @@ class LLMClient:
                 "success": True,
                 "score": min(100, max(0, score)),  # 确保分数在0-100范围内
                 "reasoning": reasoning,
-                "feedback": feedback,
                 "evaluation_prompt": evaluation_content,
                 "raw_evaluation": evaluation_text,
                 "usage": usage_info,
@@ -248,7 +245,6 @@ class LLMClient:
                 "error": str(e),
                 "score": 0,
                 "reasoning": f"评测过程中发生错误: {str(e)}",
-                "feedback": f"系统错误: {str(e)}"
             }
     def _extract_score_from_text(self, text: str) -> float:
         """从文本中提取分数"""
@@ -317,7 +313,6 @@ class LLMClient:
             result = {
                 "score": float(score_match.group(1)) if score_match else 0,
                 "reasoning": reasoning_match.group(1) if reasoning_match else text,
-                "feedback": text
             }
             return result            
         except Exception as e:
@@ -325,7 +320,6 @@ class LLMClient:
             return {
                 "score": 0,
                 "reasoning": text,
-                "feedback": text
             }
     
     def _clean_json_string(self, json_str: str) -> str:

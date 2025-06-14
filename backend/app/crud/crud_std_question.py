@@ -288,3 +288,66 @@ def update_std_question(db: Session, question_id: int, question: schemas.StdQues
     db.commit()
     db.refresh(db_question)
     return db_question
+
+def get_std_questions_by_dataset_range(
+    db: Session, 
+    dataset_id: int, 
+    skip: int = 0, 
+    limit: int = 100,
+    include_deleted: bool = False
+):
+    """获取指定数据集范围内的标准问题"""
+    query = db.query(models.StdQuestion).filter(
+        models.StdQuestion.dataset_id <= dataset_id,  # 使用dataset_id而不是original_dataset_id
+        models.StdQuestion.is_valid == True
+    )
+    
+    if not include_deleted:
+        query = query.filter(models.StdQuestion.is_valid == True)
+    
+    return query.offset(skip).limit(limit).all()
+
+def std_question_to_dict(question):
+    """将标准问题转换为字典格式"""
+    return {
+        "id": question.id,
+        "body": question.body,  # 直接使用body字段
+        "question_type": question.question_type,
+        "is_valid": question.is_valid,
+        "created_by": question.created_by,
+        "created_at": question.created_at,  # 直接使用created_at字段
+        "version": question.version,
+        "previous_version_id": question.previous_version_id,
+        "dataset_id": question.dataset_id,
+        "original_version_id": question.original_version_id,
+        "current_version_id": question.current_version_id,
+    }
+
+def create_std_question_from_raw_question(
+    db: Session, 
+    raw_question_id: int, 
+    dataset_id: int, 
+    question_type: str = "single_choice",
+    created_by: Optional[str] = None
+):
+    """从原始问题创建标准问题"""
+    # 获取原始问题
+    raw_question = db.query(models.RawQuestion).filter(models.RawQuestion.id == raw_question_id).first()
+    if not raw_question:
+        return None
+    
+    # 创建标准问题
+    std_question = models.StdQuestion(
+        dataset_id=dataset_id,  # 使用dataset_id而不是original_dataset_id
+        raw_question_id=raw_question_id,
+        body=raw_question.title,  # 使用body字段而不是text
+        question_type=question_type,
+        is_valid=True,
+        created_by=created_by,
+        version=1
+    )
+    
+    db.add(std_question)
+    db.commit()
+    db.refresh(std_question)
+    return std_question

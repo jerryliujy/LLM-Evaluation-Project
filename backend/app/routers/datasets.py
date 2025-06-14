@@ -87,12 +87,12 @@ def get_datasets_marketplace(
     result = []
     for dataset in datasets:
         std_questions_count = db.query(func.count(StdQuestion.id)).filter(
-            StdQuestion.current_dataset_id == dataset.id,
+            StdQuestion.dataset_id == dataset.id,
             StdQuestion.is_valid == True
         ).scalar() or 0
         
         std_answers_count = db.query(func.count(StdAnswer.id)).join(StdQuestion).filter(
-            StdQuestion.current_dataset_id == dataset.id,
+            StdQuestion.dataset_id == dataset.id,
             StdQuestion.is_valid == True,
             StdAnswer.is_valid == True
         ).scalar() or 0
@@ -132,12 +132,12 @@ def get_my_datasets(
     result = []
     for dataset in datasets:
         std_questions_count = db.query(func.count(StdQuestion.id)).filter(
-            StdQuestion.current_dataset_id == dataset.id,
+            StdQuestion.dataset_id == dataset.id,
             StdQuestion.is_valid == True
         ).scalar() or 0
         
         std_answers_count = db.query(func.count(StdAnswer.id)).join(StdQuestion).filter(
-            StdQuestion.current_dataset_id == dataset.id,
+            StdQuestion.dataset_id == dataset.id,
             StdQuestion.is_valid == True,
             StdAnswer.is_valid == True
         ).scalar() or 0
@@ -178,17 +178,17 @@ def get_dataset_stats(dataset_id: int, db: Session = Depends(get_db)):
     from ..models.std_answer import StdAnswer
     from sqlalchemy import func
     
-    # 统计标准问题数量
+    # 获取数据集的标准问题数量
     std_questions_count = db.query(func.count(StdQuestion.id)).filter(
-        StdQuestion.current_dataset_id == dataset_id,
+        StdQuestion.dataset_id == dataset_id,
         StdQuestion.is_valid == True
     ).scalar()
     
-    # 统计标准答案数量
+    # 获取数据集的标准答案数量
     std_answers_count = db.query(func.count(StdAnswer.id)).join(
         StdQuestion, StdAnswer.std_question_id == StdQuestion.id
     ).filter(
-        StdQuestion.current_dataset_id == dataset_id,
+        StdQuestion.dataset_id == dataset_id,
         StdQuestion.is_valid == True,
         StdAnswer.is_valid == True
     ).scalar()
@@ -231,7 +231,7 @@ def delete_dataset(dataset_id: int, db: Session = Depends(get_db)):
     # 检查是否有关联的标准问题
     from ..models.std_question import StdQuestion
     std_questions_count = db.query(StdQuestion).filter(
-        StdQuestion.current_dataset_id == dataset_id,
+        StdQuestion.dataset_id == dataset_id,
         StdQuestion.is_valid == True
     ).count()
     

@@ -5,8 +5,8 @@ from .raw_answer import RawAnswer, RawAnswerCreate, RawAnswerBase
 from .expert_answer import ExpertAnswer, ExpertAnswerCreate, ExpertAnswerBase, ExpertAnswerUpdate
 from .raw_question import RawQuestion, RawQuestionCreate, RawQuestionBase
 from .std_answer import (
-    StdAnswer, StdAnswerCreate, StdAnswerBase, StdAnswerUpdate, 
-    StdAnswerScoringPoint, StdAnswerScoringPointCreate,
-    StdAnswerResponse, StdAnswerScoringPointResponse, StdAnswerWithScoringPoints
+    StdAnswerBase, StdAnswerCreate, StdAnswerUpdate, StdAnswerResponse,
+    StdAnswerScoringPointBase, StdAnswerScoringPointCreate,
+    StdAnswerScoringPointResponse, StdAnswerScoringPointUpdate
 )
-from .std_question import StdQuestion, StdQuestionCreate, StdQuestionBase, StdQuestionUpdate, StdQuestionResponse
+from .std_question import StdQuestionCreate, StdQuestionBase, StdQuestionUpdate, StdQuestionResponse

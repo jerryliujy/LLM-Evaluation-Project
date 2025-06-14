@@ -21,25 +21,6 @@ class LLMSimple(BaseModel):
     is_active: bool
 
 
-class LLMAnswerScoringPointBase(BaseModel):
-    """LLM回答评分点基础schema"""
-    answer: str
-    point_order: Optional[int] = 0
-
-
-class LLMAnswerScoringPointCreate(LLMAnswerScoringPointBase):
-    """创建LLM回答评分点的schema"""
-    pass
-
-
-class LLMAnswerScoringPoint(LLMAnswerScoringPointBase):
-    """LLM回答评分点响应schema"""
-    model_config = ConfigDict(from_attributes=True)
-    
-    id: int
-    llm_answer_id: int
-
-
 class LLMAnswerBase(BaseModel):
     """LLM回答基础schema"""
     llm_id: int
@@ -52,14 +33,13 @@ class LLMAnswerBase(BaseModel):
 
 class LLMAnswerCreate(LLMAnswerBase):
     """创建LLM回答的schema"""
-    scoring_points: List[LLMAnswerScoringPointCreate] = []
+    pass
 
 
 class LLMAnswerUpdate(BaseModel):
     """更新LLM回答的schema"""
     answer: Optional[str] = None
     is_valid: Optional[bool] = None
-    scoring_points: Optional[List[LLMAnswerScoringPointCreate]] = None
 
 
 class LLMAnswer(LLMAnswerBase):
@@ -73,7 +53,6 @@ class LLMAnswer(LLMAnswerBase):
 
 class LLMAnswerWithDetails(LLMAnswer):
     """包含详细信息的LLM回答schema"""
-    scoring_points: List[LLMAnswerScoringPoint] = []
     llm: Optional["LLM"] = None
 
 

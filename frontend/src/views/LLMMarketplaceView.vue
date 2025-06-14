@@ -2,21 +2,32 @@
   <div class="marketplace-container">
     <!-- 头部标题 -->
     <div class="page-header">
-      <h1>LLM评测平台</h1>
-      <div class="stats">
-        <span>任务: {{ tasks.length }}</span>
+      <div class="header-content">
+        <h1>🤖 LLM评测平台</h1>
+        <p class="header-subtitle">管理和监控您的LLM评测任务</p>
+      </div>
+      <div class="header-stats">
+        <div class="stat-item">
+          <span class="stat-number">{{ tasks.length }}</span>
+          <span class="stat-label">总任务数</span>
+        </div>
+        <div class="stat-item">
+          <span class="stat-number">{{ completedTasksCount }}</span>
+          <span class="stat-label">已完成</span>
+        </div>
       </div>
     </div>
 
     <!-- 标签页 -->
-    <el-tabs v-model="activeTab" @tab-change="handleTabChange">
-      <el-tab-pane name="marketplace">
+    <div class="tabs-container">
+      <el-tabs v-model="activeTab" @tab-change="handleTabChange" class="custom-tabs">
+        <el-tab-pane name="marketplace">
           <template #label>
-            <span class="tab-label">我的任务</span>
+            <span class="tab-label">📋 我的任务</span>
           </template>
           
           <!-- 任务筛选器 -->
-          <div class="task-filters">
+          <div class="filters-section">
             <div class="filter-group">              
               <el-select 
                 v-model="taskStatusFilter" 
@@ -24,7 +35,7 @@
                 clearable 
                 @change="loadTasks"
                 size="default"
-                style="width: 200px;"
+                class="status-filter"
               >
                 <el-option label="全部任务" value="" />
                 <el-option label="配置参数中" value="config_params" />
@@ -40,8 +51,10 @@
                 size="default" 
                 @click="loadTasks"
                 :loading="tasksLoading"
+                class="refresh-btn"
               >
-                刷新任务
+                <span v-if="tasksLoading" class="loading-spinner"></span>
+                🔄 刷新任务
               </el-button>
             </div>
           </div>
@@ -52,11 +65,12 @@
               v-if="tasks.length === 0 && !tasksLoading" 
               description="暂无评测任务"
               :image-size="120"
+              class="empty-state"
             >
               <template #description>
                 <p>还没有创建任何评测任务</p>
-                <el-button type="primary" @click="activeTab = 'marketplace'">
-                  去创建任务
+                <el-button type="primary" @click="activeTab = 'marketplace'" class="create-task-btn">
+                  🚀 去创建任务
                 </el-button>
               </template>
             </el-empty>
@@ -65,62 +79,60 @@
               <div 
                 v-for="task in tasks" 
                 :key="task.id" 
-                class="task-card"
+                class="task-row"
                 :class="getTaskCardClass(task.status)"
               >
-                <div class="task-header">
-                  <div class="task-title-section">
-                    <h4 class="task-title">
-                      {{ task.name || `评测任务 #${task.id}` }}
-                    </h4>
-                    <el-tag 
-                      :type="getTaskStatusType(task.status)" 
-                      size="small"
-                      class="status-tag"
-                    >
-                      {{ getTaskStatusText(task.status) }}
-                    </el-tag>
-                  </div>
-                  <div class="task-time">
-                    <el-icon><Clock /></el-icon>
-                    {{ formatDateTime(task.created_at) }}
-                  </div>
-                </div>                <div class="task-info">
-                  <div class="info-grid">
-                    <div class="info-item">
-                      <div class="info-label">数据集</div>
-                      <div class="info-value">{{ task.dataset?.name || '未知' }}</div>
-                    </div>
-                    <div class="info-item">
-                      <div class="info-label">模型</div>
-                      <div class="info-value">{{ task.model?.display_name || '未知' }}</div>
-                    </div>
-                    <div class="info-item">
-                      <div class="info-label">总题数</div>
-                      <div class="info-value">{{ task.total_questions || 0 }}</div>
-                    </div>
-                    <div class="info-item">
-                      <div class="info-label">完成数</div>
-                      <div class="info-value">{{ task.completed_questions || 0 }}</div>
-                    </div>
-                  </div>
-                </div>                <!-- 进度条 -->
-                <div v-if="isTaskInProgress(task.status) || task.status === 'completed'" class="task-progress">
-                  <div class="progress-info">
-                    <span>进度</span>
-                    <span>{{ task.progress || 0 }}%</span>
-                  </div>
-                  <el-progress 
-                    :percentage="task.progress || 0" 
-                    :status="task.status === 'completed' ? 'success' : (task.status === 'failed' ? 'exception' : '')"
-                    :stroke-width="8"
-                    class="progress-bar"
-                  />
-                </div>                
+                <!-- 任务标题和状态 -->
+                <div class="task-title-cell">
+                  <h4 class="task-title">
+                    {{ task.name || `评测任务 #${task.id}` }}
+                  </h4>
+                  <el-tag 
+                    :type="getTaskStatusType(task.status)" 
+                    size="small"
+                    class="status-tag"
+                  >
+                    {{ getTaskStatusText(task.status) }}
+                  </el-tag>
+                </div>
                 
-                <!-- 任务操作按钮 -->
-                <div class="task-actions">
-                  <!-- 继续任务按钮 -->
+                <!-- 数据集 -->
+                <div class="task-dataset-cell">
+                  <div class="cell-label">📁 数据集</div>
+                  <div class="cell-value">{{ task.dataset?.name || '未知' }}</div>
+                </div>
+                
+                <!-- 模型 -->
+                <div class="task-model-cell">
+                  <div class="cell-label">🤖 模型</div>
+                  <div class="cell-value">{{ task.model?.display_name || '未知' }}</div>
+                </div>
+                
+                <!-- 进度信息 -->
+                <div class="task-progress-cell">
+                  <div class="progress-numbers">
+                    <span class="completed">{{ task.completed_questions || 0 }}</span>
+                    <span class="separator">/</span>
+                    <span class="total">{{ task.total_questions || 0 }}</span>
+                  </div>
+                  <div v-if="isTaskInProgress(task.status) || task.status === 'completed'" class="progress-bar-mini">
+                    <el-progress 
+                      :percentage="task.progress || 0" 
+                      :status="task.status === 'completed' ? 'success' : (task.status === 'failed' ? 'exception' : '')"
+                      :stroke-width="6"
+                      :show-text="false"
+                    />
+                  </div>
+                </div>
+                
+                <!-- 创建时间 -->
+                <div class="task-time-cell">
+                  <div class="cell-label">📅 创建时间</div>
+                  <div class="cell-value">{{ formatDateTime(task.created_at) }}</div>
+                </div>
+                
+                <!-- 操作按钮 -->
+                <div class="task-actions-cell">
                   <el-button 
                     size="small" 
                     type="primary"
@@ -128,9 +140,8 @@
                     v-if="canContinueTask(task.status)"
                     class="action-btn"
                   >
-                    继续任务
+                    🔄 继续
                   </el-button>
-                  <!-- 查看结果按钮 -->
                   <el-button 
                     size="small" 
                     type="success"
@@ -138,9 +149,8 @@
                     v-if="task.status === 'completed'"
                     class="action-btn"
                   >
-                    查看结果
+                    📊 结果
                   </el-button>
-                  <!-- 取消任务按钮 -->
                   <el-button 
                     size="small" 
                     type="danger" 
@@ -148,9 +158,8 @@
                     v-if="canCancelTask(task.status)"
                     class="action-btn"
                   >
-                    取消任务
+                    ❌ 取消
                   </el-button>
-                  <!-- 下载结果按钮 -->
                   <el-button 
                     size="small" 
                     type="primary" 
@@ -158,7 +167,7 @@
                     v-if="task.status === 'completed'"
                     class="action-btn"
                   >
-                    下载结果
+                    📥 下载
                   </el-button>
                 </div>
               </div>
@@ -167,102 +176,11 @@
         </el-tab-pane>
       </el-tabs>
     </div>
-
-    <!-- 数据集详情对话框 -->
-    <el-dialog
-      v-model="showDetailDialog"
-      title="数据集详情"
-      width="80%"
-      destroy-on-close
-      class="detail-dialog"
-    >
-      <div v-if="selectedDataset" class="dataset-detail">          
-        <div class="detail-header">
-            <div class="header-info">
-              <h2 class="detail-title">{{ selectedDataset.name }}</h2>
-              <div class="detail-tags">
-                <el-tag type="success" size="large">版本 {{ selectedDataset.version }}</el-tag>
-                <el-tag type="info" size="large">{{ selectedDataset.question_count || 0 }} 个问题</el-tag>
-              </div>
-            </div>
-          </div>
-        
-        <div class="detail-content">          
-          <div class="info-section">
-            <h3>描述信息</h3>
-            <p class="description-text">{{ selectedDataset.description || '暂无描述' }}</p>
-          </div>
-
-          <div class="info-section">
-            <h3>基本信息</h3>
-            <div class="info-grid">
-              <div class="info-card">
-                <div class="info-text">
-                  <div class="info-number">{{ selectedDataset.question_count || 0 }}</div>
-                  <div class="info-desc">问题数量</div>
-                </div>
-              </div>
-              <div class="info-card">
-                <div class="info-text">
-                  <div class="info-number">{{ formatDate(selectedDataset.create_time) }}</div>
-                  <div class="info-desc">创建时间</div>
-                </div>
-              </div>
-            </div>
-          </div>
-
-          <div class="info-section" v-if="sampleQuestions.length > 0">
-            <h3>示例问题</h3>
-            <div class="sample-questions">
-              <div v-for="(question, index) in sampleQuestions" :key="question.id" class="question-card">
-                <div class="question-header">
-                  <span class="question-index">Q{{ index + 1 }}</span>
-                  <el-tag size="small" :type="question.question_type === 'choice' ? 'warning' : 'info'">
-                    {{ question.question_type === 'choice' ? '选择题' : '文本题' }}
-                  </el-tag>
-                </div>
-                <div class="question-body">
-                  <p><strong>问题：</strong>{{ question.body }}</p>
-                  <div v-if="question.answers && question.answers.length > 0" class="answers-section">
-                    <p><strong>标准答案：</strong></p>
-                    <ul class="answers-list">
-                      <li v-for="answer in question.answers.slice(0, 2)" :key="answer.id">
-                        {{ answer.answer }}
-                      </li>
-                    </ul>
-                  </div>
-                </div>
-              </div>
-            </div>
-          </div>
-        </div>
-      </div>
-
-      <template #footer>        <div class="dialog-footer">
-          <el-button size="large" @click="showDetailDialog = false">
-            关闭
-          </el-button>
-          <el-button 
-            size="large"
-            @click="downloadDataset(selectedDataset)"
-            :loading="downloading[selectedDataset?.id]"
-          >
-            下载数据集
-          </el-button>
-          <el-button 
-            type="primary" 
-            size="large"
-            @click="startEvaluation(selectedDataset)"
-          >
-            开始评测
-          </el-button>
-        </div>
-      </template>
-    </el-dialog>
+  </div>
 </template>
 
 <script setup lang="ts">
-import { ref, reactive, onMounted } from 'vue'
+import { ref, reactive, onMounted, computed } from 'vue'
 import { ElMessage, ElMessageBox } from 'element-plus'
 import { useRouter } from 'vue-router'
 import { Clock } from '@element-plus/icons-vue'
@@ -289,6 +207,11 @@ const taskStatusFilter = ref('')
 const showDetailDialog = ref(false)
 const selectedDataset = ref<any>(null)
 const sampleQuestions = ref<any[]>([])
+
+// 计算属性
+const completedTasksCount = computed(() => {
+  return tasks.value.filter(task => task.status === 'completed').length
+})
 
 // 生命周期
 onMounted(() => {
@@ -512,7 +435,7 @@ const getTaskStatusText = (status: string) => {
 }
 
 const getTaskCardClass = (status: string) => {
-  return `task-card-${status}`
+  return `task-row-${status}`
 }
 
 const formatDate = (dateString: string) => {
@@ -528,8 +451,9 @@ const formatDateTime = (dateString: string) => {
 /* 全局样式 */
 .marketplace-container {
   padding: 20px;
-  background-color: #f7f8fa; /* 更柔和的背景色 */
+  background: linear-gradient(135deg, #f8f9fa 0%, #e9ecef 100%);
   min-height: 100vh;
+  font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, sans-serif;
 }
 
 /* 页面头部 */
@@ -537,241 +461,437 @@ const formatDateTime = (dateString: string) => {
   display: flex;
   justify-content: space-between;
   align-items: center;
-  margin-bottom: 24px;
-  padding: 16px 24px;
-  background-color: #ffffff;
-  border-radius: 8px;
-  box-shadow: 0 2px 12px 0 rgba(0, 0, 0, 0.06);
+  margin-bottom: 2rem;
+  padding: 2rem;
+  background: linear-gradient(135deg, rgba(255, 255, 255, 0.95) 0%, rgba(248, 249, 250, 0.95) 100%);
+  backdrop-filter: blur(20px);
+  border-radius: 16px;
+  box-shadow: 0 4px 20px rgba(0, 0, 0, 0.08);
+  border: 1px solid rgba(255, 255, 255, 0.2);
+  transition: all 0.3s ease;
 }
 
-.page-header h1 {
-  font-size: 1.8rem; /* 调整标题大小 */
-  font-weight: 600;
-  color: #303133;
+.page-header:hover {
+  transform: translateY(-2px);
+  box-shadow: 0 8px 30px rgba(0, 0, 0, 0.12);
+}
+
+.header-content h1 {
+  font-size: 2rem;
+  font-weight: 700;
+  color: #2c3e50;
+  margin: 0 0 0.5rem 0;
+  background: linear-gradient(135deg, #667eea 0%, #764ba2 100%);
+  -webkit-background-clip: text;
+  -webkit-text-fill-color: transparent;
+  background-clip: text;
+}
+
+.header-subtitle {
+  color: #6c757d;
+  font-size: 1rem;
   margin: 0;
+  font-weight: 400;
 }
 
-.page-header .stats {
-  font-size: 0.9rem;
-  color: #606266;
+.header-stats {
+  display: flex;
+  gap: 2rem;
 }
 
-.page-header .stats span {
-  margin-left: 16px;
+.stat-item {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  gap: 0.5rem;
+  padding: 1rem 1.5rem;
+  background: rgba(102, 126, 234, 0.1);
+  border-radius: 12px;
+  border: 1px solid rgba(102, 126, 234, 0.2);
+  transition: all 0.3s ease;
 }
 
-
-/* 标签页 */
-.el-tabs {
-  background-color: #ffffff;
-  padding: 10px 20px; /* 调整内边距 */
-  border-radius: 8px;
-  box-shadow: 0 2px 12px 0 rgba(0, 0, 0, 0.06);
+.stat-item:hover {
+  transform: translateY(-2px);
+  box-shadow: 0 4px 15px rgba(102, 126, 234, 0.2);
 }
 
-.tab-label {
-  font-size: 1rem; /* 调整标签字体大小 */
+.stat-number {
+  font-size: 1.75rem;
+  font-weight: 700;
+  color: #667eea;
+}
+
+.stat-label {
+  font-size: 0.85rem;
+  color: #6c757d;
   font-weight: 500;
 }
 
-/* 任务筛选器 */
-.task-filters {
-  margin-bottom: 20px;
-  padding: 16px; /* 增加内边距 */
-  background-color: #fbfcfd; /* 轻微背景色区分 */
-  border-radius: 6px;
-  /* border: 1px solid #e9e9eb; */
+/* 标签页容器 */
+.tabs-container {
+  background: linear-gradient(135deg, rgba(255, 255, 255, 0.95) 0%, rgba(248, 249, 250, 0.95) 100%);
+  backdrop-filter: blur(20px);
+  border-radius: 16px;
+  box-shadow: 0 4px 20px rgba(0, 0, 0, 0.08);
+  border: 1px solid rgba(255, 255, 255, 0.2);
+  overflow: hidden;
+}
+
+.custom-tabs {
+  padding: 1.5rem;
+}
+
+.tab-label {
+  font-size: 1rem;
+  font-weight: 600;
+  color: #495057;
+}
+
+/* 筛选器区域 */
+.filters-section {
+  margin-bottom: 2rem;
+  padding: 1.5rem;
+  background: linear-gradient(135deg, #f8f9fa 0%, #e9ecef 100%);
+  border-radius: 12px;
+  border: 1px solid #dee2e6;
 }
 
 .filter-group {
   display: flex;
-  gap: 16px; /* 调整元素间距 */
+  gap: 1rem;
   align-items: center;
+  flex-wrap: wrap;
+}
+
+.status-filter {
+  min-width: 200px;
+}
+
+.refresh-btn {
+  display: inline-flex;
+  align-items: center;
+  gap: 0.5rem;
+  font-weight: 600;
+  transition: all 0.3s ease;
+}
+
+.refresh-btn:hover {
+  transform: translateY(-2px);
+  box-shadow: 0 4px 15px rgba(102, 126, 234, 0.3);
+}
+
+.loading-spinner {
+  width: 16px;
+  height: 16px;
+  border: 2px solid rgba(255, 255, 255, 0.3);
+  border-top: 2px solid white;
+  border-radius: 50%;
+  animation: spin 1s linear infinite;
+}
+
+@keyframes spin {
+  0% { transform: rotate(0deg); }
+  100% { transform: rotate(360deg); }
 }
 
 /* 任务列表 */
 .tasks-list {
-  min-height: 300px; /* 调整最小高度 */
+  min-height: 400px;
+}
+
+.empty-state {
+  padding: 3rem 0;
+}
+
+.empty-state p {
+  font-size: 1.1rem;
+  color: #6c757d;
+  margin-bottom: 1.5rem;
+}
+
+.create-task-btn {
+  font-weight: 600;
+  padding: 0.75rem 1.5rem;
+  border-radius: 10px;
+  transition: all 0.3s ease;
+}
+
+.create-task-btn:hover {
+  transform: translateY(-2px);
+  box-shadow: 0 4px 15px rgba(102, 126, 234, 0.3);
 }
 
 .tasks-container {
-  display: grid; /* 改为 grid 布局 */
-  grid-template-columns: repeat(auto-fill, minmax(350px, 1fr)); /* 响应式列 */
-  gap: 20px; /* 卡片间距 */
-}
-
-.task-card {
-  background: #ffffff;
-  border-radius: 8px; /* 更大的圆角 */
-  padding: 20px;
-  box-shadow: 0 2px 8px rgba(0, 0, 0, 0.08); /* 调整阴影 */
-  border: 1px solid #e9e9eb; /* 更淡的边框 */
-  transition: box-shadow 0.3s ease, transform 0.2s ease; /* 添加过渡效果 */
   display: flex;
   flex-direction: column;
-  justify-content: space-between; /* 使内容垂直分布 */
+  gap: 0.75rem;
 }
 
-.task-card:hover {
-  box-shadow: 0 4px 16px rgba(0, 0, 0, 0.12); /* 悬停阴影 */
-  transform: translateY(-3px); /* 轻微上浮效果 */
+/* 任务行样式 */
+.task-row {
+  background: white;
+  border-radius: 12px;
+  padding: 1rem 1.5rem;
+  box-shadow: 0 2px 8px rgba(0, 0, 0, 0.06);
+  border: 1px solid #e9ecef;
+  transition: all 0.3s ease;
+  display: grid;
+  grid-template-columns: 2fr 1.2fr 1.2fr 1fr 1.2fr 1.5fr;
+  gap: 1rem;
+  align-items: center;
+  min-height: 80px;
+  position: relative;
+}
+
+.task-row::before {
+  content: '';
+  position: absolute;
+  left: 0;
+  top: 0;
+  bottom: 0;
+  width: 4px;
+  border-radius: 2px 0 0 2px;
+}
+
+.task-row:hover {
+  transform: translateY(-2px);
+  box-shadow: 0 4px 16px rgba(0, 0, 0, 0.1);
 }
 
 /* 根据任务状态调整左边框颜色 */
-.task-card-config_params { border-left: 5px solid #409EFF; }
-.task-card-config_prompts { border-left: 5px solid #409EFF; }
-.task-card-generating_answers { border-left: 5px solid #E6A23C; }
-.task-card-evaluating_answers { border-left: 5px solid #E6A23C; }
-.task-card-completed { border-left: 5px solid #67C23A; }
-.task-card-failed { border-left: 5px solid #F56C6C; }
-.task-card-cancelled { border-left: 5px solid #909399; }
+.task-row-config_params::before { background: #409EFF; }
+.task-row-config_prompts::before { background: #409EFF; }
+.task-row-generating_answers::before { background: #E6A23C; }
+.task-row-evaluating_answers::before { background: #E6A23C; }
+.task-row-completed::before { background: #67C23A; }
+.task-row-failed::before { background: #F56C6C; }
+.task-row-cancelled::before { background: #909399; }
 
-
-.task-header {
+/* 单元格样式 */
+.task-title-cell {
   display: flex;
-  justify-content: space-between;
-  align-items: flex-start; /* 顶部对齐 */
-  margin-bottom: 12px; /* 调整间距 */
-}
-
-.task-title-section {
-  display: flex;
-  flex-direction: column; /* 标题和标签垂直排列 */
-  gap: 6px; /* 标题和标签间距 */
-  flex-grow: 1; /* 占据更多空间 */
+  flex-direction: column;
+  gap: 0.5rem;
+  align-items: flex-start;
 }
 
 .task-title {
-  font-size: 1.2rem; /* 调整标题大小 */
+  font-size: 1.1rem;
   font-weight: 600;
-  color: #303133;
+  color: #2c3e50;
   margin: 0;
   line-height: 1.3;
 }
 
 .status-tag {
-  align-self: flex-start; /* 状态标签靠左 */
+  font-weight: 500;
+  border-radius: 6px;
 }
 
-.task-time {
+.task-dataset-cell,
+.task-model-cell,
+.task-time-cell {
+  display: flex;
+  flex-direction: column;
+  gap: 0.25rem;
+}
+
+.cell-label {
+  font-size: 0.75rem;
+  color: #6c757d;
+  font-weight: 500;
+}
+
+.cell-value {
+  font-size: 0.9rem;
+  font-weight: 600;
+  color: #2c3e50;
+  line-height: 1.3;
+}
+
+.task-progress-cell {
+  display: flex;
+  flex-direction: column;
+  gap: 0.5rem;
+  align-items: center;
+}
+
+.progress-numbers {
   display: flex;
   align-items: center;
-  gap: 6px; /* 图标和时间间距 */
-  color: #909399; /* 时间颜色 */
-  font-size: 0.85rem; /* 时间字体大小 */
-  white-space: nowrap; /* 防止时间换行 */
-  margin-left: 10px; /* 与标题部分隔开 */
+  gap: 0.25rem;
+  font-weight: 600;
 }
 
-.task-info {
-  margin-bottom: 16px;
+.progress-numbers .completed {
+  color: #67C23A;
 }
 
-.info-grid {
-  display: grid;
-  grid-template-columns: repeat(2, 1fr); /* 两列布局 */
-  gap: 10px 16px; /* 行间距和列间距 */
+.progress-numbers .separator {
+  color: #909399;
+}
+
+.progress-numbers .total {
+  color: #6c757d;
+}
+
+.progress-bar-mini {
+  width: 100%;
+  max-width: 80px;
+}
+
+.task-actions-cell {
+  display: flex;
+  gap: 0.5rem;
+  justify-content: flex-end;
+  flex-wrap: wrap;
+}
+
+.action-btn {
+  font-size: 0.8rem;
+  padding: 0.25rem 0.75rem;
+  border-radius: 6px;
+  font-weight: 500;
+  transition: all 0.3s ease;
+}
+
+.action-btn:hover {
+  transform: translateY(-1px);
+  box-shadow: 0 2px 8px rgba(0, 0, 0, 0.15);
 }
 
 .info-item {
   display: flex;
   flex-direction: column;
-  gap: 2px; /* 标签和值之间的间距 */
+  gap: 0.25rem;
+  padding: 0.75rem;
+  background: #f8f9fa;
+  border-radius: 8px;
+  border: 1px solid #e9ecef;
+  transition: all 0.3s ease;
+}
+
+.info-item:hover {
+  background: #e9ecef;
+  transform: translateY(-1px);
 }
 
 .info-label {
-  font-size: 0.85rem;
-  color: #606266;
-  font-weight: 400; /* 标签字体不加粗 */
+  font-size: 0.8rem;
+  color: #6c757d;
+  font-weight: 500;
 }
 
 .info-value {
-  font-weight: 500; /* 值字体稍粗 */
-  color: #303133;
-  font-size: 0.9rem;
+  font-weight: 600;
+  color: #2c3e50;
+  font-size: 0.95rem;
 }
 
 .task-progress {
-  margin-bottom: 16px;
+  margin-bottom: 1.25rem;
 }
 
 .progress-info {
   display: flex;
   justify-content: space-between;
-  margin-bottom: 6px;
+  margin-bottom: 0.5rem;
   font-size: 0.85rem;
-  color: #606266;
+  color: #6c757d;
+  font-weight: 500;
 }
 
 .progress-bar {
-  /* el-progress 默认样式通常不错，可按需调整 */
-  /* 例如：自定义高度 */
-  /* --el-progress-bar-height: 10px; */
-}
-.progress-bar .el-progress-bar__outer {
-  border-radius: 6px; /* 进度条圆角 */
-}
-.progress-bar .el-progress-bar__inner {
-  border-radius: 6px; /* 进度条内部圆角 */
+  border-radius: 8px;
+  overflow: hidden;
 }
 
+.progress-bar :deep(.el-progress-bar__outer) {
+  border-radius: 8px;
+  background: #e9ecef;
+}
+
+.progress-bar :deep(.el-progress-bar__inner) {
+  border-radius: 8px;
+  background: linear-gradient(135deg, #667eea 0%, #764ba2 100%);
+}
 
 .task-actions {
   display: flex;
-  gap: 10px; /* 按钮间距 */
-  flex-wrap: wrap; /* 按钮换行 */
-  margin-top: auto; /* 将按钮推到底部 */
-  padding-top: 16px; /* 与上方内容分隔 */
-  border-top: 1px solid #f0f2f5; /* 分隔线 */
+  flex-direction: column;
+  gap: 0.5rem;
+  justify-content: flex-end;
 }
 
-.task-actions .action-btn {
-  /* 按钮样式已由 Element Plus 提供，可按需覆盖 */
-  /* 例如：统一大小 */
-  /* padding: 8px 12px; */
-  /* min-width: 80px; */ /* 示例：最小宽度 */
-  /* 添加一些实际样式以避免空规则 */
-  margin-right: 8px; /* 示例：按钮间添加一些右边距 */
+.action-btn {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  gap: 0.375rem;
+  font-weight: 600;
+  border-radius: 8px;
+  transition: all 0.3s ease;
+  width: 100%;
+  padding: 0.5rem 1rem;
+  justify-content: center;
 }
 
-/* 空状态 */
-.el-empty {
-  padding: 40px 0; /* 增加上下内边距 */
+.action-btn:hover {
+  transform: translateY(-2px);
+  box-shadow: 0 4px 15px rgba(0, 0, 0, 0.15);
 }
-.el-empty p {
-  font-size: 1rem;
-  color: #909399;
-  margin-bottom: 20px;
+
+.continue-btn:hover {
+  box-shadow: 0 4px 15px rgba(102, 126, 234, 0.3);
+}
+
+.view-btn:hover {
+  box-shadow: 0 4px 15px rgba(40, 167, 69, 0.3);
+}
+
+.cancel-btn:hover {
+  box-shadow: 0 4px 15px rgba(245, 108, 108, 0.3);
+}
+
+.download-btn:hover {
+  box-shadow: 0 4px 15px rgba(102, 126, 234, 0.3);
 }
 
 /* 对话框样式 */
-.detail-dialog .el-dialog__header {
-  padding: 20px 24px 10px; /* 调整头部内边距 */
-  border-bottom: 1px solid #e9e9eb; /* 头部底边框 */
-  margin-right: 0; /* 移除element plus默认的margin */
+.detail-dialog :deep(.el-dialog) {
+  border-radius: 16px;
+  overflow: hidden;
+  box-shadow: 0 10px 40px rgba(0, 0, 0, 0.2);
 }
 
-.detail-dialog .el-dialog__title {
-  font-size: 1.3rem; /* 标题字体 */
-  font-weight: 600;
-  color: #303133;
+.detail-dialog :deep(.el-dialog__header) {
+  padding: 1.5rem 2rem 1rem;
+  border-bottom: 1px solid #e9ecef;
+  background: linear-gradient(135deg, #f8f9fa 0%, #e9ecef 100%);
 }
 
-.detail-dialog .el-dialog__body {
-  padding: 20px 24px; /* 主体内容内边距 */
+.detail-dialog :deep(.el-dialog__title) {
+  font-size: 1.5rem;
+  font-weight: 700;
+  color: #2c3e50;
+}
+
+.detail-dialog :deep(.el-dialog__body) {
+  padding: 2rem;
 }
 
 .dataset-detail {
-  padding: 0; /* 移除内部的 padding，由 dialog body 控制 */
+  padding: 0;
 }
 
 .detail-header {
   display: flex;
   align-items: center;
-  gap: 20px; /* 间距 */
-  margin-bottom: 24px;
-  padding-bottom: 20px;
-  border-bottom: 1px solid #f0f2f5; /* 更柔和的分割线 */
+  gap: 1.5rem;
+  margin-bottom: 2rem;
+  padding-bottom: 1.5rem;
+  border-bottom: 2px solid rgba(102, 126, 234, 0.1);
 }
 
 .header-info {
@@ -779,216 +899,346 @@ const formatDateTime = (dateString: string) => {
 }
 
 .detail-title {
-  font-size: 1.6rem; /* 调整标题大小 */
-  font-weight: 600;
-  color: #2c3e50; /* 深色标题 */
-  margin: 0 0 10px 0;
+  font-size: 1.75rem;
+  font-weight: 700;
+  color: #2c3e50;
+  margin: 0 0 1rem 0;
 }
 
-.detail-tags .el-tag {
-  font-size: 0.9rem; /* 标签字体 */
-  padding: 0 12px; /* 标签内边距 */
-  height: 30px; /* 标签高度 */
-  line-height: 30px; /* 标签行高 */
+.detail-tags {
+  display: flex;
+  gap: 0.75rem;
+  flex-wrap: wrap;
+}
+
+.detail-tags :deep(.el-tag) {
+  font-size: 0.9rem;
+  font-weight: 600;
+  padding: 0.5rem 1rem;
+  border-radius: 8px;
+  border: none;
 }
 
 .detail-content {
   display: flex;
   flex-direction: column;
-  gap: 28px; /* 区块间距 */
+  gap: 2rem;
 }
 
 .info-section h3 {
-  font-size: 1.15rem; /* 小节标题 */
-  font-weight: 600;
-  color: #34495e; /* 小节标题颜色 */
-  margin-bottom: 16px; /* 与内容间距 */
-  padding-bottom: 8px; /* 标题下划线间距 */
-  border-bottom: 2px solid #409EFF; /* 标题下划线 */
-  display: inline-block; /* 使下划线适应文字宽度 */
+  font-size: 1.25rem;
+  font-weight: 700;
+  color: #2c3e50;
+  margin-bottom: 1.25rem;
+  padding-bottom: 0.75rem;
+  border-bottom: 2px solid rgba(102, 126, 234, 0.2);
+  display: inline-block;
 }
 
 .description-text {
-  color: #555;
+  color: #495057;
   line-height: 1.7;
-  font-size: 0.95rem;
-  background: #fdfdfd; /* 更亮的背景 */
-  padding: 16px;
-  border-radius: 6px;
-  border: 1px solid #f0f2f5;
+  font-size: 1rem;
+  background: linear-gradient(135deg, #f8f9fa 0%, #e9ecef 100%);
+  padding: 1.25rem;
+  border-radius: 12px;
+  border: 1px solid #dee2e6;
 }
 
-.info-grid { /* 此处 info-grid 与任务卡片中的有重复，注意区分或合并 */
+.info-grid {
   display: grid;
-  grid-template-columns: repeat(auto-fit, minmax(220px, 1fr)); /* 调整最小宽度 */
-  gap: 16px;
+  grid-template-columns: repeat(auto-fit, minmax(250px, 1fr));
+  gap: 1.25rem;
 }
 
-.info-card { /* 用于数据集详情中的信息卡片 */
-  background: #f8f9fa; /* 卡片背景 */
-  padding: 20px;
-  border-radius: 8px;
+.info-card {
+  background: linear-gradient(135deg, #f8f9fa 0%, #e9ecef 100%);
+  padding: 1.5rem;
+  border-radius: 12px;
   display: flex;
-  flex-direction: column; /* 垂直排列 */
-  align-items: flex-start; /* 左对齐 */
-  gap: 8px;
-  border: 1px solid #e9ecef;
-  box-shadow: 0 1px 3px rgba(0,0,0,0.03);
+  flex-direction: column;
+  align-items: flex-start;
+  gap: 0.75rem;
+  border: 1px solid #dee2e6;
+  box-shadow: 0 2px 8px rgba(0, 0, 0, 0.05);
+  transition: all 0.3s ease;
+}
+
+.info-card:hover {
+  transform: translateY(-2px);
+  box-shadow: 0 4px 15px rgba(0, 0, 0, 0.1);
 }
 
 .info-number {
-  font-size: 1.5rem; /* 数字大小 */
-  font-weight: 600;
-  color: #409EFF; /* 主题色 */
-  margin-bottom: 2px;
+  font-size: 1.75rem;
+  font-weight: 700;
+  color: #667eea;
+  margin-bottom: 0.25rem;
 }
 
 .info-desc {
-  color: #6c757d; /* 描述文字颜色 */
+  color: #6c757d;
   font-size: 0.9rem;
+  font-weight: 500;
 }
 
 .sample-questions {
   display: flex;
   flex-direction: column;
-  gap: 16px;
+  gap: 1.25rem;
 }
 
 .question-card {
-  background: #ffffff;
-  border-radius: 6px;
-  padding: 16px;
-  border: 1px solid #e9ecef;
-  box-shadow: 0 1px 4px rgba(0,0,0,0.04);
+  background: white;
+  border-radius: 12px;
+  padding: 1.25rem;
+  border: 1px solid #dee2e6;
+  box-shadow: 0 2px 8px rgba(0, 0, 0, 0.05);
+  transition: all 0.3s ease;
+}
+
+.question-card:hover {
+  transform: translateY(-2px);
+  box-shadow: 0 4px 15px rgba(0, 0, 0, 0.1);
+  border-color: #667eea;
 }
 
 .question-header {
   display: flex;
   justify-content: space-between;
   align-items: center;
-  margin-bottom: 12px;
+  margin-bottom: 1rem;
 }
 
 .question-index {
-  background: #409EFF;
+  background: linear-gradient(135deg, #667eea 0%, #764ba2 100%);
   color: white;
-  padding: 5px 12px; /* 调整内边距 */
-  border-radius: 16px; /* 更圆的角 */
-  font-weight: 500;
+  padding: 0.375rem 0.75rem;
+  border-radius: 20px;
+  font-weight: 600;
   font-size: 0.85rem;
 }
 
 .question-body p {
-  color: #333;
+  color: #495057;
   line-height: 1.6;
-  margin-bottom: 10px;
-  font-size: 0.95rem;
+  margin-bottom: 0.75rem;
+  font-size: 1rem;
 }
+
 .question-body p strong {
   font-weight: 600;
-  color: #34495e;
+  color: #2c3e50;
 }
 
 .answers-section {
-  background: #f9fafb; /* 答案区域背景 */
-  padding: 12px;
-  border-radius: 4px;
-  margin-top: 10px;
-  border: 1px solid #f0f2f5;
+  background: linear-gradient(135deg, #f8f9fa 0%, #e9ecef 100%);
+  padding: 1rem;
+  border-radius: 8px;
+  margin-top: 0.75rem;
+  border: 1px solid #dee2e6;
 }
+
 .answers-section p strong {
-  font-weight: 500;
-  color: #34495e;
+  font-weight: 600;
+  color: #2c3e50;
 }
 
 .answers-list {
-  margin-left: 0; /* 移除默认的 ul 缩进 */
-  padding-left: 18px; /* 使用 padding 代替 margin */
-  list-style-type: disc; /* 使用实心圆点 */
-  color: #555;
+  margin: 0.75rem 0 0 0;
+  padding-left: 1.25rem;
+  list-style-type: disc;
+  color: #495057;
 }
 
 .answers-list li {
-  margin-bottom: 6px;
+  margin-bottom: 0.5rem;
   line-height: 1.5;
 }
 
 .dialog-footer {
   display: flex;
-  gap: 12px;
+  gap: 1rem;
   justify-content: flex-end;
-  padding: 16px 24px; /* 页脚内边距 */
-  border-top: 1px solid #e9e9eb; /* 页脚上边框 */
+  padding: 1.5rem 2rem;
+  border-top: 1px solid #e9ecef;
+  background: #f8f9fa;
 }
 
 .dialog-footer .el-button {
-  /* 可以为对话框按钮设置特定样式，如大小 */
-  /* padding: 10px 20px; */
-  /* min-width: 100px; */ /* 示例：最小宽度 */
-  /* 添加一些实际样式以避免空规则 */
-  margin-left: 10px; /* 示例：按钮间添加一些左边距 */
+  display: inline-flex;
+  align-items: center;
+  gap: 0.5rem;
+  font-weight: 600;
+  border-radius: 10px;
+  transition: all 0.3s ease;
+  min-width: 120px;
+  justify-content: center;
 }
 
+.dialog-footer .el-button:hover {
+  transform: translateY(-2px);
+  box-shadow: 0 4px 15px rgba(0, 0, 0, 0.15);
+}
 
-/* 移除旧的、可能冲突的样式 */
-/* .llm-marketplace, .header, .header-content, .title-section, .page-title, .page-subtitle, .header-stats, .stat-item, .stat-label, .stat-number, .tabs-container, .custom-tabs, .filters-section, .search-bar, .search-input, .refresh-btn, .datasets-grid, .grid-container, .dataset-card, .card-header, .dataset-meta, .dataset-name, .card-body, .dataset-description, .dataset-stats, .card-footer, .action-btn (部分保留，看具体情况) */
-/* .task-card-pending, .task-card-running, .task-card-completed, .task-card-failed, .task-card-cancelled (已用 border-left 替代) */
+.close-btn:hover {
+  box-shadow: 0 4px 15px rgba(108, 117, 125, 0.3);
+}
 
+.download-btn:hover {
+  box-shadow: 0 4px 15px rgba(102, 126, 234, 0.3);
+}
+
+.start-btn:hover {
+  box-shadow: 0 4px 15px rgba(102, 126, 234, 0.3);
+}
 
 /* 响应式设计 */
-@media (max-width: 992px) { /* 调整断点 */
+@media (max-width: 1200px) {
+  .tasks-container {
+    grid-template-columns: repeat(auto-fill, minmax(350px, 1fr));
+  }
+}
+
+@media (max-width: 992px) {
   .tasks-container {
     grid-template-columns: repeat(auto-fill, minmax(320px, 1fr));
   }
-  .info-grid { /* 任务卡片内的信息栅格 */
-    grid-template-columns: 1fr; /* 在较小屏幕上单列显示 */
+  
+  .info-grid {
+    grid-template-columns: 1fr;
+  }
+  
+  .page-header {
+    flex-direction: column;
+    align-items: flex-start;
+    gap: 1.5rem;
+  }
+  
+  .header-stats {
+    align-self: stretch;
+    justify-content: space-around;
   }
 }
 
 @media (max-width: 768px) {
+  .marketplace-container {
+    padding: 1rem;
+  }
+  
   .page-header {
-    flex-direction: column;
-    align-items: flex-start; /* 左对齐 */
-    gap: 12px;
+    padding: 1.5rem;
   }
+  
   .page-header h1 {
-    font-size: 1.6rem;
+    font-size: 1.75rem;
   }
-  .tasks-container {
-    grid-template-columns: 1fr; /* 单列显示任务卡片 */
+  
+  .task-row {
+    grid-template-columns: 1fr;
+    gap: 0.75rem;
+    padding: 1rem;
+    text-align: left;
   }
+  
+  .task-title-cell {
+    align-items: flex-start;
+  }
+  
+  .task-dataset-cell,
+  .task-model-cell,
+  .task-time-cell {
+    align-items: flex-start;
+  }
+  
+  .task-progress-cell {
+    align-items: flex-start;
+  }
+  
+  .progress-bar-mini {
+    max-width: 100%;
+  }
+  
+  .task-actions-cell {
+    justify-content: flex-start;
+  }
+  
+  .action-btn {
+    font-size: 0.75rem;
+    padding: 0.375rem 0.75rem;
+  }
+  
   .filter-group {
     flex-direction: column;
-    align-items: stretch; /* 筛选器元素撑满宽度 */
+    align-items: stretch;
   }
-  .filter-group .el-select {
-    width: 100% !important; /* Element Plus select 宽度覆盖 */
+  
+  .status-filter {
+    width: 100% !important;
   }
-  .task-header {
-    flex-direction: column;
-    align-items: flex-start;
-    gap: 8px;
-  }
-  .task-time {
-    margin-left: 0; /* 移除左边距 */
-  }
+  
   .detail-header {
     flex-direction: column;
     align-items: flex-start;
     text-align: left;
   }
+  
   .detail-title {
-    font-size: 1.4rem;
+    font-size: 1.5rem;
   }
-  .info-grid { /* 对话框内的信息栅格 */
-     grid-template-columns: 1fr;
+  
+  .info-grid {
+    grid-template-columns: 1fr;
   }
+  
   .dialog-footer {
-    flex-direction: column; /* 按钮垂直排列 */
-    gap: 10px;
+    flex-direction: column;
+    gap: 0.75rem;
   }
+  
   .dialog-footer .el-button {
-    width: 100%; /* 按钮撑满宽度 */
+    width: 100%;
+  }
+}
+
+@media (max-width: 480px) {
+  .page-header {
+    padding: 1rem;
+  }
+  
+  .page-header h1 {
+    font-size: 1.5rem;
+  }
+  
+  .header-stats {
+    flex-direction: column;
+    gap: 1rem;
+  }
+  
+  .stat-item {
+    flex-direction: row;
+    justify-content: space-between;
+    padding: 0.75rem 1rem;
+  }
+  
+  .custom-tabs {
+    padding: 1rem;
+  }
+  
+  .filters-section {
+    padding: 1rem;
+  }
+  
+  .task-card {
+    padding: 1rem;
+  }
+  
+  .task-actions {
+    flex-direction: column;
+  }
+  
+  .action-btn {
+    width: 100%;
   }
 }
 </style>

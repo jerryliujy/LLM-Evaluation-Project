@@ -41,6 +41,9 @@ export interface AvailableModel {
   provider: string;
   api_endpoint?: string;
   max_tokens: number;
+  default_temperature?: number;
+  top_k?: number;
+  enable_reasoning?: boolean;  // 新增：是否支持推理模式
   pricing?: Record<string, number>;
 }
 
@@ -80,20 +83,20 @@ export interface TaskProgress {
   progress: number;
   current_question: number;
   total_questions: number;
-  successful_count: number;
-  failed_count: number;
+  completed_questions: number;  // 新字段，与后端保持一致
+  failed_questions: number;     // 新字段，与后端保持一致
   average_score?: number;
   estimated_remaining_time?: number;
   questions_per_minute?: number;
-  latest_answer?: string;
   latest_score?: number;
+  latest_content?: string;      // 新字段：最新内容（答案或评测结果）
+  latest_content_type?: string; // 新字段：内容类型（"answer" 或 "evaluation"）
 }
 
 export interface EvaluationResult {
   id: number;
   score: number;
   evaluator_type: string;
-  feedback?: string;
   evaluation_time: string;
 }
 
@@ -262,7 +265,77 @@ export const llmEvaluationService = {  // 获取数据集市场列表
   async getPromptTemplate(templateKey: string): Promise<any> {
     const response = await apiClient.get(`/llm-evaluation/prompt-templates/${templateKey}`);
     return response.data;
-  }
+  },  // 创建evaluation记录
+  async createEvaluation(evaluation: {
+    answer_id: number;
+    score: number;
+    reasoning: string;
+    evaluator_type: 'user' | 'llm';
+  }): Promise<any> {
+    const response = await apiClient.post('/llm-evaluation/evaluations', evaluation);
+    return response.data;
+  },
+  // 获取任务的答案列表用于手动评测
+  async getTaskAnswersForManualEvaluation(taskId: number): Promise<any[]> {
+    const response = await apiClient.get(`/llm-evaluation/tasks/${taskId}/answers`);
+    return response.data;
+  },
+
+  // 下载答案数据
+  async downloadAnswersOnly(taskId: number): Promise<Blob> {
+    const response = await apiClient.get(`/llm-evaluation/tasks/${taskId}/download/answers`, {
+      responseType: 'blob'
+    });
+    return response.data;
+  },
+
+  // 自动评测答案
+  async autoEvaluateAnswer(answerId: number, options: { use_llm: boolean }): Promise<any> {
+    const response = await apiClient.post(`/llm-evaluation/answers/${answerId}/auto-evaluate`, options);
+    return response.data;
+  },  
+  
+  // 获取数据集的问题列表
+  async getDatasetQuestions(datasetId: number): Promise<any> {
+    const response = await apiClient.get(`/llm-evaluation/datasets/${datasetId}/questions`);
+    return response.data;
+  },
+
+  // 创建手动评测任务
+  async createManualEvaluationTask(taskData: {
+    name: string;
+    description?: string;
+    dataset_id: number;
+    model_id: number;
+    entries: Array<{
+      question_id: number;
+      answer: string;
+      score: number;
+      reasoning?: string;
+    }>;
+    system_prompt?: string;
+    choice_system_prompt?: string;
+    text_system_prompt?: string;
+    choice_evaluation_prompt?: string;
+    text_evaluation_prompt?: string;
+    evaluation_prompt?: string;
+    temperature?: number;
+    max_tokens?: number;
+    top_k?: number;
+    enable_reasoning?: boolean;
+  }): Promise<any> {
+    const response = await apiClient.post('/llm-evaluation/tasks/manual', taskData);
+    return response.data;
+  },
+
+  // 提交手动评测
+  async submitManualEvaluation(answerId: number, evaluation: {
+    score: number;
+    reasoning: string;
+  }): Promise<any> {
+    const response = await apiClient.post(`/llm-evaluation/answers/${answerId}/manual-evaluate`, evaluation);
+    return response.data;
+  },
 };
 
 export default llmEvaluationService;

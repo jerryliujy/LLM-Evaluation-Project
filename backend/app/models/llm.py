@@ -20,9 +20,6 @@ class LLM(Base):
     version = Column(String(50), nullable=True)
     affiliation = Column(String(100), nullable=True)
     is_active = Column(Boolean, nullable=False, server_default=text('1'), index=True)
-    
-    # 关系
+      # 关系
     evaluation_tasks = relationship("LLMEvaluationTask", foreign_keys="LLMEvaluationTask.model_id", back_populates="model")
-    evaluation_tasks_as_evaluator = relationship("LLMEvaluationTask", foreign_keys="LLMEvaluationTask.evaluation_llm_id", back_populates="evaluation_llm")
     answers = relationship("LLMAnswer", back_populates="llm")
-    evaluations = relationship("Evaluation", back_populates="evaluator_llm")

@@ -36,7 +36,6 @@ DEFAULT_EVALUATION_PROMPTS = {
 {{
     "score": 85,
     "reasoning": "答案正确，解释清晰合理，格式规范",
-    "feedback": "回答质量很好，但可以在解释部分提供更多细节"
 }}""",
     
     "text": """请根据以下标准评估文本回答质量：
@@ -55,7 +54,6 @@ DEFAULT_EVALUATION_PROMPTS = {
 {{
     "score": 85,
     "reasoning": "内容准确，覆盖全面，表达清晰",
-    "feedback": "很好的回答，建议可以提供更多实例说明"
 }}"""
 }
 

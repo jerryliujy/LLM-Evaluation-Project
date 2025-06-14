@@ -68,7 +68,7 @@ class LLMEvaluationTaskProcessor:
             logger.info(f"Task {task_id}: 步骤3 - 获取数据集问题")
             try:
                 questions = db.query(StdQuestion).filter(
-                    StdQuestion.current_dataset_id == task.dataset_id,
+                    StdQuestion.dataset_id == task.dataset_id,
                     StdQuestion.is_valid == True
                 ).order_by(StdQuestion.id).all()
                 
@@ -201,19 +201,12 @@ class LLMEvaluationTaskProcessor:
                             logger.error(f"Task {task_id}: 第{i+1}题 - 保存LLM答案时发生错误: {str(save_error)}")
                             import traceback
                             logger.error(f"Task {task_id}: 第{i+1}题 - 保存答案错误堆栈:\n{traceback.format_exc()}")
-                            # 回滚事务
-                            db.rollback()
+                            # 回滚事务                            db.rollback()
                             raise
                         
                         completed_count += 1
                         
-                        # 如果配置了自动评估
-                        if task.evaluation_llm_id:
-                            await self._perform_auto_evaluation(
-                                db, question, llm_answer, 
-                                task.evaluation_llm_id, task.evaluation_prompt,
-                                api_key
-                            )
+                        # 自动评估功能已移除，只生成答案
                     else:
                         # 记录失败
                         llm_answer = LLMAnswer(
@@ -333,26 +326,17 @@ class LLMEvaluationTaskProcessor:
             logger.info(f"Task {task_id}: 找到 {len(llm_answers)} 个待评测答案")
             
             # 获取评测模型
-            evaluation_llm = None
-            if task.evaluation_llm_id:
-                evaluation_llm = db.query(LLM).filter(LLM.id == task.evaluation_llm_id).first()
-                if not evaluation_llm:
-                    logger.warning(f"Task {task_id}: 指定的评测模型不存在，使用原始模型")
-            
-            # 如果没有专门的评测模型，使用原始模型
+            evaluation_llm = None            # 使用原始模型进行评测
+            evaluation_llm = task.model
             if not evaluation_llm:
-                evaluation_llm = task.model
-                if not evaluation_llm:
-                    logger.error(f"Task {task_id}: 无法获取评测模型")
-                    update_data = LLMEvaluationTaskUpdate(
-                        status=TaskStatus.FAILED,
-                        error_message="无法获取评测模型"
-                    )
-                    update_llm_evaluation_task(db, task_id, update_data)
-                    return
-                logger.info(f"Task {task_id}: 使用原始模型进行评测: {evaluation_llm.name}")
-            else:
-                logger.info(f"Task {task_id}: 使用专门的评测模型: {evaluation_llm.name}")
+                logger.error(f"Task {task_id}: 无法获取评测模型")
+                update_data = LLMEvaluationTaskUpdate(
+                    status=TaskStatus.FAILED,
+                    error_message="无法获取评测模型"
+                )
+                update_llm_evaluation_task(db, task_id, update_data)
+                return
+            logger.info(f"Task {task_id}: 使用原始模型进行评测: {evaluation_llm.name}")
             
             # 获取API密钥
             api_key = self._decrypt_api_key(task.api_key_hash)
@@ -540,60 +524,7 @@ class LLMEvaluationTaskProcessor:
         # 临时实现：直接返回存储的API密钥（不安全，仅用于测试）
         # TODO: 实现真实的解密逻辑
         return api_key_hash
-    
-    async def _perform_auto_evaluation(
-        self, 
-        db: Session,
-        question: StdQuestion, 
-        llm_answer: LLMAnswer,
-        evaluation_llm_id: int,
-        evaluation_prompt: Optional[str],
-        api_key: str
-    ):
-        """执行自动评估"""
-        try:
-            # 获取标准答案
-            std_answers = question.std_answers
-            if not std_answers:
-                return
-            
-            # 获取评估LLM
-            evaluation_llm = db.query(LLM).filter(LLM.id == evaluation_llm_id).first()
-            if not evaluation_llm:
-                return
-              # 获取LLM客户端进行评估
-            llm_client = await get_llm_client(
-                api_key=api_key,
-                db_llm=evaluation_llm
-            )
-            
-            # 调用异步评估LLM
-            evaluation_result = await self._call_evaluation_llm(
-                llm_client,
-                question.body,
-                llm_answer.answer,
-                std_answers[0].answer if std_answers else "",
-                evaluation_prompt,
-                question.type if hasattr(question, 'type') else "text"            
-            )
-            
-            if evaluation_result["success"]:
-                # 创建评估记录
-                evaluation = Evaluation(
-                    std_question_id=question.id,
-                    llm_answer_id=llm_answer.id,
-                    score=evaluation_result["score"],
-                    evaluator_type=EvaluatorType.LLM,
-                    evaluator_id=evaluation_llm_id,
-                    reasoning=evaluation_result["reasoning"],
-                    evaluation_prompt=evaluation_result["evaluation_prompt"]
-                )
-                db.add(evaluation)
-                db.commit()
-            
-        except Exception as e:
-            logger.error(f"Auto evaluation failed: {str(e)}")
-    
+      
     async def _call_evaluation_llm(
         self,
         llm_client: LLMClient,

@@ -50,7 +50,22 @@ def get_evaluations_by_user(
 
 def create_evaluation(db: Session, evaluation: EvaluationCreate) -> Evaluation:
     """创建新的评估记录"""
-    db_evaluation = Evaluation(**evaluation.dict())
+    # 首先获取LLM答案以获取std_question_id
+    from ..models.llm_answer import LLMAnswer
+    llm_answer = db.query(LLMAnswer).filter(LLMAnswer.id == evaluation.answer_id).first()
+    if not llm_answer:
+        raise ValueError(f"LLM Answer with id {evaluation.answer_id} not found")
+    
+    # 创建evaluation记录
+    db_evaluation = Evaluation(
+        std_question_id=llm_answer.std_question_id,
+        llm_answer_id=evaluation.answer_id,
+        score=evaluation.score,
+        evaluator_type=evaluation.evaluator_type,
+        evaluator_id=evaluation.evaluator_id,
+        reasoning=evaluation.reasoning
+    )
+    
     db.add(db_evaluation)
     db.commit()
     db.refresh(db_evaluation)

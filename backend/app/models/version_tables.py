@@ -29,18 +29,19 @@ class VersionStdQuestion(Base):
     
     id = Column(Integer, primary_key=True, index=True)
     version_id = Column(Integer, ForeignKey("DatasetVersion.id"), nullable=False, index=True)
-    original_question_id = Column(Integer, ForeignKey("StdQuestion.id"), nullable=False, index=True)  # 原始问题ID
+    original_question_id = Column(Integer, ForeignKey("StdQuestion.id"), nullable=True, index=True)  # 原始问题ID（新增时为NULL）
     is_modified = Column(Boolean, default=False, nullable=False)  # 是否被修改
     is_new = Column(Boolean, default=False, nullable=False)  # 是否是新创建的
     is_deleted = Column(Boolean, default=False, nullable=False)  # 是否被删除
     
-    # 修改后的内容（仅当 is_modified=True 时有效）
+    # 修改后的内容（仅当 is_modified=True 或 is_new=True 时有效）
     modified_body = Column(Text, nullable=True)
     modified_question_type = Column(String(50), nullable=True)
     
     created_at = Column(DateTime(timezone=True), server_default=func.now())
+    
     # 关系
-    version = relationship("DatasetVersion")
+    version = relationship("DatasetVersion", back_populates="version_questions")
     original_question = relationship("StdQuestion")
     version_answers = relationship("VersionStdAnswer", back_populates="version_question", cascade="all, delete-orphan")
     version_tags = relationship("VersionTag", back_populates="version_question", cascade="all, delete-orphan")
@@ -91,6 +92,7 @@ class VersionScoringPoint(Base):
     modified_point_order = Column(Integer, nullable=True)
     
     created_at = Column(DateTime(timezone=True), server_default=func.now())    
+    
     # 关系
     version_answer = relationship("VersionStdAnswer", back_populates="version_scoring_points")
     original_point = relationship("StdAnswerScoringPoint")

@@ -1,75 +1,59 @@
+from typing import Optional, List
 from pydantic import BaseModel
-from typing import Optional, List, Any
 from datetime import datetime
 
 class StdQuestionBase(BaseModel):
-    original_dataset_id: int
-    current_dataset_id: int
-    body: str  # 统一字段名为body
+    dataset_id: int  # 当前所在的数据集ID
+    body: str  # 使用body字段而不是text
     question_type: str
-    created_by: Optional[int] = None  # 改为int类型用户ID
+    is_valid: bool = True
+    created_by: Optional[str] = None
+    version: int = 1
+    previous_version_id: Optional[int] = None
+    original_version_id: Optional[int] = None  # 最初创建时的版本ID
+    current_version_id: Optional[int] = None  # 当前所在的版本ID
 
 class StdQuestionCreate(StdQuestionBase):
-    previous_version_id: Optional[int] = None
+    pass
 
 class StdQuestionUpdate(BaseModel):
-    body: Optional[str] = None  # 统一字段名为body
+    dataset_id: Optional[int] = None
+    body: Optional[str] = None  # 使用body字段而不是text
     question_type: Optional[str] = None
-    created_by: Optional[int] = None  # 改为int类型用户ID
+    is_valid: Optional[bool] = None
+    created_by: Optional[str] = None
+    version: Optional[int] = None
     previous_version_id: Optional[int] = None
-    original_dataset_id: Optional[int] = None
-    current_dataset_id: Optional[int] = None
-    tags: Optional[List[str]] = None  # 添加标签支持
+    original_version_id: Optional[int] = None
+    current_version_id: Optional[int] = None
 
-class StdQuestion(StdQuestionBase):
+class StdQuestionResponse(StdQuestionBase):
     id: int
-    created_at: datetime  # 统一为created_at
-    is_valid: bool
-    previous_version_id: Optional[int] = None
-
+    created_at: datetime  # 使用created_at字段而不是create_time
+    
     class Config:
         from_attributes = True
 
-class StdQuestionResponse(StdQuestion):
-    dataset: Optional[dict] = None
-    std_answers: Optional[Any] = None  # 修正关系名称 
-    tags: Optional[List[str]] = None  # 添加 tags 字段
+class StdQuestionInDB(StdQuestionBase):
+    id: int
+    created_at: datetime  # 使用created_at字段而不是create_time
     
-    class Config:        
+    class Config:
         from_attributes = True
-        
-    @classmethod
-    def from_db_model(cls, db_obj):
-        """从数据库对象创建响应模型"""
-        # 转换基本字段
-        data = {
-            'id': db_obj.id,
-            'body': db_obj.body,
-            'question_type': db_obj.question_type,
-            'original_dataset_id': db_obj.original_dataset_id,
-            'current_dataset_id': db_obj.current_dataset_id,
-            'is_valid': db_obj.is_valid,
-            'created_at': db_obj.created_at,
-            'previous_version_id': db_obj.previous_version_id,
-        }
-        
-        # 转换标签
-        if hasattr(db_obj, 'tags') and db_obj.tags:
-            data['tags'] = [tag.label for tag in db_obj.tags]
-        else:
-            data['tags'] = []
-        
-        # 转换数据集信息（使用当前数据集）
-        if hasattr(db_obj, 'current_dataset') and db_obj.current_dataset:
-            data['dataset'] = {
-                'id': db_obj.current_dataset.id,
-                'name': db_obj.current_dataset.name,
-                'description': db_obj.current_dataset.description,
-            }
-        else:
-            data['dataset'] = None
-        
-        # 暂时不处理 std_answers，避免循环引用
-        data['std_answers'] = None
-        
-        return cls(**data)
+
+# 兼容性字段映射
+def std_question_to_dict(db_obj):
+    """将数据库对象转换为字典，保持向后兼容"""
+    return {
+        'id': db_obj.id,
+        'body': db_obj.body,  # 直接使用body字段
+        'question_type': db_obj.question_type,
+        'is_valid': db_obj.is_valid,
+        'created_by': db_obj.created_by,
+        'created_at': db_obj.created_at,  # 直接使用created_at字段
+        'version': db_obj.version,
+        'previous_version_id': db_obj.previous_version_id,
+        'dataset_id': db_obj.dataset_id,
+        'original_version_id': db_obj.original_version_id,
+        'current_version_id': db_obj.current_version_id,
+    }

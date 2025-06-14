@@ -1,7 +1,7 @@
 """
 Evaluation model for storing LLM and user evaluations
 """
-from sqlalchemy import Column, Integer, String, Text, DateTime, Boolean, ForeignKey, Enum, DECIMAL, text
+from sqlalchemy import Column, Integer, String, Text, DateTime, Boolean, ForeignKey, Enum as SQLEnum, DECIMAL, text
 from sqlalchemy.sql import func
 from sqlalchemy.orm import relationship
 from datetime import datetime
@@ -23,9 +23,9 @@ class Evaluation(Base):
     std_question_id = Column(Integer, ForeignKey("StdQuestion.id"), nullable=False, index=True)
     llm_answer_id = Column(Integer, ForeignKey("LLMAnswer.id"), nullable=False, index=True)
     score = Column(DECIMAL(5, 2), nullable=True)  # 评分 (0-100)
-    evaluator_type = Column(Enum(EvaluatorType), values_callable=lambda x: [e.value for e in x], 
+    evaluator_type = Column(SQLEnum(EvaluatorType, values_callable=lambda x: [e.value for e in x]), 
                             default=EvaluatorType.LLM, nullable=False)   # 评估者类型
-    evaluator_id = Column(Integer, ForeignKey("LLM.id") or ForeignKey("User.id"), nullable=True)  # 用户ID或LLM ID
+    evaluator_id = Column(Integer, nullable=False)  # 用户ID或LLM ID
     evaluation_time = Column(DateTime(timezone=True), server_default=text('CURRENT_TIMESTAMP'), index=True)
     notes = Column(Text, nullable=True)      # 评估备注
     reasoning = Column(Text, nullable=True)  # 评估理由（特别用于自动评估）
@@ -35,7 +35,6 @@ class Evaluation(Base):
     # 关系
     std_question = relationship("StdQuestion")
     llm_answer = relationship("LLMAnswer", back_populates="evaluations")
-    evaluator_llm = relationship("LLM", back_populates="evaluations")
     
     def __repr__(self):
         return f"<Evaluation(id={self.id}, llm_answer_id={self.llm_answer_id}, evaluator_type={self.evaluator_type}, score={self.score})>"

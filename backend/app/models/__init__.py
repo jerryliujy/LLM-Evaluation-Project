@@ -1,7 +1,6 @@
 from ..db.database import Base
 from .user import User
 from .dataset import Dataset
-from .dataset_version import DatasetVersion
 from .version_tables import VersionStdQuestion, VersionStdAnswer, VersionScoringPoint, VersionTag
 from .raw_question import RawQuestion
 from .raw_answer import RawAnswer

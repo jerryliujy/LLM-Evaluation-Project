@@ -15,25 +15,28 @@ class EvaluatorType(str, Enum):
 
 class EvaluationBase(BaseModel):
     """评估基础schema"""
-    std_question_id: int
+    std_question_id: Optional[int] = None
     llm_answer_id: int
     score: int  # 0-100分
     evaluator_type: EvaluatorType
-    evaluator_id: Optional[int] = None  # 自动评估时为None
-    evaluation_criteria: Optional[str] = None
-    feedback: Optional[str] = None
+    evaluator_id: Optional[int] = None  # 用户评估时为用户ID，自动评估时为LLM ID
+    reasoning: Optional[str] = None  # 评估理由
+    notes: Optional[str] = None  # 评估备注
 
 
-class EvaluationCreate(EvaluationBase):
-    """创建评估的schema"""
-    pass
+class EvaluationCreate(BaseModel):
+    """创建评估的schema - 简化版，支持answer_id"""
+    answer_id: int  # LLM答案ID
+    score: int  # 0-100分
+    evaluator_type: EvaluatorType
+    reasoning: Optional[str] = None  # 评估理由
+    evaluator_id: Optional[int] = None  # 评估者ID
 
 
 class EvaluationUpdate(BaseModel):
     """更新评估的schema"""
     score: Optional[int] = None
-    feedback: Optional[str] = None
-    evaluation_criteria: Optional[str] = None
+    reasoning: Optional[str] = None
     is_valid: Optional[bool] = None
 
 
@@ -50,7 +53,7 @@ class BatchEvaluationRequest(BaseModel):
     """批量评估请求schema"""
     llm_answer_ids: List[int]
     evaluation_type: str  # "auto" or "manual"
-    evaluation_criteria: Optional[str] = None
+    reasoning: Optional[str] = None
 
 
 class EvaluationStatistics(BaseModel):

@@ -7,11 +7,13 @@ from typing import List, Optional, Dict, Any
 import hashlib
 import logging
 from datetime import datetime, timedelta, timezone
+from decimal import Decimal
 
 from ..models.llm_evaluation_task import LLMEvaluationTask, TaskStatus
 from ..models.llm_answer import LLMAnswer
 from ..models.dataset import Dataset
 from ..models.std_question import StdQuestion
+from ..models.evaluation import Evaluation
 from ..schemas.llm_evaluation_task import (
     LLMEvaluationTaskCreate, LLMEvaluationTaskUpdate,
     ModelConfigRequest, ManualEvaluationTaskCreate
@@ -31,18 +33,18 @@ def create_llm_evaluation_task(
     user_id: int
 ) -> LLMEvaluationTask:
     """创建LLM评测任务"""
-    # 获取数据集中的问题数
-    total_questions = db.query(func.count(StdQuestion.id)).filter(
-        StdQuestion.current_dataset_id == task_data.dataset_id,
+    # 获取数据集的所有标准问题
+    std_questions = db.query(StdQuestion).filter(
+        StdQuestion.dataset_id == task_data.dataset_id,  # 使用dataset_id而不是current_dataset_id
         StdQuestion.is_valid == True
-    ).scalar() or 0    
+    ).all()
+    total_questions = len(std_questions)
     # 处理API密钥 - 临时直接存储，实际应该使用可逆加密
     api_key_hash = None
     if task_data.api_key:
         # TODO: 使用可逆加密而不是直接存储
         api_key_hash = task_data.api_key  # 临时解决方案：直接存储
-    
-    # 创建任务
+      # 创建任务
     task = LLMEvaluationTask(
         name=task_data.name,
         description=task_data.description,
@@ -51,17 +53,21 @@ def create_llm_evaluation_task(
         model_id=task_data.model_id,
         api_key_hash=api_key_hash,
         system_prompt=task_data.system_prompt,
+        choice_system_prompt=task_data.choice_system_prompt,
+        text_system_prompt=task_data.text_system_prompt,
+        choice_evaluation_prompt=task_data.choice_evaluation_prompt,
+        text_evaluation_prompt=task_data.text_evaluation_prompt,
         temperature=task_data.temperature,
         max_tokens=task_data.max_tokens,
         top_k=task_data.top_k,        
         enable_reasoning=task_data.enable_reasoning,
-        evaluation_llm_id=task_data.evaluation_llm_id,
         evaluation_prompt=task_data.evaluation_prompt,
         status=TaskStatus.CONFIG_PARAMS,
         total_questions=total_questions,
         progress=0,
         completed_questions=0,
-        failed_questions=0    )
+        failed_questions=0
+    )
     
     logger.info(f"创建LLMEvaluationTask对象成功，准备添加到数据库")
     db.add(task)
@@ -92,7 +98,6 @@ def get_llm_evaluation_task(db: Session, task_id: int) -> Optional[LLMEvaluation
     return db.query(LLMEvaluationTask).options(
         joinedload(LLMEvaluationTask.dataset),
         joinedload(LLMEvaluationTask.model),
-        joinedload(LLMEvaluationTask.evaluation_llm),
         joinedload(LLMEvaluationTask.user)
     ).filter(LLMEvaluationTask.id == task_id).first()
 
@@ -108,7 +113,6 @@ def get_user_evaluation_tasks(
     query = db.query(LLMEvaluationTask).options(
         joinedload(LLMEvaluationTask.dataset),
         joinedload(LLMEvaluationTask.model),
-        joinedload(LLMEvaluationTask.evaluation_llm)
     ).filter(LLMEvaluationTask.created_by == user_id)
     
     if status:
@@ -240,23 +244,57 @@ def get_task_progress(db: Session, task_id: int) -> Dict[str, Any]:
             if questions_per_minute > 0:
                 estimated_remaining_time = int(remaining_questions / questions_per_minute * 60)
     
-    # 获取最新答案和评分
-    latest_answer = None
+    # 根据任务状态返回不同的进度信息
+    latest_content = None
     latest_score = None
-    if task.llm_answers:
-        latest_llm_answer = sorted(task.llm_answers, key=lambda x: x.answered_at, reverse=True)[0]
-        latest_answer = latest_llm_answer.answer[:100] + "..." if len(latest_llm_answer.answer) > 100 else latest_llm_answer.answer
-        
-        # 获取最新评分
-        if latest_llm_answer.evaluations:
-            latest_evaluation = sorted(latest_llm_answer.evaluations, key=lambda x: x.evaluation_time, reverse=True)[0]
-            latest_score = latest_evaluation.score
+    latest_content_type = "answer"  # "answer" 或 "evaluation"
+    
+    if task.status == TaskStatus.GENERATING_ANSWERS:
+        # 答案生成阶段：显示最新生成的答案
+        if task.llm_answers:
+            latest_llm_answer = sorted(task.llm_answers, key=lambda x: x.answered_at, reverse=True)[0]
+            latest_content = latest_llm_answer.answer[:200] + "..." if len(latest_llm_answer.answer) > 200 else latest_llm_answer.answer
+            latest_content_type = "answer"
+            
+    elif task.status == TaskStatus.EVALUATING_ANSWERS:
+        # 评测阶段：显示最新的评测结果
+        if task.llm_answers:
+            # 查找最新有评测的答案
+            answers_with_evaluations = []
+            for answer in task.llm_answers:
+                if answer.evaluations:
+                    latest_eval = sorted(answer.evaluations, key=lambda x: x.evaluation_time, reverse=True)[0]
+                    answers_with_evaluations.append((answer, latest_eval))
+            
+            if answers_with_evaluations:
+                # 按评测时间排序，获取最新的评测
+                latest_answer, latest_evaluation = sorted(answers_with_evaluations, 
+                                                        key=lambda x: x[1].evaluation_time, reverse=True)[0]
+                latest_content = f"评分: {latest_evaluation.score}/100\n评测内容: {latest_evaluation.reasoning[:150]}..." if latest_evaluation.reasoning and len(latest_evaluation.reasoning) > 150 else f"评分: {latest_evaluation.score}/100\n评测内容: {latest_evaluation.reasoning or '无评测理由'}"
+                latest_score = latest_evaluation.score
+                latest_content_type = "evaluation"
+            else:
+                # 如果还没有评测结果，显示最新答案
+                latest_llm_answer = sorted(task.llm_answers, key=lambda x: x.answered_at, reverse=True)[0]
+                latest_content = latest_llm_answer.answer[:200] + "..." if len(latest_llm_answer.answer) > 200 else latest_llm_answer.answer
+                latest_content_type = "answer"
+    else:
+        # 其他状态：显示最新答案和评分
+        if task.llm_answers:
+            latest_llm_answer = sorted(task.llm_answers, key=lambda x: x.answered_at, reverse=True)[0]
+            latest_content = latest_llm_answer.answer[:200] + "..." if len(latest_llm_answer.answer) > 200 else latest_llm_answer.answer
+            
+            # 获取最新评分
+            if latest_llm_answer.evaluations:
+                latest_evaluation = sorted(latest_llm_answer.evaluations, key=lambda x: x.evaluation_time, reverse=True)[0]
+                latest_score = latest_evaluation.score
     
     return {
         "estimated_remaining_time": estimated_remaining_time,
         "questions_per_minute": questions_per_minute,
-        "latest_answer": latest_answer,
-        "latest_score": latest_score
+        "latest_content": latest_content,
+        "latest_score": latest_score,
+        "latest_content_type": latest_content_type,
     }
 
 
@@ -275,7 +313,7 @@ def create_manual_evaluation_task(
         question_ids = [entry.question_id for entry in task_data.entries]
         valid_questions = db.query(StdQuestion).filter(
             StdQuestion.id.in_(question_ids),
-            StdQuestion.current_dataset_id == task_data.dataset_id,
+            StdQuestion.dataset_id == task_data.dataset_id,
             StdQuestion.is_valid == True
         ).all()
         
@@ -301,26 +339,31 @@ def create_manual_evaluation_task(
             failed_questions=0,
             started_at=datetime.now(),
             completed_at=datetime.now(),
-            # 手动录入不需要以下配置
-            system_prompt="手动录入",
-            temperature=0.0,
-            max_tokens=0,
-            top_k=0,
-            enable_reasoning=False
+            # 高级配置选项
+            system_prompt=task_data.system_prompt,
+            choice_system_prompt=task_data.choice_system_prompt,
+            text_system_prompt=task_data.text_system_prompt,
+            choice_evaluation_prompt=task_data.choice_evaluation_prompt,
+            text_evaluation_prompt=task_data.text_evaluation_prompt,
+            evaluation_prompt=task_data.evaluation_prompt,
+            temperature=Decimal(str(task_data.temperature)) if task_data.temperature else Decimal("0.7"),
+            max_tokens=task_data.max_tokens or 2000,
+            top_k=task_data.top_k or 50,
+            enable_reasoning=task_data.enable_reasoning or False
         )
         
         db.add(task)
-        db.flush()  # 获取任务ID
+        db.flush()
         
         # 创建LLM答案和评测记录
         for entry in task_data.entries:
             # 创建LLM答案记录
             llm_answer = LLMAnswer(
                 task_id=task.id,
-                question_id=entry.question_id,
+                std_question_id=entry.question_id,  # 修正字段名
                 answer=entry.answer,
                 is_valid=True,
-                created_at=datetime.now()
+                answered_at=datetime.now()
             )
             db.add(llm_answer)
             db.flush()  # 获取答案ID
@@ -379,3 +422,85 @@ def _calculate_score_distribution(scores: List[float]) -> Dict[str, int]:
             distribution["poor"] += 1
     
     return distribution
+
+
+def calculate_and_update_task_score(db: Session, task_id: int) -> Optional[float]:
+    """计算并更新任务的总体得分（所有evaluation的平均分）"""
+    from decimal import Decimal
+    
+    logger.info(f"Task {task_id}: 开始计算任务总分")
+    
+    try:
+        # 获取任务
+        task = db.query(LLMEvaluationTask).filter(LLMEvaluationTask.id == task_id).first()
+        if not task:
+            logger.error(f"Task {task_id}: 任务不存在")
+            return None
+        
+        # 获取所有evaluation结果
+        llm_answers = db.query(LLMAnswer).filter(LLMAnswer.task_id == task_id).all()
+        
+        total_score = 0
+        valid_scores = 0
+        
+        for answer in llm_answers:
+            evaluations = db.query(Evaluation).filter(
+                Evaluation.llm_answer_id == answer.id,
+                Evaluation.score.isnot(None)
+            ).all()
+            
+            # 计算该答案的平均分
+            answer_scores = [float(e.score) for e in evaluations if e.score is not None]
+            if answer_scores:
+                avg_score = sum(answer_scores) / len(answer_scores)
+                total_score += avg_score
+                valid_scores += 1
+        
+        # 计算总体平均分
+        overall_average = total_score / valid_scores if valid_scores > 0 else 0
+        
+        # 更新任务得分
+        task.score = Decimal(str(round(overall_average, 2)))
+        db.commit()
+        db.refresh(task)
+        
+        logger.info(f"Task {task_id}: 总分计算完成，得分: {overall_average}")
+        return overall_average
+        
+    except Exception as e:
+        logger.error(f"Task {task_id}: 计算总分时出错: {str(e)}")
+        db.rollback()
+        return None
+
+
+def update_task_when_evaluation_completed(db: Session, task_id: int):
+    """当评测完成时更新任务状态和得分"""
+    logger.info(f"Task {task_id}: 检查是否需要更新任务状态")
+    
+    try:
+        # 检查是否所有答案都已评测完成
+        total_answers = db.query(LLMAnswer).filter(LLMAnswer.task_id == task_id).count()
+        
+        evaluated_answers = db.query(LLMAnswer).join(Evaluation).filter(
+            LLMAnswer.task_id == task_id,
+            Evaluation.score.isnot(None)
+        ).distinct().count()
+        
+        logger.info(f"Task {task_id}: 总答案数: {total_answers}, 已评测数: {evaluated_answers}")
+        
+        if total_answers > 0 and evaluated_answers >= total_answers:
+            # 所有答案都已评测，计算总分并更新状态
+            calculate_and_update_task_score(db, task_id)
+            
+            # 更新任务状态为完成
+            task = db.query(LLMEvaluationTask).filter(LLMEvaluationTask.id == task_id).first()
+            if task and task.status != TaskStatus.COMPLETED:
+                task.status = TaskStatus.COMPLETED
+                task.progress = 100
+                task.completed_at = datetime.now(timezone.utc)
+                db.commit()
+                logger.info(f"Task {task_id}: 任务状态已更新为COMPLETED")
+                
+    except Exception as e:
+        logger.error(f"Task {task_id}: 更新任务状态时出错: {str(e)}")
+        db.rollback()

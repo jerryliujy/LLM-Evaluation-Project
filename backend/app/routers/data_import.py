@@ -312,14 +312,27 @@ async def upload_std_qa_data(
             
             # 创建标准问题
             std_question = StdQuestion(
-                original_dataset_id=dataset_id,
-                current_dataset_id=dataset_id,
+                dataset_id=dataset_id,
+                raw_question_id=item.get('raw_question_id'),
                 body=item.get('body', ''),
-                question_type=item.get('question_type', 'text'),
+                question_type=item.get('question_type', 'single_choice'),
+                is_valid=True,
                 created_by=current_user.id,
-                is_valid=True
+                version=1
             )
+            db.add(std_question)
+            db.flush()
+            imported_questions += 1
             
+            # 创建标准答案
+            std_answer = StdAnswer(
+                std_question_id=std_question.id,
+                answer=item.get('answer', ''),
+                is_valid=True,
+                created_by=current_user.id,
+                version=1
+            )
+            db.add(std_answer)
             db.add(std_question)
             db.flush()  # 获取问题ID
             imported_questions += 1           
@@ -391,25 +404,27 @@ async def upload_std_qa_data(
             if answer_text:
                 std_answer = StdAnswer(
                     std_question_id=std_question.id,
-                    original_dataset_id=dataset_id,
-                    current_dataset_id=dataset_id,
                     answer=answer_text,
-                    answered_by=current_user.id,
-                    is_valid=True
+                    is_valid=True,
+                    created_by=current_user.id,
+                    version=1
                 )
                 
                 db.add(std_answer)
                 db.flush()  # 获取答案ID
                 imported_answers += 1
-                  # 创建评分点（如果有key_points）
+                
+                # 创建评分点（如果有key_points）
                 if item.get('key_points') and isinstance(item['key_points'], list):
                     for key_point_data in item['key_points']:
                         if isinstance(key_point_data, dict):
                             scoring_point = StdAnswerScoringPoint(
                                 std_answer_id=std_answer.id,
-                                answer=key_point_data.get('answer', ''),
+                                scoring_point_text=key_point_data.get('answer', ''),  # 使用scoring_point_text字段
                                 point_order=key_point_data.get('point_order', 1),
-                                is_valid=True
+                                is_valid=True,
+                                created_by=current_user.id,
+                                version=1
                             )
                         
                         db.add(scoring_point)

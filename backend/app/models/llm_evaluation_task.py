@@ -44,30 +44,29 @@ class LLMEvaluationTask(Base):
     # 模型配置
     model_id = Column(Integer, ForeignKey("LLM.id"), nullable=False, index=True)  # LLM模型ID    
     api_key_hash = Column(String(255), nullable=True)  # API密钥（加密存储）
-    
-    # Prompt配置
+      # Prompt配置
     system_prompt = Column(Text, nullable=True)  # 系统prompt
+    choice_system_prompt = Column(Text, nullable=True)  # 选择题系统prompt
+    text_system_prompt = Column(Text, nullable=True)  # 问答题系统prompt
+    choice_evaluation_prompt = Column(Text, nullable=True)  # 选择题评估prompt
+    text_evaluation_prompt = Column(Text, nullable=True)  # 问答题评估prompt
     temperature = Column(DECIMAL(3, 2), server_default=text('0.7'))  # 温度参数    
     max_tokens = Column(Integer, server_default=text('2000'))  # 最大token数
     top_k = Column(Integer, server_default=text('50'))  # Top-K采样
     enable_reasoning = Column(Boolean, server_default=text('0'), nullable=False)  # 启用推理模式
     
     # 自动评估配置
-    evaluation_llm_id = Column(Integer, ForeignKey("LLM.id"), nullable=True, index=True)  # 评估LLM
-    evaluation_prompt = Column(Text, nullable=True)  # 评估prompt
+    evaluation_prompt = Column(Text, nullable=True)  # 评估prompt（兼容性保留）
     
     # 时间记录
     started_at = Column(DateTime, nullable=True)
     completed_at = Column(DateTime, nullable=True)
     
     # 错误和结果
-    error_message = Column(Text, nullable=True)
-    result_summary = Column(JSON, nullable=True)
-      # 关系
+    error_message = Column(Text, nullable=True)    # 关系
     dataset = relationship("Dataset")
     user = relationship("User")  # 创建者
     model = relationship("LLM", foreign_keys=[model_id], back_populates="evaluation_tasks")  # 评测模型
-    evaluation_llm = relationship("LLM", foreign_keys=[evaluation_llm_id], back_populates="evaluation_tasks_as_evaluator")  # 评估模型
     llm_answers = relationship("LLMAnswer", back_populates="task")
     
     def __repr__(self):

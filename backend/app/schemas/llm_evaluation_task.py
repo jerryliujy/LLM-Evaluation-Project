@@ -61,6 +61,8 @@ class ModelConfigRequest(BaseModel):
     model_id: int = Field(..., description="模型ID")
     api_key: str = Field(..., description="API密钥")
     system_prompt: Optional[str] = Field(None, description="系统提示词")
+    choice_system_prompt: Optional[str] = Field(None, description="选择题系统提示词")
+    text_system_prompt: Optional[str] = Field(None, description="问答题系统提示词")
     temperature: Optional[float] = Field(0.7, description="温度参数")  # 改为float类型
     max_tokens: Optional[int] = Field(2000, description="最大token数")
     top_k: Optional[int] = Field(50, description="Top-K采样")
@@ -92,11 +94,14 @@ class LLMEvaluationTaskBase(BaseModel):
     dataset_id: int = Field(..., description="数据集ID")
     model_id: int = Field(..., description="LLM模型ID")
     system_prompt: Optional[str] = Field(None, description="系统prompt")
+    choice_system_prompt: Optional[str] = Field(None, description="选择题系统prompt")
+    text_system_prompt: Optional[str] = Field(None, description="问答题系统prompt")
+    choice_evaluation_prompt: Optional[str] = Field(None, description="选择题评估prompt")
+    text_evaluation_prompt: Optional[str] = Field(None, description="问答题评估prompt")
     temperature: Optional[Decimal] = Field(Decimal("0.7"), description="温度参数")
     max_tokens: Optional[int] = Field(2000, description="最大token数")
     top_k: Optional[int] = Field(50, description="Top-K采样")
     enable_reasoning: Optional[bool] = Field(False, description="启用推理模式")
-    evaluation_llm_id: Optional[int] = Field(None, description="评估LLM ID")
     evaluation_prompt: Optional[str] = Field(None, description="评估prompt")
 
 
@@ -118,6 +123,13 @@ class LLMEvaluationTaskUpdate(BaseModel):
     completed_at: Optional[datetime] = None
     error_message: Optional[str] = None
     result_summary: Optional[Dict[str, Any]] = None
+    # 新增的prompt字段
+    choice_system_prompt: Optional[str] = None
+    text_system_prompt: Optional[str] = None
+    choice_evaluation_prompt: Optional[str] = None
+    text_evaluation_prompt: Optional[str] = None
+    system_prompt: Optional[str] = None
+    evaluation_prompt: Optional[str] = None
 
 
 class LLMEvaluationTaskResponse(LLMEvaluationTaskBase):
@@ -134,12 +146,10 @@ class LLMEvaluationTaskResponse(LLMEvaluationTaskBase):
     started_at: Optional[datetime] = None
     completed_at: Optional[datetime] = None
     error_message: Optional[str] = None
-    result_summary: Optional[Dict[str, Any]] = None
-    
+    result_summary: Optional[Dict[str, Any]] = None    
     # 关联信息
     dataset: Optional[SimpleDatasetInfo] = None
     model: Optional[SimpleLLMInfo] = None
-    evaluation_llm: Optional[SimpleLLMInfo] = None
     
     # 运行时信息
     estimated_remaining_time: Optional[int] = Field(None, description="预计剩余时间（秒）")
@@ -159,8 +169,9 @@ class LLMEvaluationTaskProgress(BaseModel):
     failed_questions: int
     estimated_remaining_time: Optional[int] = None
     questions_per_minute: Optional[float] = None
-    latest_answer: Optional[str] = Field(None, description="最新的回答")
     latest_score: Optional[float] = Field(None, description="最新的评分")
+    latest_content: Optional[str] = Field(None, description="最新内容（答案或评测结果）")
+    latest_content_type: Optional[str] = Field(None, description="最新内容类型：answer或evaluation")
 
 
 class LLMAnswerResponse(BaseModel):
@@ -273,7 +284,6 @@ class ManualEvaluationEntry(BaseModel):
     answer: str = Field(..., description="LLM回答内容")
     score: float = Field(..., ge=0, le=100, description="得分(0-100)")
     reasoning: Optional[str] = Field(None, description="评分理由")
-    feedback: Optional[str] = Field(None, description="反馈意见")
 
 
 class ManualEvaluationTaskCreate(BaseModel):
@@ -283,6 +293,18 @@ class ManualEvaluationTaskCreate(BaseModel):
     dataset_id: int = Field(..., description="数据集ID")
     model_id: int = Field(..., description="LLM模型ID")
     entries: List[ManualEvaluationEntry] = Field(..., description="评测条目列表")
+    
+    # 高级配置选项
+    system_prompt: Optional[str] = Field(None, description="系统提示词")
+    choice_system_prompt: Optional[str] = Field(None, description="选择题系统提示词")
+    text_system_prompt: Optional[str] = Field(None, description="问答题系统提示词")
+    choice_evaluation_prompt: Optional[str] = Field(None, description="选择题评估提示词")
+    text_evaluation_prompt: Optional[str] = Field(None, description="问答题评估提示词")
+    evaluation_prompt: Optional[str] = Field(None, description="通用评估提示词")
+    temperature: Optional[float] = Field(0.7, description="温度参数")
+    max_tokens: Optional[int] = Field(2000, description="最大token数")
+    top_k: Optional[int] = Field(50, description="Top-K采样")
+    enable_reasoning: Optional[bool] = Field(False, description="启用推理模式")
     
     class Config:
         schema_extra = {
@@ -297,9 +319,12 @@ class ManualEvaluationTaskCreate(BaseModel):
                         "answer": "这是LLM的回答",
                         "score": 85.0,
                         "reasoning": "回答准确性较高",
-                        "feedback": "可以更详细一些"
                     }
-                ]
+                ],
+                "system_prompt": "你是一个专业的评测助手",
+                "temperature": 0.7,
+                "max_tokens": 2000,
+                "enable_reasoning": False
             }
         }
 
@@ -317,6 +342,45 @@ class ManualEvaluationTaskResponse(BaseModel):
     completed_questions: int
     created_at: datetime
     completed_at: Optional[datetime]
+    
+    class Config:
+        from_attributes = True
+
+
+class ManualEvaluationAnswer(BaseModel):
+    """手动评测答案信息"""
+    id: int
+    answer_text: str
+    question_id: int
+    question_body: str
+    question_type: str
+    std_answers: List[Dict[str, Any]]
+    current_score: Optional[float] = None
+    current_reasoning: Optional[str] = None
+    model_name: str
+    created_at: datetime
+    
+    class Config:
+        from_attributes = True
+
+
+class ManualEvaluationRequest(BaseModel):
+    """手动评测请求"""
+    answer_id: int
+    score: float = Field(..., ge=0, le=100, description="评分，0-100")
+    reasoning: str = Field(..., min_length=1, description="评分理由")
+
+
+class ManualEvaluationBatchRequest(BaseModel):
+    """批量手动评测请求"""
+    evaluations: List[ManualEvaluationRequest]
+
+
+class ManualEvaluationProgress(BaseModel):
+    """手动评测进度"""
+    total_answers: int
+    evaluated_answers: int
+    progress_percentage: float
     
     class Config:
         from_attributes = True

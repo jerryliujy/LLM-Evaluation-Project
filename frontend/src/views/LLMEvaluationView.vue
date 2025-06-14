@@ -37,14 +37,12 @@
     <ManualEvaluationEntry
       v-if="evaluationMode === 'manual'"
       :mode="evaluationMode"
-      :current-dataset="currentDataset"
-      :available-models="availableModels"
       @switch-mode="switchEvaluationMode"
       @task-created="onManualTaskCreated"
     />
 
     <!-- 自动评测流程 -->
-    <div v-else-if="evaluationMode === 'auto'">    <!-- 自动评测流程 -->
+    <div v-else-if="evaluationMode === 'auto'">    
       <!-- 步骤指示器 -->
       <div class="steps-container">
         <div class="steps-wrapper">
@@ -67,9 +65,14 @@
               <span v-else>2</span>
             </span>
             <span class="step-title">配置系统Prompt</span>
-          </div>
-          <div class="step-item" :class="{ active: currentStep === 2 }">
-            <span class="step-number">3</span>
+          </div>          <div class="step-item" :class="{ 
+            active: currentStep === 2, 
+            locked: isStepLocked(2) 
+          }">
+            <span class="step-number">
+              <span v-if="isStepLocked(2)">🔒</span>
+              <span v-else>3</span>
+            </span>
             <span class="step-title">生成回答</span>
           </div>
           <div class="step-item" :class="{ 
@@ -98,13 +101,13 @@
         <!-- 显示选中的数据集信息 -->
         <div v-if="currentDataset" class="dataset-summary">
           <div class="summary-card">
-            <div class="summary-content">
+            <div class="summary-content">              
               <div class="summary-info">
-                <h4>数据集名称：{{ currentDataset.name }}</h4>
-                <p>数据集描述：{{ currentDataset.description }}</p>
+                <h4>数据集名称：{{ currentDataset?.name }}</h4>
+                <p>数据集描述：{{ currentDataset?.description }}</p>
                 <div class="summary-tags">
-                  <span class="tag">{{ currentDataset.question_count }} 题</span>
-                  <span class="tag tag-success">v{{ currentDataset.version }}</span>
+                  <span class="tag">{{ currentDataset?.question_count }} 题</span>
+                  <span class="tag tag-success">v{{ currentDataset?.version }}</span>
                 </div>
               </div>
             </div>
@@ -131,11 +134,10 @@
                   {{ model.display_name }} ({{ model.provider }}) - {{ model.max_tokens }} tokens
                 </option>
               </select>
-              
-              <div v-if="selectedModel" class="model-details">
+                <div v-if="selectedModel" class="model-details">
                 <div class="alert alert-info">
-                  <strong>{{ selectedModel.display_name }}</strong><br>
-                  {{ selectedModel.description }}
+                  <strong>{{ selectedModel?.display_name }}</strong><br>
+                  {{ selectedModel?.description }}
                 </div>
               </div>
             </div>
@@ -218,19 +220,25 @@
               <div class="form-tip">
                 ℹ️ 控制生成时考虑的候选词数量，值越小越保守
               </div>
-            </div>
-              <div class="form-group">
+            </div>            
+            <div class="form-group">
               <label class="form-label">                
                 <input 
                   v-model="modelConfig.enable_reasoning" 
                   type="checkbox"
                   class="form-checkbox"
-                  :disabled="isStepLocked(0)"
+                  :disabled="isStepLocked(0) || !isReasoningSupported"
                 />
                 启用推理模式
+                <span v-if="!isReasoningSupported" class="unsupported-badge">不支持</span>
               </label>
               <div class="form-tip">
-                ℹ️ 启用后模型会展示详细的推理过程（如果支持）
+                <span v-if="isReasoningSupported">
+                  ℹ️ 启用后模型会展示详细的推理过程
+                </span>
+                <span v-else class="warning-tip">
+                  ⚠️ 当前选择的模型不支持推理模式
+                </span>
               </div>
             </div>
           </div>
@@ -310,9 +318,8 @@
                 class="prompt-textarea"
                 :disabled="isStepLocked(1)"
               ></textarea>
-              <div class="editor-info">
-                <div class="char-count">
-                  📄 {{ systemPromptConfig.choice_system_prompt.length }} 字符
+              <div class="editor-info">                <div class="char-count">
+                  📄 {{ systemPromptConfig?.choice_system_prompt?.length || 0 }} 字符
                 </div>
               </div>
             </div>
@@ -341,9 +348,8 @@
                 class="prompt-textarea"
                 :disabled="isStepLocked(1)"
               ></textarea>
-              <div class="editor-info">
-                <div class="char-count">
-                  📄 {{ systemPromptConfig.text_system_prompt.length }} 字符
+              <div class="editor-info">                <div class="char-count">
+                  📄 {{ systemPromptConfig?.text_system_prompt?.length || 0 }} 字符
                 </div>
               </div>
             </div>
@@ -358,9 +364,8 @@
               <div class="message-item system">
                 <div class="message-label">
                   🤖 系统
-                </div>
-                <div class="message-content">
-                  {{ activeSystemPromptTab === 'choice' ? systemPromptConfig.choice_system_prompt : systemPromptConfig.text_system_prompt || '请输入系统Prompt...' }}
+                </div>                <div class="message-content">
+                  {{ activeSystemPromptTab === 'choice' ? (systemPromptConfig?.choice_system_prompt || '请输入系统Prompt...') : (systemPromptConfig?.text_system_prompt || '请输入系统Prompt...') }}
                 </div>
               </div>
               <div class="message-item user">
@@ -510,7 +515,7 @@
             ← 上一步
           </button>          <!-- 根据答案生成状态显示不同按钮 -->
           <button 
-            v-if="!answerGenerationTask || answerGenerationTask.status !== 'evaluating_answers'"
+            v-if="!answerGenerationTask || answerGenerationTask?.status !== 'evaluating_answers'"
             @click="startAnswerGeneration" 
             :disabled="!isSystemPromptValid || starting || isStepLocked(2)" 
             class="btn btn-primary">
@@ -529,10 +534,50 @@
     <div v-if="currentStep === 3" class="step-content">
       <div class="content-card">
         <div class="card-header">
-          <h3>⚖️ 配置评测</h3>
-          <p>配置评测Prompt来自动打分LLM的回答质量</p>
+          <h3>⚖️ 配置评测方式</h3>
+          <p>选择评测方式：自动LLM评测或手动评测</p>
         </div>
         
+        <!-- 评测方式选择 -->
+        <div class="evaluation-mode-selection">
+          <h4>📊 评测方式选择</h4>
+          <div class="mode-cards">
+            <div 
+              :class="['mode-card', { active: evaluationConfig.evaluation_mode === 'auto' }]"
+              @click="selectEvaluationMode('auto')"
+            >
+              <div class="mode-icon">🤖</div>
+              <div class="mode-content">
+                <h5>LLM自动评测</h5>
+                <p>使用大语言模型自动评测答案质量和准确性</p>
+                <ul class="mode-features">
+                  <li>✅ 快速批量评测</li>
+                  <li>✅ 标准化评分</li>
+                  <li>✅ 详细评测理由</li>
+                </ul>
+              </div>
+            </div>
+            
+            <div 
+              :class="['mode-card', { active: evaluationConfig.evaluation_mode === 'manual' }]"
+              @click="selectEvaluationMode('manual')"
+            >
+              <div class="mode-icon">👤</div>
+              <div class="mode-content">
+                <h5>手动评测</h5>
+                <p>人工逐个评测每个答案，提供精确的评分和反馈</p>
+                <ul class="mode-features">
+                  <li>✅ 精确控制评分</li>
+                  <li>✅ 个性化反馈</li>
+                  <li>✅ 随时保存进度</li>
+                </ul>
+              </div>
+            </div>
+          </div>
+        </div>
+
+        <!-- LLM自动评测配置 -->
+        <div v-if="evaluationConfig.evaluation_mode === 'auto'" class="auto-evaluation-config">
         <!-- 评测Prompt配置 -->
         <div class="prompt-container">
           <div class="tabs">
@@ -566,7 +611,8 @@
               </div>
             </div>
             
-            <div class="prompt-editor">              <textarea
+            <div class="prompt-editor">
+              <textarea
                 v-model="evaluationConfig.choice_evaluation_prompt"
                 rows="12"
                 placeholder="请输入选择题评测Prompt..."
@@ -575,7 +621,7 @@
               ></textarea>
               <div class="editor-info">
                 <div class="char-count">
-                  📄 {{ evaluationConfig.choice_evaluation_prompt.length }} 字符
+                  📄 {{ evaluationConfig.choice_evaluation_prompt?.length || 0 }} 字符
                 </div>
               </div>
             </div>
@@ -607,7 +653,7 @@
               ></textarea>
               <div class="editor-info">
                 <div class="char-count">
-                  📄 {{ evaluationConfig.text_evaluation_prompt.length }} 字符
+                  📄 {{ evaluationConfig.text_evaluation_prompt?.length || 0 }} 字符
                 </div>
               </div>
             </div>
@@ -641,374 +687,625 @@
             </div>
           </div>
         </div>
+        </div>
+
+        <!-- 手动评测说明 -->
+        <div v-if="evaluationConfig.evaluation_mode === 'manual'" class="manual-evaluation-info">
+          <div class="info-card">
+            <div class="info-header">
+              <span class="info-icon">ℹ️</span>
+              <h4>手动评测说明</h4>
+            </div>
+            <div class="info-content">
+              <p>您将进入手动评测界面，需要对每个LLM生成的答案进行人工评分。</p>
+              <ul class="info-list">
+                <li>🎯 <strong>逐个评测</strong>：您将看到标准问答、得分点信息和LLM回答</li>
+                <li>📝 <strong>输入评分</strong>：为每个答案输入0-100分的评分</li>
+                <li>💭 <strong>判断理由</strong>：提供详细的评分理由和反馈</li>
+                <li>💾 <strong>自动保存</strong>：您的评测进度会实时保存，可随时退出和继续</li>
+                <li>🔄 <strong>灵活调整</strong>：已评测的内容可以随时修改</li>
+              </ul>
+              <div class="info-note">
+                <span class="note-icon">📌</span>
+                <span>手动评测过程中，您可以随时返回数据集市场，已评测的内容将被保存。</span>
+              </div>
+            </div>
+          </div>
+        </div>
         
         <!-- 操作按钮 -->
         <div class="card-actions">
           <button @click="prevStep" class="btn btn-secondary">
             ← 上一步
           </button>          
-          <button @click="startEvaluation" :disabled="!isEvaluationConfigValid || starting" class="btn btn-primary">
+          <button 
+            v-if="evaluationConfig.evaluation_mode === 'auto'"
+            @click="startEvaluation" 
+            :disabled="!isEvaluationConfigValid || starting" 
+            class="btn btn-primary"
+          >
             <span v-if="starting">⏳ 评测中...</span>
-            <span v-else>🚀 开始评测</span>
+            <span v-else>🚀 开始LLM评测</span>
+          </button>
+          <button 
+            v-if="evaluationConfig.evaluation_mode === 'manual'"
+            @click="startManualEvaluation" 
+            :disabled="starting" 
+            class="btn btn-primary"
+          >
+            <span v-if="starting">⏳ 准备中...</span>
+            <span v-else>👤 开始手动评测</span>
           </button>
         </div>
       </div>    
-    </div>    
-    <!-- 步骤5: 查看结果 -->
+    </div>      <!-- 步骤5: 查看结果 -->
     <div v-if="currentStep === 4" class="step-content">
-      <div class="evaluation-results">
-        <!-- 加载状态 -->
-        <div v-if="loadingDetailedResults" class="loading-state">
-          <div class="loading-spinner"></div>
-          <p>正在加载详细结果...</p>
+      <div class="content-card">
+        <div class="card-header">
+          <h3>📊 评测完成</h3>
+          <p>评测任务已完成，您可以查看详细结果或进行其他操作</p>
+        </div>
+        
+        <!-- 任务概览 -->
+        <div v-if="evaluationTask" class="task-overview">
+          <div class="overview-grid">
+            <div class="overview-card">
+              <div class="overview-icon">📝</div>
+              <div class="overview-info">
+                <h4>{{ evaluationTask?.task_name || evaluationTask?.name }}</h4>
+                <p>任务状态: <span class="status-badge" :class="getStatusType(evaluationTask?.status)">
+                  {{ getStatusText(evaluationTask?.status) }}
+                </span></p>
+              </div>
+            </div>
+            
+            <div class="overview-card" v-if="detailedResults?.statistics">
+              <div class="overview-icon">📊</div>
+              <div class="overview-info">
+                <h4>评测统计</h4>
+                <p>总答案: {{ detailedResults.statistics.total_answers }}</p>
+                <p>平均分: {{ detailedResults.statistics.average_score?.toFixed(1) || 'N/A' }}</p>
+              </div>
+            </div>
+          </div>
+        </div>
+        
+        <!-- 操作按钮 -->
+        <div class="result-actions">
+          <button @click="showDetailedResults" class="btn btn-primary">
+            📋 查看详细结果
+          </button>
+          <button 
+            v-if="evaluationTask && evaluationTask?.status === 'completed'"
+            @click="downloadResults"
+            class="btn btn-success"
+          >
+            📥 下载完整结果
+          </button>
+          <button @click="backToMarketplace" class="btn btn-secondary">
+            返回数据集市场
+          </button>        </div> <!-- 自动评测流程结束 -->
+      </div>
+    </div>
+
+    <!-- 手动评测界面 -->
+    <div v-if="currentStep === 3 && isManualEvaluating" class="manual-evaluation-interface">
+      <div class="content-card">
+        <div class="card-header">
+          <h3>👤 手动评测界面</h3>
+          <p>请对每个LLM生成的答案进行人工评分和评价</p>
         </div>
 
-        <!-- 详细结果显示 -->
-        <div v-else-if="detailedResults" class="detailed-results">
-          <!-- 头部操作 -->
-          <div class="top-actions">
-            <button @click="backToMarketplace" class="btn btn-secondary">返回数据集市场</button>
+        <!-- 进度信息 -->
+        <div class="manual-progress">
+          <div class="progress-header">
+            <div class="progress-info">
+              <span class="current-index">第 {{ currentAnswerIndex + 1 }} 题</span>
+              <span class="total-count">共 {{ manualEvaluationAnswers.length }} 题</span>
+            </div>
+            <div class="progress-percentage">
+              {{ manualEvaluationAnswers.length ? Math.round(((currentAnswerIndex + 1) / manualEvaluationAnswers.length) * 100) : 0 }}%
+            </div>
+          </div>
+          <div class="progress-bar">
+            <div 
+              class="progress-fill"
+              :style="{ width: manualEvaluationAnswers.length ? ((currentAnswerIndex + 1) / manualEvaluationAnswers.length) * 100 + '%' : '0%' }"
+            ></div>
+          </div>
+        </div>
+
+        <!-- 题目内容 -->
+        <div v-if="getCurrentQuestion()" class="question-section">
+          <div class="question-header">
+            <h4>📝 题目内容</h4>
+            <div class="question-type-badge">
+              {{ getCurrentQuestion().question_type === 'choice' ? '选择题' : '文本题' }}
+            </div>
+          </div>
+          <div class="question-content">
+            <div class="question-body">
+              {{ getCurrentQuestion().body }}
+            </div>
+            <!-- 选择题选项 -->
+            <div v-if="getCurrentQuestion().question_type === 'choice' && getCurrentQuestion().choices" class="choices-section">
+              <h5>选项：</h5>
+              <div class="choices-list">
+                <div 
+                  v-for="(choice, index) in getCurrentQuestion().choices" 
+                  :key="index"
+                  class="choice-item"
+                  :class="{ 'correct': choice.is_correct }"
+                >
+                  <span class="choice-label">{{ String.fromCharCode(65 + index) }}.</span>
+                  <span class="choice-text">{{ choice.text }}</span>
+                  <span v-if="choice.is_correct" class="correct-mark">✓ 正确答案</span>
+                </div>
+              </div>
+            </div>
+          </div>
+        </div>
+
+        <!-- 标准答案信息 -->
+        <div v-if="getCurrentAnswer()?.std_answer" class="standard-answer-section">
+          <h4>📋 标准答案</h4>
+          <div class="standard-answer-content">
+            <div class="answer-text">
+              {{ getCurrentAnswer().std_answer.answer }}
+            </div>
+            <div v-if="getCurrentAnswer().std_answer.scoring_points" class="scoring-points">
+              <h5>评分要点：</h5>
+              <ul class="scoring-points-list">
+                <li 
+                  v-for="point in getCurrentAnswer().std_answer.scoring_points" 
+                  :key="point.id"
+                  class="scoring-point"
+                >
+                  <span class="point-text">{{ point.scoring_point_text }}</span>
+                  <span class="point-score">({{ point.score }}分)</span>
+                </li>
+              </ul>
+            </div>
+          </div>
+        </div>
+
+        <!-- LLM答案 -->
+        <div v-if="getCurrentAnswer()" class="llm-answer-section">
+          <h4>🤖 LLM回答</h4>
+          <div class="llm-answer-content">
+            <div class="answer-text">
+              {{ getCurrentAnswer().answer }}
+            </div>
+            <div class="answer-meta">
+              <span class="model-info">模型：{{ getCurrentAnswer().model_name }}</span>
+              <span class="generated-time">生成时间：{{ formatDateTime(getCurrentAnswer().created_at) }}</span>
+            </div>
+          </div>
+        </div>
+
+        <!-- 评分表单 -->
+        <div v-if="getCurrentAnswer()" class="evaluation-form">
+          <h4>📊 评分</h4>
+          <div class="form-grid">
+            <div class="form-group">
+              <label class="form-label">分数 (0-100)</label>
+              <div class="score-input-container">
+                <input 
+                  v-model.number="getCurrentAnswer().manual_score" 
+                  type="number" 
+                  min="0" 
+                  max="100"
+                  class="form-input score-input"
+                  placeholder="请输入分数"
+                />
+                <div class="score-slider">
+                  <input 
+                    v-model.number="getCurrentAnswer().manual_score" 
+                    type="range" 
+                    min="0" 
+                    max="100"
+                    class="form-range"
+                  />
+                </div>
+              </div>
+            </div>
+            <div class="form-group">
+              <label class="form-label">评分理由</label>
+              <textarea 
+                v-model="getCurrentAnswer().manual_reasoning" 
+                rows="4"
+                class="form-textarea"
+                placeholder="请输入详细的评分理由和反馈..."
+              ></textarea>
+            </div>
+          </div>
+        </div>
+
+        <!-- 操作按钮 -->
+        <div class="manual-evaluation-actions">
+          <div class="navigation-buttons">
             <button 
-              v-if="evaluationTask && evaluationTask.status === 'completed'"
-              @click="downloadResults"
-              class="btn btn-success"
+              @click="previousAnswer" 
+              :disabled="currentAnswerIndex === 0"
+              class="btn btn-secondary"
             >
-              📥 下载完整结果
+              ← 上一题
+            </button>
+            <button 
+              @click="nextAnswer" 
+              :disabled="currentAnswerIndex >= manualEvaluationAnswers.length - 1"
+              class="btn btn-secondary"
+            >
+              下一题 →
             </button>
           </div>
+          
+          <div class="action-buttons">
+            <button 
+              @click="saveCurrentEvaluation" 
+              class="btn btn-info"
+            >
+              💾 保存当前评测
+            </button>
+            <button 
+              @click="exitManualEvaluation" 
+              class="btn btn-warning"
+            >
+              🚪 退出评测
+            </button>
+            <button 
+              @click="completeManualEvaluation" 
+              :disabled="!isAllEvaluated()"
+              class="btn btn-primary"
+            >
+              ✅ 完成评测
+            </button>
+          </div>
+        </div>
 
-          <!-- 任务基本信息 -->
-          <div class="task-info-section">
-            <div class="section-header">
-              <h3>📋 任务信息</h3>
-              <span class="status-tag" :class="getStatusType(detailedResults.task_info.status)">
-                {{ getStatusText(detailedResults.task_info.status) }}
-              </span>
-            </div>
-            
-            <div class="task-info-grid">
-              <div class="info-card">
-                <div class="info-item">
-                  <label>任务名称</label>
-                  <span>{{ detailedResults.task_info.name }}</span>
-                </div>
-                <div class="info-item">
-                  <label>数据集</label>
-                  <span>{{ detailedResults.task_info.dataset_name }}</span>
-                </div>
-                <div class="info-item">
-                  <label>模型</label>
-                  <span>{{ detailedResults.task_info.model_name }}</span>
-                  <span v-if="detailedResults.task_info.model_version" class="model-version">
-                    v{{ detailedResults.task_info.model_version }}
-                  </span>
-                </div>
-              </div>
-              
-              <div class="info-card">
-                <div class="info-item">
-                  <label>创建时间</label>
-                  <span>{{ formatDateTime(detailedResults.task_info.created_at) }}</span>
-                </div>
-                <div class="info-item">
-                  <label>开始时间</label>
-                  <span>{{ formatDateTime(detailedResults.task_info.started_at) }}</span>
-                </div>
-                <div class="info-item">
-                  <label>完成时间</label>
-                  <span>{{ formatDateTime(detailedResults.task_info.completed_at) }}</span>
-                </div>
-              </div>
+        <!-- 评测完成状态 -->
+        <div v-if="isAllEvaluated()" class="completion-notice">
+          <div class="notice-card">
+            <span class="notice-icon">🎉</span>
+            <div class="notice-content">
+              <h5>评测完成</h5>
+              <p>所有答案已评测完成，您可以点击"完成评测"按钮提交结果。</p>
             </div>
           </div>
+        </div>
+      </div>
+    </div>
 
-          <!-- 配置参数 -->
-          <div class="configuration-section">
-            <div class="section-header">
-              <h3>⚙️ 配置参数</h3>
-            </div>
-            
-            <div class="config-grid">
-              <div class="config-card">
-                <h4>🤖 模型参数</h4>
-                <div class="config-items">
-                  <div class="config-item">
-                    <label>温度参数</label>
-                    <span>{{ detailedResults.configuration.temperature || 0.7 }}</span>
+    <!-- 详细结果弹窗 -->
+    <div v-if="showResultsDialog" class="modal-overlay" @click="showResultsDialog = false">
+      <div class="results-modal-content" @click.stop>
+        <div class="modal-header">
+          <h3>📊 详细评测结果</h3>
+          <button @click="showResultsDialog = false" class="modal-close">×</button>
+        </div>
+        
+        <div class="modal-body results-modal-body">
+          <!-- 加载状态 -->
+          <div v-if="loadingDetailedResults" class="loading-state">
+            <div class="loading-spinner"></div>
+            <p>正在加载详细结果...</p>
+          </div>
+
+          <!-- 详细结果显示 -->
+          <div v-else-if="detailedResults" class="detailed-results">
+            <!-- 任务基本信息 -->          
+            <div class="task-info-section">
+              <div class="section-header">
+                <h3>📋 任务信息</h3>
+                <span class="status-tag" :class="getStatusType(detailedResults?.task_info?.status)">
+                  {{ getStatusText(detailedResults?.task_info?.status) }}
+                </span>
+              </div>
+              
+              <div class="task-info-grid">
+                <div class="info-card">
+                  <div class="info-item">
+                    <label>任务名称</label>
+                    <span>{{ detailedResults?.task_info?.name }}</span>
                   </div>
-                  <div class="config-item">
-                    <label>最大Token数</label>
-                    <span>{{ detailedResults.configuration.max_tokens || 2000 }}</span>
+                  <div class="info-item">
+                    <label>数据集</label>
+                    <span>{{ detailedResults?.task_info?.dataset_name }}</span>
                   </div>
-                  <div class="config-item">
-                    <label>Top-K采样</label>
-                    <span>{{ detailedResults.configuration.top_k || 50 }}</span>
-                  </div>
-                  <div class="config-item">
-                    <label>推理模式</label>
-                    <span class="boolean-value" :class="detailedResults.configuration.enable_reasoning ? 'enabled' : 'disabled'">
-                      {{ detailedResults.configuration.enable_reasoning ? '启用' : '禁用' }}
+                  <div class="info-item">
+                    <label>模型</label>
+                    <span>{{ detailedResults?.task_info?.model_name }}</span>
+                    <span v-if="detailedResults?.task_info?.model_version" class="model-version">
+                      v{{ detailedResults?.task_info?.model_version }}
                     </span>
                   </div>
                 </div>
+                
+                <div class="info-card">
+                  <div class="info-item">
+                    <label>创建时间</label>
+                    <span>{{ formatDateTime(detailedResults?.task_info?.created_at) }}</span>
+                  </div>
+                  <div class="info-item">
+                    <label>开始时间</label>
+                    <span>{{ formatDateTime(detailedResults?.task_info?.started_at) }}</span>
+                  </div>
+                  <div class="info-item">
+                    <label>完成时间</label>
+                    <span>{{ formatDateTime(detailedResults?.task_info?.completed_at) }}</span>
+                  </div>
+                </div>
               </div>
             </div>
-          </div>
 
-          <!-- 提示词信息 -->
-          <div class="prompts-section">
-            <div class="section-header">
-              <h3>💬 提示词配置</h3>
-            </div>
-            
-            <div class="prompts-grid">
-              <div class="prompt-card">
-                <h4>系统Prompt</h4>
-                <div class="prompt-content">
-                  <pre>{{ detailedResults.configuration.system_prompt || '未设置系统Prompt' }}</pre>
-                </div>
+            <!-- 配置参数 -->
+            <div class="configuration-section">
+              <div class="section-header">
+                <h3>⚙️ 配置参数</h3>
               </div>
               
-              <div class="prompt-card">
-                <h4>评估Prompt</h4>
-                <div class="prompt-content">
-                  <pre>{{ detailedResults.configuration.evaluation_prompt || '未设置评估Prompt' }}</pre>
-                </div>
-              </div>
-            </div>
-          </div>
-
-          <!-- 统计概览 -->
-          <div class="statistics-section">
-            <div class="section-header">
-              <h3>📊 统计概览</h3>
-            </div>
-            
-            <div class="stats-grid">
-              <div class="stat-card">
-                <div class="stat-icon">📝</div>
-                <div class="stat-info">
-                  <div class="stat-value">{{ detailedResults.statistics.total_answers }}</div>
-                  <div class="stat-label">总答案数</div>
-                </div>
-              </div>
-              
-              <div class="stat-card">
-                <div class="stat-icon">✅</div>
-                <div class="stat-info">
-                  <div class="stat-value">{{ detailedResults.statistics.valid_answers }}</div>
-                  <div class="stat-label">有效答案</div>
-                </div>
-              </div>
-              
-              <div class="stat-card">
-                <div class="stat-icon">🎯</div>
-                <div class="stat-info">
-                  <div class="stat-value">{{ detailedResults.statistics.evaluated_answers }}</div>
-                  <div class="stat-label">已评分答案</div>
-                </div>
-              </div>
-              
-              <div class="stat-card overall-score">
-                <div class="stat-icon">🏆</div>
-                <div class="stat-info">
-                  <div class="stat-value">{{ detailedResults.statistics.overall_average_score }}</div>
-                  <div class="stat-label">平均分数</div>
-                </div>
-              </div>
-              
-              <div class="stat-card">
-                <div class="stat-icon">📈</div>
-                <div class="stat-info">
-                  <div class="stat-value">{{ Math.round(detailedResults.statistics.completion_rate * 100) }}%</div>
-                  <div class="stat-label">完成率</div>
-                </div>
-              </div>
-            </div>
-          </div>
-
-          <!-- 详细答案列表 -->
-          <div class="detailed-answers-section">
-            <div class="section-header">
-              <h3>📋 详细答案列表</h3>
-              <div class="section-actions">
-                <select v-model="pageSize" class="page-size-select">
-                  <option value="10">10/页</option>
-                  <option value="20">20/页</option>
-                  <option value="50">50/页</option>
-                </select>
-              </div>
-            </div>
-            
-            <div class="answers-table-container">
-              <table class="detailed-answers-table">
-                <thead>
-                  <tr>
-                    <th>序号</th>
-                    <th>问题类型</th>
-                    <th>问题内容</th>
-                    <th>模型回答</th>
-                    <th>标准答案</th>
-                    <th>评分</th>
-                    <th>操作</th>
-                  </tr>
-                </thead>
-                <tbody>
-                  <tr v-for="(answer, index) in paginatedDetailedAnswers" :key="answer.question_id">
-                    <td>{{ (currentPage - 1) * pageSize + index + 1 }}</td>
-                    <td>
-                      <span class="question-type-badge" :class="answer.question_type">
-                        {{ getQuestionTypeText(answer.question_type) }}
+              <div class="config-grid">
+                <div class="config-card">
+                  <h4>🤖 模型参数</h4>
+                  <div class="config-items">
+                    <div class="config-item">
+                      <label>温度参数</label>
+                      <span>{{ detailedResults?.configuration?.temperature || 0.7 }}</span>
+                    </div>
+                    <div class="config-item">
+                      <label>最大Token数</label>
+                      <span>{{ detailedResults?.configuration?.max_tokens || 2000 }}</span>
+                    </div>
+                    <div class="config-item">
+                      <label>Top-K采样</label>
+                      <span>{{ detailedResults?.configuration?.top_k || 50 }}</span>
+                    </div>
+                    <div class="config-item">
+                      <label>推理模式</label>
+                      <span class="boolean-value" :class="detailedResults?.configuration?.enable_reasoning ? 'enabled' : 'disabled'">
+                        {{ detailedResults?.configuration?.enable_reasoning ? '启用' : '禁用' }}
                       </span>
-                    </td>
-                    <td class="question-cell">
-                      <div class="question-text">{{ answer.question_text }}</div>
-                    </td>
-                    <td class="answer-cell">
-                      <div class="answer-text">{{ answer.llm_answer.answer }}</div>
-                      <div v-if="!answer.llm_answer.is_valid" class="invalid-badge">无效答案</div>
-                    </td>
-                    <td class="standard-answers-cell">
-                      <div v-for="stdAnswer in answer.standard_answers" :key="stdAnswer.id" class="standard-answer">
-                        <div class="std-answer-text">{{ stdAnswer.answer }}</div>
-                        <div v-if="stdAnswer.scoring_points && stdAnswer.scoring_points.length > 0" class="scoring-points">
-                          <span v-for="point in stdAnswer.scoring_points" :key="point.point_order" class="scoring-point">
-                            {{ point.answer }}
-                          </span>
-                        </div>
-                      </div>
-                    </td>
-                    <td class="score-cell">
-                      <div v-if="answer.evaluations && answer.evaluations.length > 0">
-                        <div v-for="evaluation in answer.evaluations" :key="evaluation.id" class="evaluation-score">
-                          <span class="score-value" :class="getScoreClass(evaluation.score)">
-                            {{ evaluation.score || '-' }}
-                          </span>
-                          <span class="evaluator-type">
-                            {{ evaluation.evaluator_type === 'llm' ? 'LLM' : '人工' }}
-                          </span>
-                        </div>
-                        <div class="average-score">
-                          平均: {{ answer.average_score }}
-                        </div>
-                      </div>
-                      <span v-else class="no-score">未评分</span>
-                    </td>
-                    <td>
-                      <button @click="viewDetailedEvaluation(answer)" class="btn btn-small btn-info">
-                        查看详情
-                      </button>
-                    </td>
-                  </tr>
-                </tbody>
-              </table>
+                    </div>
+                  </div>
+                </div>
+              </div>
             </div>
-            
-            <!-- 分页控件 -->
-            <div class="pagination">
-              <div class="pagination-controls">
-                <button 
-                  @click="currentPage = 1" 
-                  :disabled="currentPage === 1"
-                  class="btn btn-small btn-secondary"
-                >
-                  首页
-                </button>
-                <button 
-                  @click="currentPage--" 
-                  :disabled="currentPage === 1"
-                  class="btn btn-small btn-secondary"
-                >
-                  上一页
-                </button>
-                <span class="page-info">
-                  第 {{ currentPage }} 页，共 {{ Math.ceil(detailedResults.detailed_answers.length / pageSize) }} 页
-                </span>
-                <button 
-                  @click="currentPage++" 
-                  :disabled="currentPage >= Math.ceil(detailedResults.detailed_answers.length / pageSize)"
-                  class="btn btn-small btn-secondary"
-                >
-                  下一页
-                </button>
-                <button 
-                  @click="currentPage = Math.ceil(detailedResults.detailed_answers.length / pageSize)" 
-                  :disabled="currentPage >= Math.ceil(detailedResults.detailed_answers.length / pageSize)"
-                  class="btn btn-small btn-secondary"
-                >
-                  末页
-                </button>
+
+            <!-- 提示词信息 -->
+            <div class="prompts-section">
+              <div class="section-header">
+                <h3>💬 提示词配置</h3>
               </div>
               
-              <div class="total-info">
-                共 {{ detailedResults.detailed_answers.length }} 条记录
+              <div class="prompts-grid">
+                <!-- 选择题系统Prompt -->
+                <div v-if="detailedResults?.prompts?.choice_system_prompt" class="prompt-card">
+                  <h4>选择题系统Prompt</h4>
+                  <div class="prompt-content">
+                    <pre>{{ detailedResults.prompts.choice_system_prompt }}</pre>
+                  </div>
+                </div>
+                
+                <!-- 文本题系统Prompt -->
+                <div v-if="detailedResults?.prompts?.text_system_prompt" class="prompt-card">
+                  <h4>文本题系统Prompt</h4>
+                  <div class="prompt-content">
+                    <pre>{{ detailedResults.prompts.text_system_prompt }}</pre>
+                  </div>
+                </div>
+                
+                <!-- 兼容旧的系统Prompt -->
+                <div v-if="!detailedResults?.prompts?.choice_system_prompt && !detailedResults?.prompts?.text_system_prompt && detailedResults?.configuration?.system_prompt" class="prompt-card">
+                  <h4>系统Prompt</h4>
+                  <div class="prompt-content">
+                    <pre>{{ detailedResults.configuration.system_prompt }}</pre>
+                  </div>
+                </div>
+                
+                <!-- 选择题评估Prompt -->
+                <div v-if="detailedResults?.prompts?.choice_evaluation_prompt" class="prompt-card">
+                  <h4>选择题评估Prompt</h4>
+                  <div class="prompt-content">
+                    <pre>{{ detailedResults.prompts.choice_evaluation_prompt }}</pre>
+                  </div>
+                </div>
+                
+                <!-- 文本题评估Prompt -->
+                <div v-if="detailedResults?.prompts?.text_evaluation_prompt" class="prompt-card">
+                  <h4>文本题评估Prompt</h4>
+                  <div class="prompt-content">
+                    <pre>{{ detailedResults.prompts.text_evaluation_prompt }}</pre>
+                  </div>
+                </div>
+                
+                <!-- 兼容旧的评估Prompt -->
+                <div v-if="!detailedResults?.prompts?.choice_evaluation_prompt && !detailedResults?.prompts?.text_evaluation_prompt && detailedResults?.configuration?.evaluation_prompt" class="prompt-card">
+                  <h4>评估Prompt</h4>
+                  <div class="prompt-content">
+                    <pre>{{ detailedResults.configuration.evaluation_prompt }}</pre>
+                  </div>
+                </div>
               </div>
             </div>
-          </div>
 
-          <!-- 操作按钮 -->
-          <div class="result-actions">
-            <button @click="restart" class="btn btn-secondary">重新开始评测</button>
-            <button @click="downloadDetailedResults" class="btn btn-success">
-              📥 下载详细结果
-            </button>
-            <button @click="downloadAnswersOnly" class="btn btn-info">
-              📄 下载答案数据
-            </button>
+            <!-- 统计概览 -->
+            <div class="statistics-section">
+              <div class="section-header">
+                <h3>📊 统计概览</h3>
+              </div>
+              
+              <div class="stats-grid">
+                <div class="stat-card">
+                  <div class="stat-icon">📝</div>
+                  <div class="stat-info">
+                    <div class="stat-value">{{ detailedResults?.statistics?.total_answers }}</div>
+                    <div class="stat-label">总答案数</div>
+                  </div>
+                </div>
+                
+                <div class="stat-card">
+                  <div class="stat-icon">✅</div>
+                  <div class="stat-info">
+                    <div class="stat-value">{{ detailedResults?.statistics?.valid_answers }}</div>
+                    <div class="stat-label">有效答案</div>
+                  </div>
+                </div>
+                
+                <div class="stat-card">
+                  <div class="stat-icon">🎯</div>
+                  <div class="stat-info">
+                    <div class="stat-value">{{ detailedResults?.statistics?.evaluated_answers }}</div>
+                    <div class="stat-label">已评分答案</div>
+                  </div>
+                </div>
+                
+                <div class="stat-card overall-score">
+                  <div class="stat-icon">🏆</div>
+                  <div class="stat-info">
+                    <div class="stat-value">{{ detailedResults?.statistics?.overall_average_score }}</div>
+                    <div class="stat-label">平均分数</div>
+                  </div>
+                </div>
+                
+                <div class="stat-card">
+                  <div class="stat-icon">📈</div>
+                  <div class="stat-info">
+                    <div class="stat-value">{{ Math.round((detailedResults?.statistics?.completion_rate || 0) * 100) }}%</div>
+                    <div class="stat-label">完成率</div>
+                  </div>
+                </div>
+              </div>
+            </div>
+
+            <!-- 详细答案列表 -->
+            <div class="detailed-answers-section">
+              <div class="section-header">
+                <h3>📋 详细答案列表</h3>
+                <div class="section-actions">
+                  <select v-model="pageSize" class="page-size-select">
+                    <option value="10">10/页</option>
+                    <option value="20">20/页</option>
+                    <option value="50">50/页</option>
+                  </select>
+                </div>
+              </div>
+              
+              <div class="answers-table-container">
+                <table class="detailed-answers-table">
+                  <thead>
+                    <tr>
+                      <th>序号</th>
+                      <th>问题类型</th>
+                      <th>问题内容</th>
+                      <th>模型回答</th>
+                      <th>标准答案</th>
+                      <th>评分</th>
+                      <th>操作</th>
+                    </tr>
+                  </thead>
+                  <tbody>
+                    <tr v-for="(answer, index) in paginatedDetailedAnswers" :key="answer.question_id">
+                      <td>{{ (currentPage - 1) * pageSize + index + 1 }}</td>
+                      <td>
+                        <span class="question-type-badge" :class="answer.question_type">
+                          {{ getQuestionTypeText(answer.question_type) }}
+                        </span>
+                      </td>
+                      <td class="question-cell">
+                        <div class="question-text">{{ answer.question_text }}</div>
+                      </td>
+                      <td class="answer-cell">
+                        <div class="answer-text">{{ answer.llm_answer.answer }}</div>
+                        <div v-if="!answer.llm_answer.is_valid" class="invalid-badge">无效答案</div>
+                      </td>
+                      <td class="standard-answers-cell">
+                        <div v-for="stdAnswer in answer.standard_answers" :key="stdAnswer.id" class="standard-answer">
+                          <div class="std-answer-text">{{ stdAnswer.answer }}</div>
+                          <div v-if="stdAnswer?.scoring_points && stdAnswer?.scoring_points?.length > 0" class="scoring-points">
+                            <span v-for="point in stdAnswer.scoring_points" :key="point.point_order" class="scoring-point">
+                              {{ point.answer }}
+                            </span>
+                          </div>
+                        </div>
+                      </td>
+                      <td class="score-cell">
+                        <div v-if="answer?.evaluations && answer?.evaluations?.length > 0">
+                          <div v-for="evaluation in answer.evaluations" :key="evaluation.id" class="evaluation-score">
+                            <span class="score-value" :class="getScoreClass(evaluation.score)">
+                              {{ evaluation.score || '-' }}
+                            </span>
+                            <span class="evaluator-type">
+                              {{ evaluation.evaluator_type === 'llm' ? 'LLM' : '人工' }}
+                            </span>
+                          </div>
+                          <div class="average-score">
+                            平均: {{ answer.average_score }}
+                          </div>
+                        </div>
+                        <span v-else class="no-score">未评分</span>
+                      </td>
+                      <td>
+                        <button @click="viewDetailedEvaluation(answer)" class="btn btn-small btn-info">
+                          查看详情
+                        </button>
+                      </td>
+                    </tr>
+                  </tbody>
+                </table>
+              </div>
+              
+              <!-- 分页控件 -->
+              <div class="pagination">
+                <div class="pagination-controls">
+                  <button 
+                    @click="currentPage = 1" 
+                    :disabled="currentPage === 1"
+                    class="btn btn-small btn-secondary"
+                  >
+                    首页
+                  </button>
+                  <button 
+                    @click="currentPage--" 
+                    :disabled="currentPage === 1"
+                    class="btn btn-small btn-secondary"
+                  >
+                    上一页
+                  </button>
+                  <span class="page-info">
+                    第 {{ currentPage }} 页，共 {{ Math.ceil((detailedResults?.detailed_answers?.length || 0) / pageSize) }} 页
+                  </span>
+                  <button 
+                    @click="currentPage++" 
+                    :disabled="currentPage >= Math.ceil((detailedResults?.detailed_answers?.length || 0) / pageSize)"
+                    class="btn btn-small btn-secondary"
+                  >
+                    下一页
+                  </button>
+                  <button 
+                    @click="currentPage = Math.ceil((detailedResults?.detailed_answers?.length || 0) / pageSize)" 
+                    :disabled="currentPage >= Math.ceil((detailedResults?.detailed_answers?.length || 0) / pageSize)"
+                    class="btn btn-small btn-secondary"
+                  >
+                    末页
+                  </button>
+                </div>
+                <div class="total-info">
+                  共 {{ detailedResults?.detailed_answers?.length || 0 }} 条记录
+                </div>
+              </div>
+            </div>
           </div>
         </div>
-
-        <!-- 简单进度显示（运行中时） -->
-        <div v-else-if="evaluationTask" class="simple-progress">
-          <h3>评测进度</h3>
-          <div class="progress-card">
-            <div class="progress-header">
-              <h4>{{ evaluationTask.task_name || '在线评测任务' }}</h4>
-              <span class="status-tag" :class="getStatusType(evaluationTask.status)">{{ getStatusText(evaluationTask.status) }}</span>
-            </div>
-            
-            <div class="stats-grid">
-              <div class="stat-item">
-                <div class="stat-value">{{ evaluationTask.total_questions }}</div>
-                <div class="stat-label">总问题数</div>
-              </div>
-              <div class="stat-item">
-                <div class="stat-value">{{ evaluationTask.completed_questions }}</div>
-                <div class="stat-label">已完成</div>
-              </div>
-              <div class="stat-item">
-                <div class="stat-value">{{ evaluationTask.failed_questions }}</div>
-                <div class="stat-label">失败数</div>
-              </div>
-            </div>
-            
-            <div class="progress-section">
-              <div class="progress-bar-container">
-                <div 
-                  class="progress-bar" 
-                  :style="{ width: (evaluationTask.progress || 0) + '%' }"
-                  :class="{ 
-                    success: evaluationTask.status === 'completed', 
-                    error: evaluationTask.status === 'failed' 
-                  }"
-                ></div>
-              </div>
-              <div class="progress-text">
-                {{ evaluationTask.progress || 0 }}%
-              </div>
-            </div>
-          </div>
-
-          <div class="step-actions">
-            <button @click="restart" class="btn btn-secondary">重新开始</button>
-            <button 
-              v-if="evaluationTask.status === 'running'"
-              @click="pauseEvaluation" 
-              class="btn btn-warning"
-            >
-              暂停评测
-            </button>
-          </div>
+        
+        <div class="modal-footer">
+          <button @click="downloadDetailedResults" class="btn btn-success">
+            📥 下载详细结果
+          </button>
+          <button @click="downloadAnswersOnly" class="btn btn-info">
+            📄 下载答案数据
+          </button>          <button @click="showResultsDialog = false" class="btn btn-secondary">
+            关闭
+          </button>
         </div>
       </div>
     </div>
@@ -1030,20 +1327,17 @@
             <p>{{ selectedAnswer.answer }}</p>
           </div>
 
-          <div v-if="answerEvaluations.length > 0" class="evaluations">
+          <div v-if="answerEvaluations?.length > 0" class="evaluations">
             <h4>评测结果</h4>
             <div v-for="evaluation in answerEvaluations" :key="evaluation.id" class="evaluation-item">
               <div class="evaluation-card">
                 <div class="eval-header">
-                  <span class="score">{{ evaluation.score }}分</span>                  <span class="eval-type" :class="evaluation.evaluator_type === 'user' ? 'user-eval' : 'llm-eval'">
+                  <span class="score">{{ evaluation.score }}分</span>
+                  <span class="eval-type" :class="evaluation.evaluator_type === 'user' ? 'user-eval' : 'llm-eval'">
                     {{ evaluation.evaluator_type === 'user' ? '人工评测' : 'LLM评测' }}
                   </span>
-                </div>
-                <div v-if="evaluation.feedback" class="feedback">
-                  <p><strong>反馈：</strong>{{ evaluation.feedback }}</p>
-                </div>
-                <div v-if="evaluation.evaluation_criteria" class="criteria">
-                  <p><strong>评测标准：</strong>{{ evaluation.evaluation_criteria }}</p>
+                </div>                <div v-if="evaluation.reasoning" class="criteria">
+                  <p><strong>评测理由：</strong>{{ evaluation.reasoning }}</p>
                 </div>
               </div>
             </div>
@@ -1062,22 +1356,12 @@
                 class="form-range"
               />
             </div>
-            <div class="form-group">
-              <label class="form-label">评测标准</label>
+            <div class="form-group">              <label class="form-label">评测理由</label>
               <textarea 
-                v-model="manualEvaluation.evaluation_criteria" 
+                v-model="manualEvaluation.reasoning" 
                 rows="3"
                 class="form-textarea"
-                placeholder="请输入评测标准..."
-              ></textarea>
-            </div>
-            <div class="form-group">
-              <label class="form-label">反馈意见</label>
-              <textarea 
-                v-model="manualEvaluation.feedback" 
-                rows="3"
-                class="form-textarea"
-                placeholder="请输入反馈意见..."
+                placeholder="请输入评测理由..."
               ></textarea>
             </div>
           </div>
@@ -1106,20 +1390,19 @@
       </div>
     </div>    <!-- 评测进度弹窗 -->
     <div v-if="showProgressDialog" class="modal-overlay" @click="closeProgressDialog">
-      <div class="progress-modal-content" @click.stop>        <div class="progress-modal-header">
+      <div class="progress-modal-content" @click.stop>
+        <div class="progress-modal-header">
           <h3 v-if="currentTaskType === 'answer_generation'">🤖 正在生成答案</h3>
           <h3 v-else-if="currentTaskType === 'evaluation'">⚖️ 正在进行评测</h3>
           <h3 v-else>📊 任务进度</h3>
           <button @click="closeProgressDialog" class="modal-close">×</button>
         </div>
         
-        <div class="progress-modal-body">
-          <div v-if="evaluationTask" class="progress-info">
+        <div class="progress-modal-body">          <div v-if="evaluationTask" class="progress-info">
             <div class="task-info">
-              <h4>{{ evaluationTask.task_name || '在线评测任务' }}</h4>
-              <div class="status-info">
-                <span class="status-badge" :class="getStatusType(evaluationTask.status)">
-                  {{ getStatusText(evaluationTask.status) }}
+              <h4>{{ evaluationTask?.task_name || '在线评测任务' }}</h4>
+              <div class="status-info">                <span class="status-badge" :class="getStatusType(evaluationTask?.status)">
+                  {{ getStatusText(evaluationTask?.status) }}
                 </span>
               </div>
             </div>
@@ -1129,69 +1412,74 @@
               <div class="progress-stats">
                 <div class="stat-item">
                   <span class="stat-label">总题数</span>
-                  <span class="stat-value">{{ evaluationTask.total_questions || 0 }}</span>
+                  <span class="stat-value">{{ evaluationTask?.total_questions || 0 }}</span>
                 </div>
                 <div class="stat-item">
                   <span class="stat-label">已完成</span>
-                  <span class="stat-value">{{ evaluationTask.completed_questions || 0 }}</span>
+                  <span class="stat-value">{{ evaluationTask?.completed_questions || 0 }}</span>
                 </div>
                 <div class="stat-item">
                   <span class="stat-label">失败数</span>
-                  <span class="stat-value">{{ evaluationTask.failed_questions || 0 }}</span>
+                  <span class="stat-value">{{ evaluationTask?.failed_questions || 0 }}</span>
                 </div>
               </div>
               
               <div class="progress-bar-container">
-                <div class="progress-bar">
-                  <div 
+                <div class="progress-bar">                  <div 
                     class="progress-fill" 
-                    :style="{ width: (evaluationTask.progress || 0) + '%' }"
+                    :style="{ width: (evaluationTask?.progress || 0) + '%' }"
                     :class="{ 
-                      'progress-success': evaluationTask.status === 'completed',
-                      'progress-error': evaluationTask.status === 'failed'
+                      'progress-success': evaluationTask?.status === 'completed',
+                      'progress-error': evaluationTask?.status === 'failed'
                     }"
                   ></div>
                 </div>
                 <div class="progress-text">
-                  {{ evaluationTask.progress || 0 }}%
+                  {{ evaluationTask?.progress || 0 }}%
                 </div>
               </div>
-            </div>
-
-            <!-- 实时信息 -->
+            </div>            <!-- 实时信息 -->
             <div v-if="taskProgress" class="real-time-info">
               <div class="info-grid">
-                <div class="info-item" v-if="taskProgress.questions_per_minute">
+                <div class="info-item" v-if="taskProgress?.questions_per_minute">
                   <label>处理速度:</label>
-                  <span>{{ taskProgress.questions_per_minute.toFixed(1) }}题/分钟</span>
+                  <span>{{ taskProgress?.questions_per_minute?.toFixed(1) }}题/分钟</span>
                 </div>
-                <div class="info-item" v-if="taskProgress.estimated_remaining_time">
+                <div class="info-item" v-if="taskProgress?.estimated_remaining_time">
                   <label>预计剩余:</label>
-                  <span>{{ formatTime(taskProgress.estimated_remaining_time) }}</span>
+                  <span>{{ formatTime(taskProgress?.estimated_remaining_time) }}</span>
                 </div>
-                <div class="info-item" v-if="taskProgress.average_score">
+                <div class="info-item" v-if="taskProgress?.average_score">
                   <label>平均分数:</label>
-                  <span>{{ taskProgress.average_score.toFixed(1) }}分</span>
+                  <span>{{ taskProgress?.average_score?.toFixed(1) }}分</span>
                 </div>
               </div>
-            </div>
-
-            <!-- 最新回答预览 -->
-            <div v-if="taskProgress && taskProgress.latest_answer" class="latest-answer">
-              <div class="answer-preview">
-                <h5>最新回答预览</h5>
-                <div class="answer-content">
-                  {{ taskProgress.latest_answer.substring(0, 100) }}
-                  <span v-if="taskProgress.latest_answer.length > 100">...</span>
+            </div>            <!-- 最新内容预览 -->
+            <div v-if="taskProgress && (taskProgress?.latest_content || taskProgress?.latest_answer)" class="latest-content">
+              <div class="content-preview">
+                <h5 v-if="currentTaskType === 'answer_generation' || taskProgress?.latest_content_type === 'answer'">📝 最新答案预览</h5>
+                <h5 v-else-if="currentTaskType === 'evaluation' || taskProgress?.latest_content_type === 'evaluation'">⚖️ 最新评测结果</h5>
+                <h5 v-else>📋 最新内容</h5>
+                <div class="content-body">
+                  <!-- 优先显示 latest_content，如果没有则回退到 latest_answer -->
+                  <div v-if="taskProgress?.latest_content" class="content-text">
+                    {{ taskProgress.latest_content }}
+                  </div>
+                  <div v-else-if="taskProgress?.latest_answer" class="content-text">
+                    {{ taskProgress.latest_answer.substring(0, 200) }}
+                    <span v-if="taskProgress.latest_answer.length > 200">...</span>
+                  </div>
+                  <!-- 显示评分 -->
+                  <div v-if="taskProgress?.latest_score !== null && taskProgress?.latest_score !== undefined" class="score-info">
+                    <span class="score-badge">评分: {{ taskProgress.latest_score }}/100</span>
+                  </div>
                 </div>
               </div>
-            </div>
-
-            <!-- 错误信息 -->
-            <div v-if="evaluationTask.status === 'failed' && evaluationTask.error_message" class="error-info">
+            </div><!-- 错误信息 -->
+            <div v-if="evaluationTask?.status === 'failed' && evaluationTask?.error_message" class="error-info">
               <div class="error-card">
                 <h5>❌ 评测失败</h5>
-                <p>{{ evaluationTask.error_message }}</p>
+                <p>{{ evaluationTask?.error_message }}</p>
               </div>
             </div>
           </div>
@@ -1202,13 +1490,14 @@
             返回主界面
           </button>
           <button 
-            v-if="evaluationTask && evaluationTask.status === 'running'" 
+            v-if="evaluationTask && evaluationTask?.status === 'running'" 
             @click="pauseEvaluation" 
             class="btn btn-warning"
           >
-            暂停评测          </button>
+            暂停评测          
+          </button>          
           <button 
-            v-if="evaluationTask && evaluationTask.status === 'completed'" 
+            v-if="evaluationTask && evaluationTask?.status === 'completed'" 
             @click="viewResultsFromProgress" 
             class="btn btn-primary"
           >
@@ -1222,7 +1511,7 @@
 </template>
 
 <script setup lang="ts">
-import { ref, reactive, computed, onMounted, onUnmounted } from 'vue'
+import { ref, reactive, computed, watch, onMounted, onUnmounted } from 'vue'
 import { useRoute, useRouter } from 'vue-router'
 import { llmEvaluationService } from '@/services/llmEvaluationService'
 import ManualEvaluationEntry from '@/components/ManualEvaluationEntry.vue'
@@ -1325,7 +1614,8 @@ const answerGenerationTask = ref<any>(null)
 // 评测配置（分选择题和文本题）
 const evaluationConfig = reactive({
   choice_evaluation_prompt: '',
-  text_evaluation_prompt: ''
+  text_evaluation_prompt: '',
+  evaluation_mode: 'auto' // 默认使用自动评测
 })
 
 const activeEvaluationTab = ref('choice')
@@ -1343,6 +1633,9 @@ const evaluationTask = ref<any>(null)
 const taskProgress = ref<any>(null)
 const llmAnswers = ref<any[]>([])
 const starting = ref(false)
+const isManualEvaluating = ref(false) // 手动评测状态
+const manualEvaluationAnswers = ref<any[]>([]) // 手动评测答案列表
+const currentAnswerIndex = ref(0) // 当前评测的答案索引
 
 // 详细结果数据
 const detailedResults = ref<any>(null)
@@ -1357,7 +1650,8 @@ let progressTimer: number | null = null
 
 // 对话框相关
 const showEvaluationDialog = ref(false)
-const showProgressDialog = ref(false) // 新增进度弹窗控制
+const showProgressDialog = ref(false) // 进度弹窗控制
+const showResultsDialog = ref(false) // 详细结果弹窗控制
 const currentTaskType = ref<'answer_generation' | 'evaluation'>('answer_generation') // 跟踪当前任务类型
 const selectedAnswer = ref<any>(null)
 const answerEvaluations = ref<any[]>([])
@@ -1365,13 +1659,16 @@ const autoEvaluating = ref(false)
 const submittingEvaluation = ref(false)
 const manualEvaluation = reactive({
   score: 80,
-  feedback: '',
-  evaluation_criteria: ''
+  reasoning: ''
 })
 
 // 计算属性
 const selectedModel = computed(() => {
   return availableModels.value.find(m => m.id === modelConfig.model_id)
+})
+
+const isReasoningSupported = computed(() => {
+  return selectedModel.value?.enable_reasoning || false
 })
 
 const isModelConfigValid = computed(() => {
@@ -1387,15 +1684,13 @@ const textQuestionCount = computed(() => {
   return currentDataset.value?.text_question_count || 0
 })
 
-const isSystemPromptValid = computed(() => {
-  const hasChoicePrompt = choiceQuestionCount.value === 0 || systemPromptConfig.choice_system_prompt.trim()
-  const hasTextPrompt = textQuestionCount.value === 0 || systemPromptConfig.text_system_prompt.trim()
+const isSystemPromptValid = computed(() => {  const hasChoicePrompt = choiceQuestionCount.value === 0 || systemPromptConfig.choice_system_prompt?.trim()
+  const hasTextPrompt = textQuestionCount.value === 0 || systemPromptConfig.text_system_prompt?.trim()
   return hasChoicePrompt && hasTextPrompt
 })
 
-const isEvaluationConfigValid = computed(() => {
-  const hasChoiceEvaluation = choiceQuestionCount.value === 0 || evaluationConfig.choice_evaluation_prompt.trim()
-  const hasTextEvaluation = textQuestionCount.value === 0 || evaluationConfig.text_evaluation_prompt.trim()
+const isEvaluationConfigValid = computed(() => {  const hasChoiceEvaluation = choiceQuestionCount.value === 0 || evaluationConfig.choice_evaluation_prompt?.trim()
+  const hasTextEvaluation = textQuestionCount.value === 0 || evaluationConfig.text_evaluation_prompt?.trim()
   return hasChoiceEvaluation && hasTextEvaluation
 })
 
@@ -1404,7 +1699,7 @@ const isAnswerGenerationCompleted = computed(() => {
   if (!answerGenerationTask.value) return false
   
   // 如果任务状态是 evaluating_answers，说明答案生成已完成，进入评测阶段
-  return answerGenerationTask.value.status === 'evaluating_answers'
+  return answerGenerationTask.value?.status === 'evaluating_answers'
 })
 
 // 计算步骤锁定状态
@@ -1413,8 +1708,7 @@ const isStepLocked = computed(() => {
     // 如果没有恢复的任务，不锁定任何步骤
     if (!evaluationTask.value) return false
     
-    const taskStatus = evaluationTask.value.status
-      // 根据任务状态确定已完成的步骤
+    const taskStatus = evaluationTask.value?.status      // 根据任务状态确定已完成的步骤
     const completedSteps: number[] = []
       switch (taskStatus) {
       case 'config_prompts':
@@ -1422,6 +1716,9 @@ const isStepLocked = computed(() => {
         break      
       case 'generating_answers':
         completedSteps.push(0, 1) // 参数配置和提示词配置已完成，正在生成答案
+        break
+      case 'answers_generated':
+        completedSteps.push(0, 1, 2) // 前三步已完成，答案生成完成，等待评测配置
         break
       case 'evaluating_answers':
         completedSteps.push(0, 1, 2) // 前三步已完成，答案生成完成，等待评测配置
@@ -1462,7 +1759,7 @@ const getSampleQuestion = () => {
 const paginatedAnswers = computed(() => {
   const start = (currentPage.value - 1) * pageSize.value
   const end = start + pageSize.value
-  return llmAnswers.value.slice(start, end)
+  return llmAnswers.value?.slice(start, end) || []
 })
 
 // 详细结果分页
@@ -1470,7 +1767,7 @@ const paginatedDetailedAnswers = computed(() => {
   if (!detailedResults.value || !detailedResults.value.detailed_answers) return []
   const start = (currentPage.value - 1) * pageSize.value
   const end = start + pageSize.value
-  return detailedResults.value.detailed_answers.slice(start, end)
+  return detailedResults.value.detailed_answers?.slice(start, end) || []
 })
 
 // 费用预估相关计算
@@ -1497,7 +1794,7 @@ const estimatedCost = computed(() => {
 // 添加一个方法来查看任务进度
 const viewTaskProgress = () => {
   if (evaluationTask.value) {
-    const status = evaluationTask.value.status
+    const status = evaluationTask.value?.status
     
     if (status === 'completed') {
       // 已完成 - 直接跳转到结果页面
@@ -1529,6 +1826,15 @@ const viewTaskProgress = () => {
     }
   }
 }
+
+// 监听器
+// 当模型选择变化时，检查推理支持并自动禁用推理模式
+watch(selectedModel, (newModel, oldModel) => {
+  if (newModel && !newModel.enable_reasoning && modelConfig.enable_reasoning) {
+    modelConfig.enable_reasoning = false
+    showMessage('当前模型不支持推理模式，已自动禁用', 'warning')
+  }
+}, { immediate: true })
 
 // 生命周期
 onMounted(async () => {
@@ -1587,7 +1893,7 @@ const resumeTask = async (taskId: number) => {
       return
     }
     
-    console.log('恢复任务:', task.name, '状态:', task.status)
+    console.log('恢复任务:', task?.name, '状态:', task?.status)
     
     // 设置evaluationTask用于步骤锁定逻辑
     evaluationTask.value = task
@@ -1624,39 +1930,39 @@ const resumeTask = async (taskId: number) => {
         evaluationConfig.choice_evaluation_prompt = task.evaluation_prompt
       }
       if (textQuestionCount.value > 0) {
-        evaluationConfig.text_evaluation_prompt = task.evaluation_prompt
-      }
-    }    // 根据任务状态决定显示内容
-    if (task.status === 'generating_answers') {
+        evaluationConfig.text_evaluation_prompt = task.evaluation_prompt      }
+    }
+    
+    // 根据任务状态决定显示内容
+    if (task?.status === 'generating_answers') {
       // 正在生成答案 - 显示第三阶段并弹出答案生成进度弹窗
       currentStep.value = 2
       currentTaskType.value = 'answer_generation'
       showProgressDialog.value = true      
       startProgressPolling()
       showMessage('正在生成答案，请查看进度...', 'info')
-      
-    } else if (task.status === 'evaluating_answers') {
+    } else if (task?.status === 'evaluating_answers') {
       // 答案生成完成，进入评测阶段 - 跳转到评测配置步骤
       currentStep.value = 3
       answerGenerationTask.value = task // 设置答案生成任务，用于评测
       showMessage('答案生成已完成，请配置评测参数', 'success')
-        } else if (task.status === 'completed') {
+    } else if (task?.status === 'completed') {
       // 已完成 - 跳转到结果页面并加载详细结果
       currentStep.value = 4
       await loadTaskDetailedResults()
       showMessage('任务已完成，查看评测结果', 'success')
       
-    } else if (task.status === 'failed') {
+    } else if (task?.status === 'failed') {
       // 失败 - 跳转到结果页面显示错误信息
       currentStep.value = 4
       showMessage('任务执行失败，请查看错误信息', 'error')
       
-    } else if (task.status === 'cancelled') {
+    } else if (task?.status === 'cancelled') {
       // 已取消 - 跳转到结果页面
       currentStep.value = 4
       showMessage('任务已取消', 'warning')
       
-    } else if (task.status === 'config_prompts') {
+    } else if (task?.status === 'config_prompts') {
       // 配置提示词阶段 - 跳转到第二阶段
       currentStep.value = 1
       showMessage('继续配置系统Prompt', 'info')
@@ -1667,7 +1973,7 @@ const resumeTask = async (taskId: number) => {
       showMessage('继续配置模型参数', 'info')
     }
     
-    console.log(`任务恢复完成: ${task.name || `任务#${taskId}`}, 当前步骤: ${currentStep.value}`)  } catch (error) {
+    console.log(`任务恢复完成: ${task?.name || `任务#${taskId}`}, 当前步骤: ${currentStep.value}`)  } catch (error) {
     console.error('恢复任务失败:', error)
     showMessage('恢复任务失败', 'error')
   }
@@ -1683,8 +1989,7 @@ const resumeTaskForResults = async (taskId: number) => {
       showMessage('任务不存在', 'error')
       return
     }
-    
-    console.log('查看任务结果:', task.name, '状态:', task.status)
+      console.log('查看任务结果:', task?.name, '状态:', task?.status)
     
     // 设置evaluationTask
     evaluationTask.value = task
@@ -1693,14 +1998,14 @@ const resumeTaskForResults = async (taskId: number) => {
     currentStep.value = 4
     
     // 根据任务状态加载相应的结果
-    if (task.status === 'completed') {
+    if (task?.status === 'completed') {
       // 已完成任务，加载详细结果
       await loadTaskDetailedResults()
       showMessage('正在查看评测结果', 'success')
-    } else if (task.status === 'failed') {
+    } else if (task?.status === 'failed') {
       // 失败任务，显示错误信息
       showMessage('任务执行失败', 'error')
-    } else if (task.status === 'generating_answers' || task.status === 'evaluating_answers') {
+    } else if (task?.status === 'generating_answers' || task?.status === 'evaluating_answers') {
       // 正在进行的任务，显示进度
       showMessage('任务正在进行中', 'info')
     } else {
@@ -1708,7 +2013,7 @@ const resumeTaskForResults = async (taskId: number) => {
       showMessage('任务未完成，无法查看结果', 'warning')
     }
     
-    console.log(`结果查看完成: ${task.name || `任务#${taskId}`}`)
+    console.log(`结果查看完成: ${task?.name || `任务#${taskId}`}`)
   } catch (error) {
     console.error('加载任务结果失败:', error)
     showMessage('加载任务结果失败', 'error')
@@ -1763,8 +2068,8 @@ const loadDefaultPrompts = async () => {
     // 使用 llm_config.py 中的默认值作为后备
     systemPromptConfig.choice_system_prompt = '你是一个专业的问答助手。请仔细阅读问题和选项，选择最合适的答案。\n请按照以下格式回答：\n答案：[选项字母]\n解释：[简要说明选择理由]'
     systemPromptConfig.text_system_prompt = '你是一个专业的问答助手。请根据问题提供准确、详细、有用的回答。\n回答要求：\n1. 内容准确，逻辑清晰\n2. 语言简洁明了\n3. 针对问题的核心要点进行回答'
-    evaluationConfig.choice_evaluation_prompt = '请评估以下选择题的回答质量：\n\n评估标准：\n1. 答案正确性 (50分)：是否选择了正确的选项\n2. 解释合理性 (30分)：解释是否逻辑清晰、合理\n3. 格式规范性 (20分)：是否按照要求的格式回答\n\n请按照以下JSON格式给出评分：\n{{"score": 85, "reasoning": "答案正确，解释清晰合理，格式规范", "feedback": "回答质量很好，但可以在解释部分提供更多细节"}}'
-    evaluationConfig.text_evaluation_prompt = '请根据以下标准评估文本回答质量：\n\n评估标准：\n1. 准确性 (40分)：内容是否正确、符合事实\n2. 完整性 (30分)：是否全面回答了问题的各个方面\n3. 清晰性 (20分)：表达是否清楚、逻辑是否清晰\n4. 实用性 (10分)：回答是否对提问者有帮助\n\n请按照以下JSON格式给出评分：\n{{"score": 85, "reasoning": "内容准确，覆盖全面，表达清晰", "feedback": "很好的回答，建议可以提供更多实例说明"}}'
+    evaluationConfig.choice_evaluation_prompt = '请评估以下选择题的回答质量：\n\n评估标准：\n1. 答案正确性 (50分)：是否选择了正确的选项\n2. 解释合理性 (30分)：解释是否逻辑清晰、合理\n3. 格式规范性 (20分)：是否按照要求的格式回答\n\n请按照以下JSON格式给出评分：\n{{"score": 85, "reasoning": "答案正确，解释清晰合理，格式规范"}}'
+    evaluationConfig.text_evaluation_prompt = '请根据以下标准评估文本回答质量：\n\n评估标准：\n1. 准确性 (40分)：内容是否正确、符合事实\n2. 完整性 (30分)：是否全面回答了问题的各个方面\n3. 清晰性 (20分)：表达是否清楚、逻辑是否清晰\n4. 实用性 (10分)：回答是否对提问者有帮助\n\n请按照以下JSON格式给出评分：\n{{"score": 85, "reasoning": "内容准确，覆盖全面，表达清晰"}}'
   }
 }
 
@@ -1801,8 +2106,7 @@ const saveCurrentStepConfig = async () => {
     
     switch (step) {
       case 0: // 参数配置步骤
-        statusUpdate = {
-          status: 'config_prompts',
+        statusUpdate = {          status: 'config_prompts',
           model_id: modelConfig.model_id,
           api_key: modelConfig.api_key,
           temperature: modelConfig.temperature,
@@ -1811,21 +2115,25 @@ const saveCurrentStepConfig = async () => {
           enable_reasoning: modelConfig.enable_reasoning
         }
         break
-          case 1: // 提示词配置步骤
+        
+      case 1: // 提示词配置步骤
         statusUpdate = {
           status: 'config_prompts',
+          choice_system_prompt: systemPromptConfig.choice_system_prompt,
+          text_system_prompt: systemPromptConfig.text_system_prompt,
           system_prompt: activeSystemPromptTab.value === 'choice' 
             ? systemPromptConfig.choice_system_prompt 
-            : systemPromptConfig.text_system_prompt
+            : systemPromptConfig.text_system_prompt  // 兼容性保留
         }
         break
-        
-      case 3: // 评测配置步骤
+          case 3: // 评测配置步骤
         statusUpdate = {
           status: 'evaluating_answers',
+          choice_evaluation_prompt: evaluationConfig.choice_evaluation_prompt,
+          text_evaluation_prompt: evaluationConfig.text_evaluation_prompt,
           evaluation_prompt: activeEvaluationTab.value === 'choice' 
             ? evaluationConfig.choice_evaluation_prompt 
-            : evaluationConfig.text_evaluation_prompt
+            : evaluationConfig.text_evaluation_prompt  // 兼容性保留
         }
         break
         
@@ -1843,7 +2151,7 @@ const saveCurrentStepConfig = async () => {
   }
 }
 
-// 这个方法已不再使用 - 任务只在用户点击"开始生成答案"时创建
+// 这个方法已不再使用 -   // 任务只在用户点击"开始生成答案"时创建
 // const createNewTask = async () => {
 //   // 移除了自动创建任务的逻辑
 //   // 任务会在startAnswerGeneration()中创建
@@ -1888,7 +2196,7 @@ const resetChoiceEvaluationPrompt = async () => {
     showMessage('已重置为默认选择题评测Prompt', 'success')
   } catch (error) {
     // 使用 llm_config.py 中的默认值
-    evaluationConfig.choice_evaluation_prompt = '请评估以下选择题的回答质量：\n\n评估标准：\n1. 答案正确性 (50分)：是否选择了正确的选项\n2. 解释合理性 (30分)：解释是否逻辑清晰、合理\n3. 格式规范性 (20分)：是否按照要求的格式回答\n\n请按照以下JSON格式给出评分：\n{{"score": 85, "reasoning": "答案正确，解释清晰合理，格式规范", "feedback": "回答质量很好，但可以在解释部分提供更多细节"}}'
+    evaluationConfig.choice_evaluation_prompt = '请评估以下选择题的回答质量：\n\n评估标准：\n1. 答案正确性 (50分)：是否选择了正确的选项\n2. 解释合理性 (30分)：解释是否逻辑清晰、合理\n3. 格式规范性 (20分)：是否按照要求的格式回答\n\n请按照以下JSON格式给出评分：\n{{"score": 85, "reasoning": "答案正确，解释清晰合理，格式规范"}}'
     showMessage('已重置为默认选择题评测Prompt', 'success')
   }
 }
@@ -1900,7 +2208,7 @@ const resetTextEvaluationPrompt = async () => {
     showMessage('已重置为默认文本题评测Prompt', 'success')
   } catch (error) {
     // 使用 llm_config.py 中的默认值
-    evaluationConfig.text_evaluation_prompt = '请根据以下标准评估文本回答质量：\n\n评估标准：\n1. 准确性 (40分)：内容是否正确、符合事实\n2. 完整性 (30分)：是否全面回答了问题的各个方面\n3. 清晰性 (20分)：表达是否清楚、逻辑是否清晰\n4. 实用性 (10分)：回答是否对提问者有帮助\n\n请按照以下JSON格式给出评分：\n{{"score": 85, "reasoning": "内容准确，覆盖全面，表达清晰", "feedback": "很好的回答，建议可以提供更多实例说明"}}'
+    evaluationConfig.text_evaluation_prompt = '请根据以下标准评估文本回答质量：\n\n评估标准：\n1. 准确性 (40分)：内容是否正确、符合事实\n2. 完整性 (30分)：是否全面回答了问题的各个方面\n3. 清晰性 (20分)：表达是否清楚、逻辑是否清晰\n4. 实用性 (10分)：回答是否对提问者有帮助\n\n请按照以下JSON格式给出评分：\n{{"score": 85, "reasoning": "内容准确，覆盖全面，表达清晰"}}'
     showMessage('已重置为默认文本题评测Prompt', 'success')
   }
 }
@@ -1920,36 +2228,45 @@ const startAnswerGeneration = async () => {
   try {    
     console.log('Selected model for answer generation:', selectedModel.value)
     console.log('Model Config:', modelConfig)
-    
-    // 创建任务数据
+      // 创建任务数据
     const taskData = {
-      task_name: answerGenerationOptions.task_name || `${currentDataset.value.name} - 答案生成`,
+      task_name: answerGenerationOptions.task_name || `${currentDataset.value?.name} - 答案生成`,
       dataset_id: currentDataset.value.id,
       model_config: {
         model_id: modelConfig.model_id!, 
         api_key: modelConfig.api_key,
-        system_prompt: systemPromptConfig.choice_system_prompt || systemPromptConfig.text_system_prompt,
+        choice_system_prompt: systemPromptConfig.choice_system_prompt,
+        text_system_prompt: systemPromptConfig.text_system_prompt,
+        system_prompt: systemPromptConfig.choice_system_prompt || systemPromptConfig.text_system_prompt,  // 兼容性保留
         temperature: modelConfig.temperature,
         max_tokens: modelConfig.max_tokens,
         top_k: modelConfig.top_k,
         enable_reasoning: modelConfig.enable_reasoning
       },
       evaluation_config: {
-        evaluation_prompt: evaluationConfig.choice_evaluation_prompt || evaluationConfig.text_evaluation_prompt
+        choice_evaluation_prompt: evaluationConfig.choice_evaluation_prompt,
+        text_evaluation_prompt: evaluationConfig.text_evaluation_prompt,
+        evaluation_prompt: evaluationConfig.choice_evaluation_prompt || evaluationConfig.text_evaluation_prompt  // 兼容性保留
       },
       is_auto_score: false, // 答案生成阶段不自动评分
       question_limit: answerGenerationOptions.question_limit_type === 'limit' ? answerGenerationOptions.question_limit : undefined
     }
+      console.log('Task Data to be sent:', JSON.stringify(taskData, null, 2))
     
-    console.log('Task Data to be sent:', JSON.stringify(taskData, null, 2))    // 调用API创建并启动任务
+    // 调用API创建并启动任务
     answerGenerationTask.value = await llmEvaluationService.createEvaluationTask(taskData)
     
     showMessage('答案生成任务已创建，开始生成...', 'success')
-    
-    // 显示进度弹窗而不是跳转到下一步
+      // 显示进度弹窗而不是跳转到下一步
     evaluationTask.value = answerGenerationTask.value // 将答案生成任务赋值给评测任务以便进度弹窗使用
     currentTaskType.value = 'answer_generation' // 设置任务类型为答案生成
     showProgressDialog.value = true
+    
+    // 防止页面滚动
+    document.body.style.overflow = 'hidden'
+    
+    console.log('答案生成弹窗已显示，任务类型:', currentTaskType.value)
+    console.log('弹窗状态:', showProgressDialog.value)
     
     // 开始轮询进度
     startProgressPolling()
@@ -1986,12 +2303,20 @@ const startEvaluation = async () => {
     
     showMessage('评测任务已启动...', 'success')
     
-    // 更新当前评测任务
-    evaluationTask.value = answerGenerationTask.value
-    
-    // 显示进度弹窗
+    // 更新当前评测任务，立即设置为评测状态
+    evaluationTask.value = {
+      ...answerGenerationTask.value,
+      status: 'evaluating_answers'  // 立即设置为评测状态
+    }
+      // 立即设置任务类型为评测并显示进度弹窗
     currentTaskType.value = 'evaluation'
     showProgressDialog.value = true
+    
+    // 防止页面滚动
+    document.body.style.overflow = 'hidden'
+    
+    console.log('评测弹窗已显示，任务类型:', currentTaskType.value)
+    console.log('弹窗状态:', showProgressDialog.value)
     
     // 开始轮询进度
     startProgressPolling()
@@ -2009,53 +2334,76 @@ const startProgressPolling = () => {
   }
   
   progressTimer = setInterval(async () => {
-    if (!evaluationTask.value) return
+    if (!evaluationTask.value?.id) return
     
     try {
       const progress = await llmEvaluationService.getTaskProgress(evaluationTask.value.id)
       taskProgress.value = progress
-        // 更新任务状态
+      
+      // 更新任务状态
       evaluationTask.value = {
         ...evaluationTask.value,
         ...progress
       }
-        // 根据当前任务状态自动识别任务类型（如果未设置）
-      if (!currentTaskType.value || currentTaskType.value === 'answer_generation') {
-        if (progress.status === 'generating_answers') {
+      
+      // 任务类型处理逻辑：
+      // 1. 如果当前没有设置任务类型，根据状态自动设置
+      // 2. 如果任务状态从答案生成转为评测，自动切换任务类型
+      // 3. 如果已经是评测类型，保持不变
+      if (!currentTaskType.value) {
+        if (progress?.status === 'generating_answers') {
           currentTaskType.value = 'answer_generation'
-        } else if (progress.status === 'evaluating_answers') {
+        } else if (progress?.status === 'evaluating_answers') {
           currentTaskType.value = 'evaluation'
         }
+      } else if (progress?.status === 'evaluating_answers' && currentTaskType.value === 'answer_generation') {
+        // 状态从答案生成切换到评测时，更新任务类型
+        currentTaskType.value = 'evaluation'
+        console.log('任务类型已切换为评测')
       }
+      
+      console.log('轮询进度 - 任务状态:', progress?.status, '任务类型:', currentTaskType.value)
           // 如果任务完成，停止轮询并加载结果
-      if (progress.status === 'completed' || progress.status === 'failed' || progress.status === 'answers_generated') {
+      if (progress?.status === 'completed' || progress?.status === 'failed' || progress?.status === 'answers_generated') {
         clearInterval(progressTimer!)
         progressTimer = null
-        if (progress.status === 'completed') {
-          // 根据任务类型决定下一步操作
+        if (progress?.status === 'completed') {          // 根据任务类型决定下一步操作
           if (currentTaskType.value === 'answer_generation') {
             showMessage('答案生成完成！', 'success')
-            // 关闭进度弹窗并跳转到评测配置步骤（第四阶段，索引为3）
+            
+            // 更新任务状态以确保步骤锁定逻辑正确工作
+            if (evaluationTask.value) {
+              evaluationTask.value = { ...evaluationTask.value, status: 'answers_generated' }
+            }
+              // 关闭进度弹窗并跳转到评测配置步骤（第四阶段，索引为3）
             showProgressDialog.value = false
+            document.body.style.overflow = 'auto'
             currentStep.value = 3 // 跳转到评测配置步骤
           } else {
             await loadTaskResults()
             showMessage('评测任务完成！', 'success')
             // 关闭进度弹窗并跳转到结果页面
             showProgressDialog.value = false
+            document.body.style.overflow = 'auto'
             currentStep.value = 4 // 直接跳转到结果页面
-          }
-        } else if (progress.status === 'answers_generated') {
+          }} else if (progress?.status === 'answers_generated') {
           // 答案生成完成，等待评测配置
           showMessage('答案生成完成！请配置评测参数', 'success')
+          
+          // 更新任务状态以确保步骤锁定逻辑正确工作
+          if (evaluationTask.value) {
+            evaluationTask.value = { ...evaluationTask.value, status: 'answers_generated' }
+          }
           answerGenerationTask.value = evaluationTask.value // 保存答案生成任务
-          // 关闭进度弹窗并跳转到评测配置步骤
+            // 关闭进度弹窗并跳转到评测配置步骤
           showProgressDialog.value = false
+          document.body.style.overflow = 'auto'
           currentStep.value = 3 // 跳转到评测配置步骤
         } else {
           const taskName = currentTaskType.value === 'answer_generation' ? '答案生成' : '评测'
           showMessage(`${taskName}任务失败`, 'error')
           showProgressDialog.value = false
+          document.body.style.overflow = 'auto'
           currentStep.value = 4 // 跳转到结果页面显示错误
         }
       }
@@ -2066,7 +2414,7 @@ const startProgressPolling = () => {
 }
 
 const loadTaskResults = async () => {
-  if (!evaluationTask.value) return
+  if (!evaluationTask.value?.id) return
   
   try {
     const results = await llmEvaluationService.getTaskResults(evaluationTask.value.id)
@@ -2077,7 +2425,7 @@ const loadTaskResults = async () => {
 }
 
 const loadTaskDetailedResults = async () => {
-  if (!evaluationTask.value) return
+  if (!evaluationTask.value?.id) return
   
   loadingDetailedResults.value = true
   try {
@@ -2092,10 +2440,10 @@ const loadTaskDetailedResults = async () => {
 }
 
 const pauseEvaluation = async () => {
-  if (!evaluationTask.value) return
+  if (!evaluationTask.value?.id) return
   
   try {
-    if (evaluationTask.value.status === 'running') {
+    if (evaluationTask.value?.status === 'running') {
       await llmEvaluationService.cancelEvaluationTask(evaluationTask.value.id)
       showMessage('评测已暂停', 'success')
     }
@@ -2118,6 +2466,12 @@ const switchEvaluationMode = (mode: 'auto' | 'manual') => {
   }
 }
 
+// 评测模式选择
+const selectEvaluationMode = (mode: 'auto' | 'manual') => {
+  evaluationConfig.evaluation_mode = mode
+  console.log('评测模式已切换为:', mode)
+}
+
 // 手动任务创建成功处理
 const onManualTaskCreated = (task: any) => {
   console.log('Manual task created:', task)
@@ -2127,59 +2481,349 @@ const onManualTaskCreated = (task: any) => {
   showMessage('手动评测任务创建成功！', 'success')
 }
 
-// 进度弹窗相关方法
-const closeProgressDialog = () => {
-  showProgressDialog.value = false
-}
-
-const backToMarketplaceFromProgress = () => {
-  // 停止轮询
-  if (progressTimer) {
-    clearInterval(progressTimer)
-    progressTimer = null
+// 开始手动评测
+const startManualEvaluation = async () => {
+  if (!answerGenerationTask.value || !answerGenerationTask.value.id) {
+    showMessage('请先完成答案生成', 'error')
+    return
   }
   
-  // 关闭弹窗并返回市场
-  showProgressDialog.value = false
-  router.push('/llm-marketplace')
+  starting.value = true
+  try {
+    console.log('启动手动评测，任务ID:', answerGenerationTask.value.id)
+    
+    // 设置手动评测状态
+    isManualEvaluating.value = true
+    
+    // 直接加载需要手动评测的答案
+    await loadAnswersForManualEvaluation()
+    
+    showMessage('已进入手动评测模式', 'success')
+  } catch (error: any) {
+    console.error('启动手动评测失败:', error)
+    showMessage('启动手动评测失败: ' + error.message, 'error')
+  } finally {
+    starting.value = false
+  }
 }
 
-const viewResultsFromProgress = () => {
-  // 关闭进度弹窗并跳转到结果页面
-  showProgressDialog.value = false
-  nextStep() // 跳转到结果页面
+// 加载需要手动评测的答案
+const loadAnswersForManualEvaluation = async () => {
+  if (!answerGenerationTask.value?.id) return
+  
+  try {
+    // 使用正确的service方法
+    const answers = await llmEvaluationService.getTaskAnswersForManualEvaluation(answerGenerationTask.value.id)
+    manualEvaluationAnswers.value = answers || []
+    currentAnswerIndex.value = 0
+    
+    console.log('已加载', manualEvaluationAnswers.value.length, '个答案待评测')
+  } catch (error) {
+    console.error('加载答案失败:', error)
+    showMessage('加载评测答案失败', 'error')
+  }
 }
 
+// 获取当前问题信息
+const getCurrentQuestion = () => {
+  if (!manualEvaluationAnswers.value[currentAnswerIndex.value]) return null
+  return manualEvaluationAnswers.value[currentAnswerIndex.value].question
+}
+
+// 获取当前答案信息
+const getCurrentAnswer = () => {
+  if (!manualEvaluationAnswers.value[currentAnswerIndex.value]) return null
+  return manualEvaluationAnswers.value[currentAnswerIndex.value]
+}
+
+// 上一题
+const previousAnswer = () => {
+  if (currentAnswerIndex.value > 0) {
+    currentAnswerIndex.value--
+  }
+}
+
+// 下一题
+const nextAnswer = () => {
+  if (currentAnswerIndex.value < manualEvaluationAnswers.value.length - 1) {
+    currentAnswerIndex.value++
+  }
+}
+
+// 保存当前评测结果
+const saveCurrentEvaluation = async () => {
+  const currentAnswer = getCurrentAnswer()
+  if (!currentAnswer) {
+    showMessage('无法保存评测结果', 'error')
+    return
+  }
+
+  // 检查是否有评分和理由
+  if (currentAnswer.manual_score === null || currentAnswer.manual_score === undefined) {
+    showMessage('请输入评分', 'warning')
+    return
+  }
+
+  if (!currentAnswer.manual_reasoning || currentAnswer.manual_reasoning.trim().length === 0) {
+    showMessage('请输入评分理由', 'warning')
+    return
+  }
+
+  try {    // 直接创建evaluation记录，指定evaluator_type为'user'
+    await llmEvaluationService.createEvaluation({
+      answer_id: currentAnswer.id,
+      score: currentAnswer.manual_score,
+      reasoning: currentAnswer.manual_reasoning,
+      evaluator_type: 'user'
+    })
+    
+    // 标记为已评测
+    currentAnswer.is_evaluated = true
+    
+    showMessage('评测结果已保存', 'success')
+  } catch (error: any) {
+    console.error('保存评测失败:', error)
+    showMessage('保存评测失败: ' + error.message, 'error')
+  }
+}
+
+// 检查是否所有答案都已评测
+const isAllEvaluated = () => {
+  return manualEvaluationAnswers.value.every(answer => 
+    answer.manual_score !== undefined && answer.manual_score !== null &&
+    answer.manual_reasoning && answer.manual_reasoning.trim().length > 0
+  )
+}
+
+// 退出手动评测
+const exitManualEvaluation = async () => {
+  // 保存当前评测结果
+  await saveCurrentEvaluation()
+  
+  // 重置状态
+  isManualEvaluating.value = false
+  currentAnswerIndex.value = 0
+  
+  // 返回到评测配置步骤
+  showMessage('已退出手动评测，进度已保存', 'info')
+}
+
+// 完成手动评测
+const completeManualEvaluation = async () => {
+  if (!isAllEvaluated()) {
+    showMessage('请完成所有答案的评测', 'warning')
+    return
+  }
+
+  try {
+    // 保存当前评测结果（如果有的话）
+    await saveCurrentEvaluation()
+    
+    // 更新任务状态
+    if (answerGenerationTask.value) {
+      evaluationTask.value = {
+        ...answerGenerationTask.value,
+        status: 'completed'
+      }
+    }
+    
+    // 跳转到结果页面
+    isManualEvaluating.value = false
+    currentStep.value = 4
+    
+    showMessage('手动评测已完成！', 'success')
+    
+    // 加载详细结果
+    await loadTaskDetailedResults()
+  } catch (error: any) {
+    console.error('完成评测失败:', error)
+    showMessage('完成评测失败: ' + error.message, 'error')
+  }
+}
+
+// 格式化时间
+const formatDateTime = (dateString: string) => {
+  if (!dateString) return ''
+  return new Date(dateString).toLocaleString('zh-CN')
+}
+
+// 获取状态类型（用于样式）
 const getStatusType = (status: string) => {
-  const normalizedStatus = status.toUpperCase()
-  switch (normalizedStatus) {
-    case 'GENERATING_ANSWERS':
-    case 'EVALUATING_ANSWERS': return 'primary'
-    case 'ANSWERS_GENERATED': return 'success'
-    case 'COMPLETED': return 'success'
-    case 'FAILED': return 'danger'
-    case 'CANCELLED': return 'warning'
-    default: return 'info'
+  const statusMap: Record<string, string> = {
+    'completed': 'success',
+    'running': 'info',
+    'failed': 'error',
+    'cancelled': 'warning',
+    'config_params': 'info',
+    'config_prompts': 'info',
+    'generating_answers': 'info',
+    'evaluating_answers': 'info',
+    'answers_generated': 'success'
   }
+  return statusMap[status] || 'default'
 }
 
+// 获取状态文本
 const getStatusText = (status: string) => {
-  const normalizedStatus = status.toUpperCase()
-  switch (normalizedStatus) {
-    case 'GENERATING_ANSWERS': return '生成答案中'
-    case 'ANSWERS_GENERATED': return '答案已生成'
-    case 'EVALUATING_ANSWERS': return '评测中'
-    case 'COMPLETED': return '已完成'
-    case 'FAILED': return '失败'
-    case 'CANCELLED': return '已取消'
-    case 'CONFIG_PARAMS': return '配置参数'
-    case 'CONFIG_PROMPTS': return '配置提示词'
-    default: return status || '未知'
+  const statusMap: Record<string, string> = {
+    'completed': '已完成',
+    'running': '运行中',
+    'failed': '失败',
+    'cancelled': '已取消',
+    'config_params': '配置参数中',
+    'config_prompts': '配置提示词中',
+    'generating_answers': '生成答案中',
+    'evaluating_answers': '评测答案中',
+    'answers_generated': '答案生成完成'
+  }
+  return statusMap[status] || status
+}
+
+// 显示详细结果
+const showDetailedResults = async () => {
+  await loadTaskDetailedResults()
+  showResultsDialog.value = true
+}
+
+// 下载结果
+const downloadResults = async () => {
+  if (!evaluationTask.value?.id) return
+  
+  try {
+    const blob = await llmEvaluationService.downloadTaskResults(evaluationTask.value.id)
+    const url = window.URL.createObjectURL(blob)
+    const a = document.createElement('a')
+    a.href = url
+    a.download = `evaluation-results-${evaluationTask.value.id}.json`
+    a.click()
+    window.URL.revokeObjectURL(url)
+    showMessage('结果下载成功', 'success')
+  } catch (error: any) {
+    console.error('下载失败:', error)
+    showMessage('下载失败: ' + error.message, 'error')
   }
 }
 
-const formatTime = (seconds: number | undefined) => {
-  if (!seconds) return '-'
+// 获取分数样式类
+const getScoreClass = (score: number) => {
+  if (score >= 90) return 'excellent'
+  if (score >= 80) return 'good'
+  if (score >= 70) return 'average'
+  if (score >= 60) return 'below-average'
+  return 'poor'
+}
+
+// 查看详细评测
+const viewDetailedEvaluation = (answer: any) => {
+  selectedAnswer.value = answer
+  showEvaluationDialog.value = true
+}
+
+// 获取题目类型文本
+const getQuestionTypeText = (type: string) => {
+  return type === 'choice' ? '选择题' : '文本题'
+}
+
+// 下载详细结果
+const downloadDetailedResults = async () => {
+  if (!evaluationTask.value?.id) return
+  
+  try {
+    const blob = await llmEvaluationService.downloadTaskResults(evaluationTask.value.id)
+    const url = window.URL.createObjectURL(blob)
+    const a = document.createElement('a')
+    a.href = url
+    a.download = `detailed-results-${evaluationTask.value.id}.json`
+    a.click()
+    window.URL.revokeObjectURL(url)
+    showMessage('详细结果下载成功', 'success')
+  } catch (error: any) {
+    console.error('下载失败:', error)
+    showMessage('下载失败: ' + error.message, 'error')
+  }
+}
+
+// 下载答案数据
+const downloadAnswersOnly = async () => {
+  if (!evaluationTask.value?.id) return
+  
+  try {
+    const blob = await llmEvaluationService.downloadAnswersOnly(evaluationTask.value.id)
+    const url = window.URL.createObjectURL(blob)
+    const a = document.createElement('a')
+    a.href = url
+    a.download = `answers-only-${evaluationTask.value.id}.json`
+    a.click()
+    window.URL.revokeObjectURL(url)
+    showMessage('答案数据下载成功', 'success')
+  } catch (error: any) {
+    console.error('下载失败:', error)
+    showMessage('下载失败: ' + error.message, 'error')
+  }
+}
+
+// 自动评测
+const autoEvaluate = async () => {
+  if (!selectedAnswer.value) return
+  
+  autoEvaluating.value = true
+  try {
+    const result = await llmEvaluationService.autoEvaluateAnswer(
+      selectedAnswer.value.id,
+      { use_llm: true }
+    )
+    
+    // 更新答案的评测结果
+    if (result.evaluation) {
+      answerEvaluations.value.push(result.evaluation)
+    }
+    
+    showMessage('自动评测完成', 'success')
+  } catch (error: any) {
+    console.error('自动评测失败:', error)
+    showMessage('自动评测失败: ' + error.message, 'error')
+  } finally {
+    autoEvaluating.value = false
+  }
+}
+
+// 提交手动评测
+const submitManualEvaluation = async () => {
+  if (!selectedAnswer.value) return
+  
+  submittingEvaluation.value = true
+  try {
+    const result = await llmEvaluationService.submitManualEvaluation(
+      selectedAnswer.value.id,      {
+        score: manualEvaluation.score,
+        reasoning: manualEvaluation.reasoning
+      }
+    )
+    
+    // 更新答案的评测结果
+    if (result.evaluation) {
+      answerEvaluations.value.push(result.evaluation)
+    }
+    
+    showMessage('手动评测提交成功', 'success')
+    showEvaluationDialog.value = false
+  } catch (error: any) {
+    console.error('提交评测失败:', error)
+    showMessage('提交评测失败: ' + error.message, 'error')
+  } finally {
+    submittingEvaluation.value = false
+  }
+}
+
+// 关闭进度弹窗
+const closeProgressDialog = () => {
+  showProgressDialog.value = false
+  document.body.style.overflow = 'auto'
+}
+
+// 格式化时间
+const formatTime = (seconds: number) => {
+  if (!seconds || seconds <= 0) return '计算中...'
   
   const hours = Math.floor(seconds / 3600)
   const minutes = Math.floor((seconds % 3600) / 60)
@@ -2194,155 +2838,19 @@ const formatTime = (seconds: number | undefined) => {
   }
 }
 
-// 格式化日期时间
-const formatDateTime = (dateString: string | null) => {
-  if (!dateString) return '-'
-  return new Date(dateString).toLocaleString('zh-CN')
+// 从进度弹窗返回市场
+const backToMarketplaceFromProgress = () => {
+  closeProgressDialog()
+  router.push('/llm-marketplace')
 }
 
-// 获取分数样式类
-const getScoreClass = (score: number | null) => {
-  if (!score) return 'score-none'
-  if (score >= 80) return 'score-excellent'
-  if (score >= 60) return 'score-good'
-  if (score >= 40) return 'score-fair'
-  return 'score-poor'
+// 从进度弹窗查看结果
+const viewResultsFromProgress = async () => {
+  closeProgressDialog()
+  await loadTaskDetailedResults()
+  currentStep.value = 4
 }
 
-const getQuestionTypeText = (type: string) => {
-  return type === 'choice' ? '选择题' : '文本题'
-}
-
-const getAverageScore = (evaluations: any[]) => {
-  if (!evaluations || evaluations.length === 0) return '-'
-  const sum = evaluations.reduce((acc, evaluation) => acc + evaluation.score, 0)
-  return (sum / evaluations.length).toFixed(1)
-}
-
-// 查看详细评测结果
-const viewDetailedEvaluation = (answer: any) => {
-  selectedAnswer.value = answer
-  answerEvaluations.value = answer.evaluations || []
-  showEvaluationDialog.value = true
-}
-
-// 下载详细结果
-const downloadDetailedResults = async () => {
-  if (!evaluationTask.value) return
-  
-  try {
-    const results = await llmEvaluationService.downloadTaskResults(evaluationTask.value.id, {
-      format: 'json',
-      include_raw_responses: true,
-      include_prompts: true
-    })
-    
-    const blob = new Blob([JSON.stringify(results, null, 2)], {
-      type: 'application/json'
-    })
-    const url = URL.createObjectURL(blob)
-    const link = document.createElement('a')
-    link.href = url
-    link.download = `detailed_results_${evaluationTask.value.id}.json`
-    link.click()
-    URL.revokeObjectURL(url)
-    
-    showMessage('详细结果下载完成', 'success')
-  } catch (error) {
-    console.error('下载失败:', error)
-    showMessage('下载失败', 'error')
-  }
-}
-
-// 下载答案数据
-const downloadAnswersOnly = async () => {
-  if (!detailedResults.value) return
-  
-  try {
-    const answersData = detailedResults.value.detailed_answers.map((answer: any) => ({
-      question_id: answer.question_id,
-      question_text: answer.question_text,
-      question_type: answer.question_type,
-      llm_answer: answer.llm_answer.answer,
-      is_valid: answer.llm_answer.is_valid,      evaluations: answer.evaluations.map((evaluation: any) => ({
-        score: evaluation.score,
-        reasoning: evaluation.reasoning,
-        feedback: evaluation.feedback,
-        evaluator_type: evaluation.evaluator_type
-      })),
-      average_score: answer.average_score
-    }))
-    
-    const blob = new Blob([JSON.stringify(answersData, null, 2)], {
-      type: 'application/json'
-    })
-    const url = URL.createObjectURL(blob)
-    const link = document.createElement('a')
-    link.href = url
-    link.download = `answers_${evaluationTask.value.id}.json`
-    link.click()
-    URL.revokeObjectURL(url)
-    
-    showMessage('答案数据下载完成', 'success')
-  } catch (error) {
-    console.error('下载失败:', error)
-    showMessage('下载失败', 'error')
-  }
-}
-
-// 自动评测
-const autoEvaluate = async () => {
-  showMessage('自动评测功能正在开发中', 'info')
-}
-
-// 提交手动评测
-const submitManualEvaluation = async () => {
-  showMessage('手动评测功能正在开发中', 'info')
-}
-
-// 加载答案评测结果
-const loadAnswerEvaluations = async (answerId: number) => {
-  // 简化实现，直接使用现有数据
-  console.log('加载答案评测结果', answerId)
-}
-
-// 重新开始
-const restart = () => {
-  // 重置所有状态
-  currentStep.value = 0
-  evaluationTask.value = null
-  detailedResults.value = null
-  llmAnswers.value = []
-  showMessage('已重置，可以重新开始', 'info')
-}
-
-// 下载结果（简单版本）
-const downloadResults = async () => {
-  if (!evaluationTask.value) return
-  
-  try {
-    const results = await llmEvaluationService.downloadTaskResults(evaluationTask.value.id, {
-      format: 'json',
-      include_raw_responses: false,
-      include_prompts: false
-    })
-    
-    const blob = new Blob([JSON.stringify(results, null, 2)], {
-      type: 'application/json'
-    })
-    const url = URL.createObjectURL(blob)
-    const link = document.createElement('a')
-    link.href = url
-    link.download = `results_${evaluationTask.value.id}.json`
-    link.click()
-    URL.revokeObjectURL(url)
-    
-    showMessage('结果下载完成', 'success')
-  } catch (error) {
-    console.error('下载失败:', error)
-    showMessage('下载失败', 'error')
-  }
-}
 </script>
 
 <style scoped>
@@ -2355,7 +2863,107 @@ const downloadResults = async () => {
   padding: 20px;
 }
 
-/* 模式选择样式 */
+/* 弹窗样式 */
+.modal-overlay {
+  position: fixed !important;
+  top: 0 !important;
+  left: 0 !important;
+  width: 100% !important;
+  height: 100% !important;
+  background: rgba(0, 0, 0, 0.6) !important;
+  display: flex !important;
+  align-items: center !important;
+  justify-content: center !important;
+  z-index: 10000 !important;
+  backdrop-filter: blur(4px);
+}
+
+.modal-content,
+.progress-modal-content,
+.results-modal-content {
+  background: white !important;
+  border-radius: 12px;
+  box-shadow: 0 20px 60px rgba(0, 0, 0, 0.3);
+  max-width: 90vw;
+  max-height: 90vh;
+  min-width: 500px;
+  overflow: hidden;
+  display: flex;
+  flex-direction: column;
+  position: relative;
+  z-index: 10001 !important;
+}
+
+.progress-modal-content {
+  width: 650px;
+  max-width: 90vw;
+  border: 3px solid #667eea !important;
+  box-shadow: 0 20px 60px rgba(0, 0, 0, 0.4), 0 0 0 1px rgba(102, 126, 234, 0.3) !important;
+}
+
+.modal-header,
+.progress-modal-header {
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+  padding: 20px 24px;
+  border-bottom: 1px solid #e2e8f0;
+  background: #f8fafc;
+}
+
+.modal-header h3,
+.progress-modal-header h3 {
+  margin: 0;
+  color: #2d3748;
+  font-size: 18px;
+}
+
+.modal-close {
+  background: none;
+  border: none;
+  font-size: 24px;
+  cursor: pointer;
+  color: #718096;
+  padding: 0;
+  width: 32px;
+  height: 32px;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  border-radius: 50%;
+  transition: all 0.2s;
+}
+
+.modal-close:hover {
+  background: #e2e8f0;
+  color: #2d3748;
+}
+
+.modal-body,
+.progress-modal-body {
+  flex: 1;
+  padding: 24px;
+  overflow-y: auto;
+  min-height: 200px;
+}
+
+.progress-modal-header {
+  position: sticky;
+  top: 0;
+  background: #f8fafc;
+  z-index: 10;
+}
+
+.modal-footer {
+  display: flex;
+  justify-content: flex-end;
+  gap: 12px;
+  padding: 20px 24px;
+  border-top: 1px solid #e2e8f0;
+  background: #f8fafc;
+}
+
+/* 模式选择 */
 .mode-selector {
   background: white;
   padding: 2rem;
@@ -2692,13 +3300,13 @@ const downloadResults = async () => {
   cursor: not-allowed;
 }
 
-.form-range {
-  width: 100%;
+.form-range {  width: 100%;
   height: 6px;
   border-radius: 3px;
   background: #e9ecef;
   outline: none;
   -webkit-appearance: none;
+  appearance: none;
 }
 
 .form-range::-webkit-slider-thumb {
@@ -3270,18 +3878,7 @@ const downloadResults = async () => {
   transition: all 0.3s ease;}
 } */
 
-/* .task-info-section:hover,
-.configuration-section:hover,
-.prompts-section:hover,ns: repeat(auto-fit, minmax(200px, 1fr));
-.statistics-section:hover,
-.detailed-answers-section:hover {
-  0px;
-  transform: translateY(-2px);
-  box-shadow: 0 8px 30px rgba(0, 0, 0, 0.12);
-}.stat-card {
-near-gradient(135deg, #f8f9fa 0%, #e9ecef 100%);
-
-.mode-selector {
+/* .mode-selector {
   margin-bottom: 2rem; text-align: center;
   text-align: center;  border: 1px solid #dee2e6;
 } 0.3s ease;  */
@@ -3386,39 +3983,105 @@ near-gradient(135deg, #f8f9fa 0%, #e9ecef 100%);
 .score-value.score-excellent {
   background: linear-gradient(135deg, #c6f6d5 0%, #9ae6b4 100%);
   color: #22543d;
-  border: 1px solid #68d391;
 }
 
-.score-value.score-good {
+/* 进度弹窗样式 */
+.progress-modal-content {
   background: linear-gradient(135deg, #bee3f8 0%, #90cdf4 100%);
-  color: #2a4365;
   border: 1px solid #63b3ed;
 }
 
-.score-value.score-fair {
+.progress-content {
+  display: flex;
+  flex-direction: column;
+  gap: 20px;
+}
+
+.status-section {
   background: linear-gradient(135deg, #feebc8 0%, #fbd38d 100%);
-  color: #744210;
   border: 1px solid #f6ad55;
+  display: flex;
+  flex-direction: column;
+  align-items: flex-start;
+  gap: 8px;
 }
 
 .score-value.score-poor {
   background: linear-gradient(135deg, #fed7d7 0%, #feb2b2 100%);
-  color: #742a2a;
   border: 1px solid #fc8181;
 }
 
-.score-value.score-none {
-  background: #f7fafc;
-  color: #a0aec0;
+.status-item {
+  display: flex;
+  justify-content: space-between;
+  width: 100%;
+  font-size: 14px;
+  color: #495057;
+}
+
+.progress-section {
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+}
+
+.progress-info {
+  padding: 2px 4px;
+  border-radius: 3px;
+}
+
+/* 最新内容预览样式 */
+.latest-content {
+  margin-top: 16px;
+  padding: 16px;
+  background: #f8fafc;
+  border-radius: 8px;
   border: 1px solid #e2e8f0;
 }
 
-.evaluator-type {
-  font-size: 10px;
-  color: #718096;
-  background: #f1f5f9;
-  padding: 2px 4px;
-  border-radius: 3px;
+.content-preview h5 {
+  margin: 0 0 12px 0;
+  color: #2d3748;
+  font-size: 14px;
+  font-weight: 600;
+}
+
+.content-body {
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+}
+
+.content-text {
+  background: white;
+  padding: 12px;
+  border-radius: 6px;
+  border: 1px solid #e2e8f0;
+  font-size: 13px;
+  line-height: 1.5;
+  color: #4a5568;
+  white-space: pre-wrap;
+  word-break: break-word;
+}
+
+.score-info {
+  display: flex;
+  justify-content: flex-end;
+}
+
+.score-badge {
+  background: #4299e1;
+  color: white;
+  padding: 4px 8px;
+  border-radius: 4px;
+  font-size: 12px;
+  font-weight: 600;
+}
+
+.close-btn:hover {
+  background: #68d391;
+  border: 1px solid #68d391;
+  color: #495057;
 }
 
 .average-score {
@@ -3534,5 +4197,452 @@ near-gradient(135deg, #f8f9fa 0%, #e9ecef 100%);
 .detailed-answers-section:hover {
   transform: translateY(-2px);
   box-shadow: 0 8px 30px rgba(0, 0, 0, 0.12);
+}
+
+/* 详细结果弹窗样式 */
+.results-modal-content {
+  width: 95%;
+  max-width: 1200px;
+  max-height: 90vh;
+  overflow: hidden;
+  display: flex;
+  flex-direction: column;
+}
+
+.results-modal-body {
+  flex: 1;
+  overflow-y: auto;
+  padding: 0;
+}
+
+/* 任务概览样式 */
+.task-overview {
+  margin: 20px 0;
+}
+
+.overview-grid {
+  display: grid;
+  grid-template-columns: repeat(auto-fit, minmax(300px, 1fr));
+  gap: 20px;
+}
+
+.overview-card {
+  display: flex;
+  align-items: center;
+  padding: 20px;
+  background: linear-gradient(135deg, #667eea 0%, #764ba2 100%);
+  border-radius: 12px;
+  color: white;
+  box-shadow: 0 4px 15px rgba(102, 126, 234, 0.3);
+}
+
+.overview-icon {
+  font-size: 2.5rem;
+  margin-right: 16px;
+}
+
+.overview-info h4 {
+  margin: 0 0 8px 0;
+  font-size: 18px;
+  font-weight: 600;
+}
+
+.overview-info p {
+  margin: 4px 0;
+  opacity: 0.9;
+  font-size: 14px;
+}
+
+.status-badge {
+  padding: 4px 8px;
+  border-radius: 4px;
+  font-size: 12px;
+  font-weight: 600;
+  text-transform: uppercase;
+}
+
+.status-badge.primary {
+  background: #4299e1;
+  color: white;
+}
+
+.status-badge.success {
+  background: #48bb78;
+  color: white;
+}
+
+.status-badge.warning {
+  background: #ed8936;
+  color: white;
+}
+
+.status-badge.danger {
+  background: #f56565;
+  color: white;
+}
+
+.status-badge.secondary {
+  background: #718096;
+  color: white;
+}
+
+/* 推理模式相关样式 */
+.unsupported-badge {
+  background: #fed7d7;
+  color: #c53030;
+  padding: 2px 6px;
+  border-radius: 4px;
+  font-size: 11px;
+  font-weight: 600;
+  margin-left: 8px;
+}
+
+.warning-tip {
+  color: #ed8936 !important;
+  font-weight: 500;
+}
+
+/* 手动评测界面样式 */
+.manual-evaluation-interface {
+  max-width: 1200px;
+  margin: 0 auto;
+}
+
+.manual-progress {
+  background: white;
+  border-radius: 12px;
+  padding: 20px;
+  margin-bottom: 20px;
+  box-shadow: 0 2px 10px rgba(0, 0, 0, 0.05);
+}
+
+.progress-header {
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+  margin-bottom: 12px;
+}
+
+.progress-info {
+  display: flex;
+  gap: 16px;
+  align-items: center;
+}
+
+.current-index, .total-count {
+  font-size: 14px;
+  color: #4a5568;
+  font-weight: 500;
+}
+
+.progress-percentage {
+  font-size: 18px;
+  font-weight: 700;
+  color: #667eea;
+}
+
+.progress-bar {
+  height: 8px;
+  background: #e2e8f0;
+  border-radius: 4px;
+  overflow: hidden;
+}
+
+.progress-fill {
+  height: 100%;
+  background: linear-gradient(90deg, #667eea 0%, #764ba2 100%);
+  border-radius: 4px;
+  transition: width 0.3s ease;
+}
+
+.question-section, .standard-answer-section, .llm-answer-section, .evaluation-form {
+  background: white;
+  border-radius: 12px;
+  padding: 24px;
+  margin-bottom: 20px;
+  box-shadow: 0 2px 10px rgba(0, 0, 0, 0.05);
+}
+
+.question-header {
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+  margin-bottom: 16px;
+}
+
+.question-type-badge {
+  background: #667eea;
+  color: white;
+  padding: 4px 12px;
+  border-radius: 16px;
+  font-size: 12px;
+  font-weight: 600;
+}
+
+.question-body {
+  font-size: 16px;
+  line-height: 1.6;
+  color: #2d3748;
+  margin-bottom: 16px;
+}
+
+.choices-section {
+  margin-top: 16px;
+}
+
+.choices-list {
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+}
+
+.choice-item {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  padding: 8px 12px;
+  border: 1px solid #e2e8f0;
+  border-radius: 6px;
+  transition: all 0.2s;
+}
+
+.choice-item.correct {
+  background: #f0fff4;
+  border-color: #68d391;
+}
+
+.choice-label {
+  font-weight: 600;
+  color: #4a5568;
+  min-width: 20px;
+}
+
+.choice-text {
+  flex: 1;
+  color: #2d3748;
+}
+
+.correct-mark {
+  color: #38a169;
+  font-weight: 600;
+  font-size: 12px;
+}
+
+.standard-answer-content, .llm-answer-content {
+  background: #f8f9fa;
+  border-radius: 8px;
+  padding: 16px;
+}
+
+.answer-text {
+  font-size: 15px;
+  line-height: 1.6;
+  color: #2d3748;
+  margin-bottom: 12px;
+}
+
+.scoring-points {
+  margin-top: 16px;
+}
+
+.scoring-points-list {
+  list-style: none;
+  padding: 0;
+  margin: 8px 0 0 0;
+}
+
+.scoring-point {
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+  padding: 8px 12px;
+  background: white;
+  border: 1px solid #e2e8f0;
+  border-radius: 6px;
+  margin-bottom: 8px;
+}
+
+.point-text {
+  flex: 1;
+  color: #2d3748;
+}
+
+.point-score {
+  font-weight: 600;
+  color: #667eea;
+}
+
+.answer-meta {
+  display: flex;
+  gap: 16px;
+  font-size: 12px;
+  color: #718096;
+  margin-top: 8px;
+  padding-top: 8px;
+  border-top: 1px solid #e2e8f0;
+}
+
+.form-grid {
+  display: grid;
+  gap: 20px;
+}
+
+.form-group {
+  display: flex;
+  flex-direction: column;
+}
+
+.form-label {
+  font-weight: 600;
+  color: #2d3748;
+  margin-bottom: 8px;
+  font-size: 14px;
+}
+
+.score-input-container {
+  display: flex;
+  flex-direction: column;
+  gap: 12px;
+}
+
+.score-input {
+  padding: 10px 12px;
+  border: 2px solid #e2e8f0;
+  border-radius: 8px;
+  font-size: 16px;
+  transition: border-color 0.2s;
+  max-width: 120px;
+}
+
+.score-input:focus {
+  outline: none;
+  border-color: #667eea;
+  box-shadow: 0 0 0 3px rgba(102, 126, 234, 0.1);
+}
+
+.score-slider {
+  width: 100%;
+}
+
+.form-range {
+  width: 100%;
+  height: 6px;
+  border-radius: 3px;
+  background: #e2e8f0;
+  outline: none;
+  appearance: none;
+  -webkit-appearance: none;
+}
+
+.form-range::-webkit-slider-thumb {
+  appearance: none;
+  width: 20px;
+  height: 20px;
+  border-radius: 50%;
+  background: #667eea;
+  cursor: pointer;
+  box-shadow: 0 2px 6px rgba(0, 0, 0, 0.2);
+}
+
+.form-range::-moz-range-thumb {
+  width: 20px;
+  height: 20px;
+  border-radius: 50%;
+  background: #667eea;
+  cursor: pointer;
+  border: none;
+  box-shadow: 0 2px 6px rgba(0, 0, 0, 0.2);
+}
+
+.form-textarea {
+  padding: 12px;
+  border: 2px solid #e2e8f0;
+  border-radius: 8px;
+  font-size: 14px;
+  line-height: 1.5;
+  resize: vertical;
+  transition: border-color 0.2s;
+  font-family: inherit;
+}
+
+.form-textarea:focus {
+  outline: none;
+  border-color: #667eea;
+  box-shadow: 0 0 0 3px rgba(102, 126, 234, 0.1);
+}
+
+.manual-evaluation-actions {
+  background: white;
+  border-radius: 12px;
+  padding: 24px;
+  box-shadow: 0 2px 10px rgba(0, 0, 0, 0.05);
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+  flex-wrap: wrap;
+  gap: 16px;
+}
+
+.navigation-buttons, .action-buttons {
+  display: flex;
+  gap: 12px;
+}
+
+.completion-notice {
+  background: white;
+  border-radius: 12px;
+  padding: 20px;
+  margin-top: 20px;
+  box-shadow: 0 2px 10px rgba(0, 0, 0, 0.05);
+}
+
+.notice-card {
+  display: flex;
+  align-items: center;
+  gap: 12px;
+  padding: 16px;
+  background: linear-gradient(135deg, #f0fff4 0%, #e6fffa 100%);
+  border: 1px solid #68d391;
+  border-radius: 8px;
+}
+
+.notice-icon {
+  font-size: 24px;
+}
+
+.notice-content h5 {
+  margin: 0 0 4px 0;
+  color: #2d3748;
+  font-size: 16px;
+}
+
+.notice-content p {
+  margin: 0;
+  color: #4a5568;
+  font-size: 14px;
+}
+
+/* 响应式设计 */
+@media (max-width: 768px) {
+  .manual-evaluation-actions {
+    flex-direction: column;
+    align-items: stretch;
+  }
+  
+  .navigation-buttons, .action-buttons {
+    justify-content: center;
+  }
+  
+  .progress-header {
+    flex-direction: column;
+    align-items: flex-start;
+    gap: 8px;
+  }
+  
+  .choice-item {
+    flex-direction: column;
+    align-items: flex-start;
+    gap: 4px;
+  }
 }
 </style>

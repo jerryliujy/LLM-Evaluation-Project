@@ -73,20 +73,20 @@ def get_marketplace_datasets(
     for dataset in datasets:
         # 统计问题总数
         question_count = db.query(StdQuestion).filter(
-            StdQuestion.current_dataset_id == dataset.id,
+            StdQuestion.dataset_id == dataset.id,
             StdQuestion.is_valid == True
         ).count()
         
         # 统计选择题数量
         choice_question_count = db.query(StdQuestion).filter(
-            StdQuestion.current_dataset_id == dataset.id,
+            StdQuestion.dataset_id == dataset.id,
             StdQuestion.is_valid == True,
             StdQuestion.question_type == 'choice'
         ).count()
         
         # 统计文本题数量
         text_question_count = db.query(StdQuestion).filter(
-            StdQuestion.current_dataset_id == dataset.id,
+            StdQuestion.dataset_id == dataset.id,
             StdQuestion.is_valid == True,
             StdQuestion.question_type == 'text'
         ).count()
@@ -126,25 +126,20 @@ def get_marketplace_dataset(
             detail="Dataset not found or not public"
         )
     
-    # 统计问题总数
-    question_count = db.query(StdQuestion).filter(
-        StdQuestion.current_dataset_id == dataset.id,
+    # 获取数据集的所有标准问题
+    std_questions = db.query(StdQuestion).filter(
+        StdQuestion.dataset_id == dataset.id,  # 使用dataset_id而不是current_dataset_id
         StdQuestion.is_valid == True
-    ).count()
+    ).all()
+    
+    # 统计问题总数
+    question_count = len(std_questions)
     
     # 统计选择题数量
-    choice_question_count = db.query(StdQuestion).filter(
-        StdQuestion.current_dataset_id == dataset.id,
-        StdQuestion.is_valid == True,
-        StdQuestion.question_type == 'choice'
-    ).count()
+    choice_question_count = len([q for q in std_questions if q.question_type == 'choice'])
     
     # 统计文本题数量
-    text_question_count = db.query(StdQuestion).filter(
-        StdQuestion.current_dataset_id == dataset.id,
-        StdQuestion.is_valid == True,
-        StdQuestion.question_type == 'text'
-    ).count()
+    text_question_count = len([q for q in std_questions if q.question_type == 'text'])
     
     return MarketplaceDatasetInfo(
         id=dataset.id,
@@ -180,23 +175,18 @@ def download_marketplace_dataset(
             detail="Dataset not found or not public"
         )
     
-    # 获取数据集的基本信息
-    question_count = db.query(StdQuestion).filter(
-        StdQuestion.current_dataset_id == dataset.id,
+    # 获取数据集的所有标准问题
+    std_questions = db.query(StdQuestion).filter(
+        StdQuestion.dataset_id == dataset.id,  # 使用dataset_id而不是current_dataset_id
         StdQuestion.is_valid == True
-    ).count()
+    ).all()
     
-    choice_question_count = db.query(StdQuestion).filter(
-        StdQuestion.current_dataset_id == dataset.id,
-        StdQuestion.is_valid == True,
-        StdQuestion.question_type == 'choice'
-    ).count()
+    # 获取数据集的基本信息
+    question_count = len(std_questions)
     
-    text_question_count = db.query(StdQuestion).filter(
-        StdQuestion.current_dataset_id == dataset.id,
-        StdQuestion.is_valid == True,
-        StdQuestion.question_type == 'text'
-    ).count()
+    choice_question_count = len([q for q in std_questions if q.question_type == 'choice'])
+    
+    text_question_count = len([q for q in std_questions if q.question_type == 'text'])
     
     dataset_info = MarketplaceDatasetInfo(
         id=dataset.id,
@@ -212,10 +202,7 @@ def download_marketplace_dataset(
     )
     
     # 获取数据集的问题
-    questions = db.query(StdQuestion).filter(
-        StdQuestion.current_dataset_id == dataset.id,
-        StdQuestion.is_valid == True
-    ).limit(100).all()  # 限制数量以防止过大的响应
+    questions = std_questions[:100]  # 限制数量以防止过大的响应
     
     # 转换为响应格式
     question_data = []
@@ -430,26 +417,32 @@ async def create_evaluation_task(
         raise HTTPException(
             status_code=status.HTTP_404_NOT_FOUND,
             detail="Model not found"
-        )
-    # 创建任务数据
+        )    # 创建任务数据
     def get_config_value(config, key, default=None):
+        """从配置对象中获取值，支持Pydantic模型和字典"""
         if hasattr(config, key):
             return getattr(config, key, default)
-        else:
+        elif hasattr(config, 'get'):
             return config.get(key, default)
+        else:
+            return default
         
     task_data = LLMEvaluationTaskCreate(
         name=request.task_name,
         description=f"LLM评测任务: {request.task_name}",
         dataset_id=request.dataset_id,
-        model_id=llm.id,  # 使用验证过的LLM ID        system_prompt=get_config_value(request.model_settings, 'system_prompt'),
+        model_id=llm.id,  # 使用验证过的LLM ID
+        system_prompt=get_config_value(request.model_settings, 'system_prompt'),
+        choice_system_prompt=get_config_value(request.model_settings, 'choice_system_prompt'),
+        text_system_prompt=get_config_value(request.model_settings, 'text_system_prompt'),        choice_evaluation_prompt=get_config_value(request.evaluation_config, 'choice_evaluation_prompt') if request.evaluation_config else None,
+        text_evaluation_prompt=get_config_value(request.evaluation_config, 'text_evaluation_prompt') if request.evaluation_config else None,
         temperature=Decimal(str(get_config_value(request.model_settings, 'temperature', 0.7))),  # 转换为Decimal
         max_tokens=get_config_value(request.model_settings, 'max_tokens', 2000),
         top_k=get_config_value(request.model_settings, 'top_k', 50),
         enable_reasoning=get_config_value(request.model_settings, 'enable_reasoning', False),
-        evaluation_llm_id=request.evaluation_config.get('evaluation_llm_id') if request.is_auto_score and request.evaluation_config else None,
-        evaluation_prompt=request.evaluation_config.get('evaluation_prompt') if request.is_auto_score and request.evaluation_config else None,
-        api_key=get_config_value(request.model_settings, 'api_key')    )
+        evaluation_prompt=get_config_value(request.evaluation_config, 'evaluation_prompt') if request.evaluation_config else None,
+        api_key=get_config_value(request.model_settings, 'api_key')
+    )
     
     # 创建任务
     logger.info(f"开始创建LLM评测任务: {request.task_name}")
@@ -756,9 +749,6 @@ def download_task_results(
         if request.include_prompts and answer.prompt_used:
             answer_data["prompt_used"] = answer.prompt_used
         
-        if request.include_raw_responses and answer.api_response:
-            answer_data["api_response"] = answer.api_response
-        
         # 添加评测结果
         evaluations = db.query(Evaluation).filter(
             Evaluation.llm_answer_id == answer.id
@@ -769,7 +759,6 @@ def download_task_results(
             answer_data["evaluations"].append({
                 "score": eval.score,
                 "evaluator_type": eval.evaluator_type.value,
-                "feedback": eval.feedback,
                 "evaluation_time": eval.evaluation_time.isoformat()
             })
         
@@ -964,9 +953,15 @@ def get_task_detailed_results(
         # 获取标准答案
         std_answers = []
         if std_question:
-            std_answers = db.query(StdAnswer).filter(
+            std_answers_data = db.query(StdAnswer).filter(
                 StdAnswer.std_question_id == std_question.id
             ).all()
+            
+            for sa in std_answers_data:
+                std_answers.append({
+                    "id": sa.id,
+                    "answer": sa.answer
+                })
         
         # 计算平均分
         answer_scores = [e.score for e in evaluations if e.score is not None]
@@ -980,18 +975,7 @@ def get_task_detailed_results(
             "question_id": answer.std_question_id,
             "question_text": std_question.body if std_question else "未知问题",
             "question_type": getattr(std_question, 'type', 'text') if std_question else 'text',
-            "standard_answers": [
-                {
-                    "id": sa.id,
-                    "answer": sa.answer,
-                    "scoring_points": [
-                        {
-                            "answer": sp.answer,
-                            "point_order": sp.point_order
-                        } for sp in sa.scoring_points
-                    ] if hasattr(sa, 'scoring_points') else []
-                } for sa in std_answers
-            ],
+            "standard_answers": std_answers,
             "llm_answer": {
                 "id": answer.id,
                 "answer": answer.answer,
@@ -1003,29 +987,69 @@ def get_task_detailed_results(
                     "id": e.id,
                     "score": float(e.score) if e.score else None,
                     "reasoning": e.reasoning,
-                    "feedback": e.feedback,
                     "evaluator_type": e.evaluator_type.value if e.evaluator_type else None,
-                    "created_at": e.created_at.isoformat() if e.created_at else None
                 } for e in evaluations
             ],
             "average_score": avg_score
-        })
-      # 计算总体统计
+        })      # 计算总体统计并更新任务得分
     overall_average = total_score / valid_scores if valid_scores > 0 else 0
     overall_success_rate = sum(1 for answer in llm_answers if answer.is_valid) / len(llm_answers) if llm_answers else 0
     
+    # 更新任务得分到数据库
+    if valid_scores > 0:
+        task.score = Decimal(str(round(overall_average, 2)))
+        db.commit()
+        db.refresh(task)
+      # 按照前端期望的格式返回数据
     return {
-        "task_id": task.id,
-        "task_name": task.name,
-        "dataset_name": task.dataset.name,
-        "model_name": task.model.name if task.model else "Unknown",
-        "status": task.status,
-        "created_at": task.created_at,
-        "updated_at": task.updated_at,
-        "detailed_results": detailed_answers,
-        "total_score": total_score,
-        "average_score": overall_average,
-        "success_rate": overall_success_rate
+        "task_info": {
+            "id": task.id,
+            "name": task.name,
+            "status": task.status.value if hasattr(task.status, 'value') else str(task.status),
+            "progress": task.progress,
+            "score": float(task.score) if task.score else None,
+            "total_questions": task.total_questions,
+            "completed_questions": task.completed_questions,
+            "failed_questions": task.failed_questions,
+            "created_at": task.created_at.isoformat() if task.created_at else None,
+            "started_at": task.started_at.isoformat() if task.started_at else None,
+            "completed_at": task.completed_at.isoformat() if task.completed_at else None,
+            "error_message": task.error_message,
+            "dataset_name": task.dataset.name if task.dataset else "Unknown",
+            "model_name": task.model.display_name if task.model else "Unknown",
+            "model_version": task.model.version if task.model else None
+        },
+        "configuration": {
+            "dataset_name": task.dataset.name if task.dataset else "Unknown",
+            "model_name": task.model.display_name if task.model else "Unknown",
+            "temperature": float(task.temperature) if task.temperature else 0.7,
+            "max_tokens": task.max_tokens or 2000,
+            "top_k": task.top_k or 50,
+            "enable_reasoning": task.enable_reasoning or False,
+            # 兼容前端期望的系统提示词和评估提示词字段
+            "system_prompt": task.choice_system_prompt or task.text_system_prompt or task.system_prompt,
+            "evaluation_prompt": task.choice_evaluation_prompt or task.text_evaluation_prompt or task.evaluation_prompt
+        },
+        "prompts": {
+            "choice_system_prompt": task.choice_system_prompt,
+            "text_system_prompt": task.text_system_prompt,
+            "choice_evaluation_prompt": task.choice_evaluation_prompt,
+            "text_evaluation_prompt": task.text_evaluation_prompt,
+            "system_prompt": task.system_prompt,  # 兼容性保留
+            "evaluation_prompt": task.evaluation_prompt  # 兼容性保留
+        },
+        "statistics": {
+            "total_score": float(total_score),
+            "average_score": float(overall_average),
+            "overall_average_score": float(overall_average),  # 前端期望的字段名
+            "success_rate": float(overall_success_rate),
+            "completion_rate": float(overall_success_rate),  # 前端期望的字段名
+            "valid_scores_count": valid_scores,
+            "total_answers": len(llm_answers),
+            "valid_answers": sum(1 for answer in llm_answers if answer.is_valid),
+            "evaluated_answers": valid_scores
+        },
+        "detailed_answers": detailed_answers
     }
 
 
@@ -1056,7 +1080,7 @@ def get_dataset_questions(
         
         # 获取问题列表
         questions = db.query(StdQuestion).filter(
-            StdQuestion.current_dataset_id == dataset_id,
+            StdQuestion.dataset_id == dataset_id,
             StdQuestion.is_valid == True
         ).offset(skip).limit(limit).all()
         
@@ -1065,23 +1089,22 @@ def get_dataset_questions(
         for question in questions:
             # 获取标准答案
             std_answer = db.query(StdAnswer).filter(
-                StdAnswer.question_id == question.id
+                StdAnswer.std_question_id == question.id
             ).first()
             
             question_data = {
                 "id": question.id,
                 "body": question.body,
                 "question_type": question.question_type,
-                "choices": question.choices,
+                # "choices": question.choices,
                 "standard_answer": std_answer.answer if std_answer else None,
-                "explanation": std_answer.explanation if std_answer else None
             }
             question_list.append(question_data)
         
         return {
             "questions": question_list,
             "total_count": db.query(StdQuestion).filter(
-                StdQuestion.current_dataset_id == dataset_id,
+                StdQuestion.dataset_id == dataset_id,
                 StdQuestion.is_valid == True
             ).count()
         }
@@ -1094,3 +1117,82 @@ def get_dataset_questions(
             status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
             detail=f"Failed to get dataset questions: {str(e)}"
         )
+
+
+@router.get("/tasks/{task_id}/manual-evaluation-answers")
+def get_task_answers_for_manual_evaluation(
+    task_id: int,
+    db: Session = Depends(get_db),
+    current_user: User = Depends(get_current_user)
+):
+    """获取任务的答案列表，用于手动评测，包含得分点信息"""
+    task = get_llm_evaluation_task(db=db, task_id=task_id)
+    
+    if not task:
+        raise HTTPException(
+            status_code=status.HTTP_404_NOT_FOUND,
+            detail="Task not found"
+        )
+    
+    if task.created_by != current_user.id:
+        raise HTTPException(
+            status_code=status.HTTP_403_FORBIDDEN,
+            detail="Access denied"
+        )
+    
+    # 获取所有LLM答案
+    llm_answers = db.query(LLMAnswer).filter(
+        LLMAnswer.task_id == task_id
+    ).all()
+    
+    # 构建答案列表，包含得分点信息
+    answers_data = []
+    
+    for answer in llm_answers:
+        # 获取标准问题
+        std_question = db.query(StdQuestion).filter(
+            StdQuestion.id == answer.std_question_id
+        ).first()
+        
+        # 获取标准答案及其得分点
+        std_answers = []
+        if std_question:
+            std_answers_data = db.query(StdAnswer).filter(
+                StdAnswer.std_question_id == std_question.id
+            ).all()
+            
+            for sa in std_answers_data:
+                std_answers.append({
+                    "id": sa.id,
+                    "answer": sa.answer
+                })
+        
+        # 获取已有的评测结果（如果有的话）
+        existing_evaluations = db.query(Evaluation).filter(
+            Evaluation.llm_answer_id == answer.id,
+            Evaluation.evaluator_type == 'manual'
+        ).all()
+        
+        answers_data.append({
+            "llm_answer_id": answer.id,
+            "question_id": answer.std_question_id,
+            "question_text": std_question.body if std_question else "未知问题",
+            "question_type": getattr(std_question, 'type', 'text') if std_question else 'text',
+            "standard_answers": std_answers,
+            "llm_answer": answer.answer,
+            "prompt_used": answer.prompt_used,
+            "existing_evaluations": [
+                {
+                    "id": e.id,
+                    "score": float(e.score) if e.score else None,
+                    "reasoning": e.reasoning,
+                } for e in existing_evaluations
+            ]
+        })
+    
+    return {
+        "task_id": task_id,
+        "task_name": task.name,
+        "answers": answers_data,
+        "total_count": len(answers_data)
+    }

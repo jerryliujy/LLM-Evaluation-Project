@@ -51,13 +51,10 @@ def get_std_answers_paginated(
         query = query.filter(models.StdAnswer.is_valid == False)
     elif not include_deleted:
         query = query.filter(models.StdAnswer.is_valid == True)
-      # 应用数据集过滤（使用范围查询代替直接匹配）
+      # 应用数据集过滤（通过问题关联的数据集ID）
     if dataset_id is not None:
-        query = query.filter(
-            and_(
-                models.StdAnswer.original_dataset_id <= dataset_id,
-                models.StdAnswer.current_dataset_id >= dataset_id
-            )
+        query = query.join(models.StdQuestion).filter(
+            models.StdQuestion.dataset_id <= dataset_id  # 通过问题获取数据集ID
         )
     
     # 应用搜索查询（搜索答案内容）

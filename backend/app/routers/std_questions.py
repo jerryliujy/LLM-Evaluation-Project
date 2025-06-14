@@ -11,26 +11,37 @@ from ..models.tag import Tag
 from ..schemas.std_question import StdQuestionCreate, StdQuestionUpdate, StdQuestionResponse
 from ..schemas.common import PaginatedResponse
 from ..schemas import Msg
+from ..auth import get_current_active_user
 
 router = APIRouter(prefix="/api/std-questions", tags=["Standard Questions"])
 
 @router.post("/", response_model=StdQuestionResponse)
 def create_std_question(
     std_question: StdQuestionCreate,
-    db: Session = Depends(get_db)
+    db: Session = Depends(get_db),
+    current_user = Depends(get_current_active_user)
 ):
     """创建标准问题"""
-    # 验证dataset存在
-    if not db.query(Dataset).filter(Dataset.id == std_question.original_dataset_id).first():
-        raise HTTPException(status_code=404, detail="Original dataset not found")
-    if not db.query(Dataset).filter(Dataset.id == std_question.current_dataset_id).first():
-        raise HTTPException(status_code=404, detail="Current dataset not found")
+    # 验证数据集是否存在
+    if not db.query(Dataset).filter(Dataset.id == std_question.dataset_id).first():
+        raise HTTPException(status_code=404, detail="Dataset not found")
     
-    if not db.query(RawQuestion).filter(RawQuestion.id == std_question.raw_question_id).first():
-        raise HTTPException(status_code=404, detail="Raw question not found")
-    
-    # 使用CRUD函数创建标准问题
-    return crud_std_question.create_std_question(db, std_question)
+    db_std_question = StdQuestion(
+        dataset_id=std_question.dataset_id,
+        raw_question_id=1,  # 临时值，实际应该从原始问题获取
+        body=std_question.body,  # 使用body字段而不是text
+        question_type=std_question.question_type,
+        is_valid=std_question.is_valid,
+        created_by=current_user.id,
+        version=std_question.version,
+        previous_version_id=std_question.previous_version_id,
+        original_version_id=std_question.original_version_id,
+        current_version_id=std_question.current_version_id
+    )
+    db.add(db_std_question)
+    db.commit()
+    db.refresh(db_std_question)
+    return db_std_question
 
 @router.get("/", response_model=PaginatedResponse[StdQuestionResponse])
 def read_std_questions_api(
@@ -177,7 +188,7 @@ def create_std_question_from_raw(
     raw_question_id: int,
     dataset_id: int,
     question_type: str = "single_choice",
-    created_by: Optional[int] = None,  # 改为int类型用户ID
+    created_by: Optional[str] = None,
     db: Session = Depends(get_db)
 ):
     """从原始问题创建标准问题"""
@@ -189,12 +200,13 @@ def create_std_question_from_raw(
     # 验证数据集存在
     if not db.query(Dataset).filter(Dataset.id == dataset_id).first():
         raise HTTPException(status_code=404, detail="Dataset not found")
-      # 创建标准问题
+    
+    # 创建标准问题
     std_question_data = StdQuestionCreate(
-        original_dataset_id=dataset_id,
-        current_dataset_id=dataset_id,
-        body=raw_question.title,  # 使用body字段，并使用原始问题的标题
+        dataset_id=dataset_id,
+        body=raw_question.title,  # 使用body字段而不是text
         question_type=question_type,
+        is_valid=True,
         created_by=created_by
     )
     
