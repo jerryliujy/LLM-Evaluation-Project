@@ -15,6 +15,8 @@ from ..models.expert_answer import ExpertAnswer
 from ..models.tag import Tag
 from ..models.user import User
 from ..auth import get_current_active_user
+from ..crud.crud_dataset import create_dataset, get_datasets_paginated
+from ..schemas.dataset import DatasetCreate
 
 router = APIRouter(prefix="/api/data-import", tags=["data-import"])
 
@@ -22,7 +24,7 @@ class JsonDataImport(BaseModel):
     data: List[dict]
 
 @router.post("/dataset")
-async def create_dataset(
+async def create_dataset_endpoint(
     name: str = Form(...),
     description: str = Form(...),
     is_public: bool = Form(True),
@@ -31,36 +33,55 @@ async def create_dataset(
 ):
     """创建新的数据集"""
     
-    dataset = Dataset(
+    dataset_data = DatasetCreate(
         name=name,
         description=description,
-        created_by=current_user.id,
         is_public=is_public
     )
-    db.add(dataset)
-    db.commit()
-    db.refresh(dataset)
     
-    return {"dataset_id": dataset.id, "name": dataset.name, "description": dataset.description}
+    dataset = create_dataset(db=db, dataset=dataset_data, created_by=current_user.id)
+    
+    return {
+        "dataset_id": dataset.id, 
+        "version": dataset.version,
+        "name": dataset.name, 
+        "description": dataset.description
+    }
 
 @router.get("/datasets")
 async def list_datasets(
     current_user: User = Depends(get_current_active_user),
     db: Session = Depends(get_db)
 ):
-    """获取当前用户可访问的数据集列表"""
+    """获取当前用户可访问的数据集列表（只显示最新版本）"""
     
     # 管理员可以看到所有数据集，普通用户只能看到自己的和公开的
     if current_user.role == "admin":
-        datasets = db.query(Dataset).all()
+        datasets, total = get_datasets_paginated(db=db, skip=0, limit=None)
     else:
-        datasets = db.query(Dataset).filter(
-            (Dataset.created_by == current_user.id) | (Dataset.is_public == True)
-        ).all()
+        datasets, total = get_datasets_paginated(
+            db=db, 
+            skip=0, 
+            limit=None,
+            created_by=current_user.id
+        )
+        # 也获取公开的数据集
+        public_datasets, _ = get_datasets_paginated(
+            db=db, 
+            skip=0, 
+            limit=None,
+            is_public=True
+        )
+        # 合并并去重（基于dataset id）
+        seen_ids = {d.id for d in datasets}
+        for pd in public_datasets:
+            if pd.id not in seen_ids:
+                datasets.append(pd)
     
     return [
         {
             "id": dataset.id,
+            "version": dataset.version,
             "name": dataset.name,
             "description": dataset.description,
             "is_public": dataset.is_public,
@@ -193,14 +214,24 @@ async def upload_raw_qa_data(
 async def upload_expert_answers_data(
     dataset_id: int,
     json_data: JsonDataImport,
+    version: Optional[int] = None,  # 可选版本参数
     db: Session = Depends(get_db)
 ):
     """上传专家回答数据到指定数据集"""
     
-    # 验证数据集是否存在
-    dataset = db.query(Dataset).filter(Dataset.id == dataset_id).first()
+    # 验证数据集是否存在，如果不指定版本则获取最新版本
+    if version is None:
+        dataset = db.query(Dataset).filter(Dataset.id == dataset_id).order_by(Dataset.version.desc()).first()
+    else:
+        dataset = db.query(Dataset).filter(
+            Dataset.id == dataset_id,
+            Dataset.version == version
+        ).first()
+    
     if not dataset:
         raise HTTPException(status_code=404, detail="Dataset not found")
+    
+    dataset_version = dataset.version
     
     try:
         data = json_data.data
@@ -285,20 +316,31 @@ async def upload_expert_answers_data(
 async def upload_std_qa_data(
     dataset_id: int,
     json_data: JsonDataImport,
+    version: Optional[int] = None,  # 可选版本参数
     current_user: User = Depends(get_current_active_user),
     db: Session = Depends(get_db)
 ):
     """上传标准Q&A数据到指定数据集"""
     
-    # 验证数据集是否存在
-    dataset = db.query(Dataset).filter(Dataset.id == dataset_id).first()
+    # 验证数据集是否存在，如果不指定版本则获取最新版本
+    if version is None:
+        dataset = db.query(Dataset).filter(Dataset.id == dataset_id).order_by(Dataset.version.desc()).first()
+    else:
+        dataset = db.query(Dataset).filter(
+            Dataset.id == dataset_id,
+            Dataset.version == version
+        ).first()
+    
     if not dataset:
         raise HTTPException(status_code=404, detail="Dataset not found")
+    
+    dataset_version = dataset.version
     
     try:
         from ..models.std_question import StdQuestion
         from ..models.std_answer import StdAnswer, StdAnswerScoringPoint
         from ..models.relationship_records import StdQuestionRawQuestionRecord, StdAnswerRawAnswerRecord, StdAnswerExpertAnswerRecord
+        
         data = json_data.data
         imported_questions = 0
         imported_answers = 0
@@ -309,33 +351,48 @@ async def upload_std_qa_data(
             # 验证必需字段
             if not item.get('body'):
                 continue
+              # 获取或创建raw_question_id（因为raw_question_id不能为空）
+            raw_question_id = item.get('raw_question_id')
+            if not raw_question_id:
+                # 如果没有提供raw_question_id，创建一个RawQuestion
+                # 注意：RawQuestion不与数据集关联，只包含原始问题的基本信息
+                raw_question = RawQuestion(
+                    title=item.get('body', '')[:191],  # 使用body作为title，限制长度
+                    body=item.get('body', ''),
+                    created_by=current_user.id
+                )
+                db.add(raw_question)
+                db.flush()  # 获取ID
+                raw_question_id = raw_question.id
             
-            # 创建标准问题
+            # 创建标准问题（设置dataset版本字段）
             std_question = StdQuestion(
                 dataset_id=dataset_id,
-                raw_question_id=item.get('raw_question_id'),
+                dataset_version=dataset_version,  
+                raw_question_id=raw_question_id,  
                 body=item.get('body', ''),
-                question_type=item.get('question_type', 'single_choice'),
+                question_type=item.get('question_type', 'text'),
                 is_valid=True,
                 created_by=current_user.id,
-                version=1
+                version=1,
+                original_version_id=dataset_version,  # 设置原始版本                
+                current_version_id=dataset_version    # 设置当前版本
             )
             db.add(std_question)
             db.flush()
             imported_questions += 1
-            
             # 创建标准答案
             std_answer = StdAnswer(
                 std_question_id=std_question.id,
                 answer=item.get('answer', ''),
                 is_valid=True,
-                created_by=current_user.id,
+                answered_by=current_user.username if hasattr(current_user, 'username') else str(current_user.id),
                 version=1
             )
+            
             db.add(std_answer)
-            db.add(std_question)
-            db.flush()  # 获取问题ID
-            imported_questions += 1           
+            db.flush()
+            imported_answers += 1
             all_tags = set()  # set意味着标签不重复
             
             # 1. 从关联的原始问题获取标签
@@ -361,7 +418,8 @@ async def upload_std_qa_data(
                 
                 if tag not in std_question.tags:
                     std_question.tags.append(tag)
-              # 处理选择题：将选项添加到问题中
+                    
+            # 处理选择题：将选项添加到问题中
             if item.get('question_type') == 'choice' and item.get('options'):
                 # 构建选项文本
                 options_text = []
@@ -406,7 +464,7 @@ async def upload_std_qa_data(
                     std_question_id=std_question.id,
                     answer=answer_text,
                     is_valid=True,
-                    created_by=current_user.id,
+                    answered_by=current_user.id,
                     version=1
                 )
                 

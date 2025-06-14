@@ -23,25 +23,25 @@ class StdAnswerUpdate(BaseModel):
 
 class StdAnswerResponse(StdAnswerBase):
     id: int
-    create_time: datetime
+    answered_at: datetime  # 使用 answered_at 而不是 create_time
+    answered_by: Optional[str] = None  # 添加 answered_by 字段
     
     class Config:
         from_attributes = True
 
 class StdAnswerInDB(StdAnswerBase):
     id: int
-    create_time: datetime
+    answered_at: datetime  # 使用 answered_at 而不是 create_time
+    answered_by: Optional[str] = None  # 添加 answered_by 字段
     
     class Config:
         from_attributes = True
 
 class StdAnswerScoringPointBase(BaseModel):
     std_answer_id: int
-    scoring_point_text: str
+    answer: str  # 使用 answer 字段匹配模型的 @property
     point_order: int = 0
     is_valid: bool = True
-    created_by: Optional[str] = None
-    version: int = 1
     previous_version_id: Optional[int] = None
 
 class StdAnswerScoringPointCreate(StdAnswerScoringPointBase):
@@ -49,23 +49,21 @@ class StdAnswerScoringPointCreate(StdAnswerScoringPointBase):
 
 class StdAnswerScoringPointUpdate(BaseModel):
     std_answer_id: Optional[int] = None
-    scoring_point_text: Optional[str] = None
+    answer: Optional[str] = None  # 使用 answer 字段匹配模型的 @property
     point_order: Optional[int] = None
     is_valid: Optional[bool] = None
-    created_by: Optional[str] = None
-    version: Optional[int] = None
     previous_version_id: Optional[int] = None
 
 class StdAnswerScoringPointResponse(StdAnswerScoringPointBase):
     id: int
-    create_time: datetime
+    # 移除 create_time 字段，因为 CRUD 返回的数据中没有这个字段
     
     class Config:
         from_attributes = True
 
 class StdAnswerScoringPointInDB(StdAnswerScoringPointBase):
     id: int
-    create_time: datetime
+    # 移除 create_time 字段，因为 CRUD 返回的数据中没有这个字段
     
     class Config:
         from_attributes = True

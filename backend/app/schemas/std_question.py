@@ -7,14 +7,14 @@ class StdQuestionBase(BaseModel):
     body: str  # 使用body字段而不是text
     question_type: str
     is_valid: bool = True
-    created_by: Optional[str] = None
+    created_by: Optional[str] = None  # 改为字符串类型，存储用户名
     version: int = 1
     previous_version_id: Optional[int] = None
     original_version_id: Optional[int] = None  # 最初创建时的版本ID
     current_version_id: Optional[int] = None  # 当前所在的版本ID
 
 class StdQuestionCreate(StdQuestionBase):
-    pass
+    tags: Optional[List[str]] = []  # 创建时使用标签名称列表
 
 class StdQuestionUpdate(BaseModel):
     dataset_id: Optional[int] = None
@@ -26,10 +26,12 @@ class StdQuestionUpdate(BaseModel):
     previous_version_id: Optional[int] = None
     original_version_id: Optional[int] = None
     current_version_id: Optional[int] = None
+    tags: Optional[List[str]] = None  # 标签列表，可选更新
 
 class StdQuestionResponse(StdQuestionBase):
     id: int
     created_at: datetime  # 使用created_at字段而不是create_time
+    tags: List[str] = []  # 返回标签名称列表
     
     class Config:
         from_attributes = True
@@ -37,6 +39,7 @@ class StdQuestionResponse(StdQuestionBase):
 class StdQuestionInDB(StdQuestionBase):
     id: int
     created_at: datetime  # 使用created_at字段而不是create_time
+    tags: List[str] = []  # 返回标签名称列表
     
     class Config:
         from_attributes = True
@@ -56,4 +59,5 @@ def std_question_to_dict(db_obj):
         'dataset_id': db_obj.dataset_id,
         'original_version_id': db_obj.original_version_id,
         'current_version_id': db_obj.current_version_id,
+        'tags': [tag.label for tag in db_obj.tags] if db_obj.tags else [],  # 添加标签支持
     }

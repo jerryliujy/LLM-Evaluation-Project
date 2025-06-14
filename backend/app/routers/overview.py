@@ -5,6 +5,7 @@ from typing import List, Optional
 from datetime import datetime
 
 from app.db.database import get_db
+from app.models.dataset import Dataset
 from app.models.raw_question import RawQuestion
 from app.models.raw_answer import RawAnswer
 from app.models.expert_answer import ExpertAnswer
@@ -47,26 +48,35 @@ async def get_std_questions_overview(
             StdQuestionRawQuestionRecord.raw_question
         ).selectinload(RawQuestion.expert_answers.and_(
             ExpertAnswer.is_deleted == False
-        )),
-        selectinload(StdQuestion.raw_question_records).selectinload(
+        )),        selectinload(StdQuestion.raw_question_records).selectinload(
             StdQuestionRawQuestionRecord.raw_question
-        ).selectinload(RawQuestion.tags),
-        selectinload(StdQuestion.std_answers.and_(
+        ).selectinload(RawQuestion.tags),        selectinload(StdQuestion.std_answers.and_(
             StdAnswer.is_valid == True if not include_invalid else True
         )),
-        joinedload(StdQuestion.current_dataset)
+        joinedload(StdQuestion.dataset),  # 修正为正确的关系名称
+        selectinload(StdQuestion.created_by_user)  # 添加用户信息加载
     )
     
     if not include_invalid:
         query = query.filter(StdQuestion.is_valid == True)
     
     if dataset_id is not None:
-        query = query.filter(
-            and_(
-                StdQuestion.dataset_id <= dataset_id,
-                StdQuestion.is_valid == True
+        # 获取指定数据集的信息
+        dataset = db.query(Dataset).filter(Dataset.id == dataset_id).order_by(Dataset.version.desc()).first()
+        if dataset:
+            dataset_version = dataset.version
+            # 先匹配数据集ID，再检查数据集version是否在标准问题的version区间中
+            query = query.filter(
+                and_(
+                    StdQuestion.dataset_id == dataset_id,
+                    StdQuestion.original_version_id <= dataset_version,  # 标准问题的原始版本 <= 数据集版本
+                    StdQuestion.current_version_id >= dataset_version,   # 标准问题的当前版本 >= 数据集版本
+                    StdQuestion.is_valid == True
+                )
             )
-        )
+        else:
+            # 如果数据集不存在，返回空结果
+            query = query.filter(StdQuestion.id == -1)  # 确保没有结果
       # 添加搜索查询过滤
     if search_query:
         search_term = f"%{search_query}%"
@@ -133,7 +143,9 @@ async def get_std_questions_overview(
                             "author": raw_a.answered_by,
                             "question_id": raw_q.id,
                             "question_title": raw_q.title
-                        })                # 专家回答信息 - 只显示已通过关联表正式采纳的专家回答
+                        })                
+                
+                # 专家回答信息 - 只显示已通过关联表正式采纳的专家回答
                 for expert_a in raw_q.expert_answers:
                     if not expert_a.is_deleted:
                         # 检查该专家回答是否已被正式采纳（通过 StdAnswerExpertAnswerRecord 关联表）
@@ -157,9 +169,8 @@ async def get_std_questions_overview(
                                             "question_id": raw_q.id,
                                             "question_title": raw_q.title
                                         })
-                                        break  # 找到一个关联就足够了，避免重复添加
-        
-        # 标准答案文本        std_answer_text = ""
+        # 标准答案文本        
+        std_answer_text = ""
         if std_q.std_answers:
             valid_answers = [a for a in std_q.std_answers if a.is_valid]
             if valid_answers:
@@ -167,23 +178,44 @@ async def get_std_questions_overview(
         
         std_question_data = {
             "id": std_q.id,
-            "text": std_q.body,  # 标准问题文本
+            "dataset_id": std_q.dataset_id, 
+            "body": std_q.body,  
+            "question_type": std_q.question_type,
+            "created_by": std_q.created_by_user.username if std_q.created_by_user else "unknown",  # 返回用户名
+            "created_at": std_q.created_at,
+            "is_valid": std_q.is_valid,
+            "version": std_q.version,  
+            "previous_version_id": std_q.previous_version_id,
+            "original_version_id": std_q.original_version_id,
+            "current_version_id": std_q.current_version_id,
+            "dataset": {
+                "id": std_q.dataset.id,
+                "name": std_q.dataset.name,
+                "description": std_q.dataset.description,
+                "version": std_q.dataset.version
+            } if std_q.dataset else None,
+            "tags": list(all_tags),  
+            "std_answers": [
+                {
+                    "id": answer.id,
+                    "answer": answer.answer,
+                    "answered_by": answer.answered_by,
+                    "is_valid": answer.is_valid
+                } for answer in std_q.std_answers if answer.is_valid
+            ] if std_q.std_answers else [],
+            
+            # 额外的详细信息（用于前端展示）
             "answer_text": std_answer_text,  # 标准答案文本
-            "tags": list(all_tags),  # 从关联的原始问题收集的所有标签
             "raw_questions": "; ".join([f"{q['title']}: {q['body']}" for q in raw_questions_list]) if raw_questions_list else "无关联原始问题",
             "raw_answers": "; ".join([a['content'] for a in raw_answers_list]) if raw_answers_list else "无原始回答",
             "expert_answers": "; ".join([a['content'] for a in expert_answers_list]) if expert_answers_list else "无专家回答",
-            "question_type": std_q.question_type,
             
             # 详细数据（用于详情弹窗）
             "raw_questions_detail": raw_questions_list,
             "raw_answers_detail": raw_answers_list,
-            "expert_answers_detail": expert_answers_list,            "dataset_id": std_q.current_dataset_id,
-            "dataset_description": std_q.current_dataset.description if std_q.current_dataset else None,
-            "created_at": std_q.created_at.isoformat() if std_q.created_at else None,
-            "is_valid": std_q.is_valid,
+            "expert_answers_detail": expert_answers_list,
             
-            # 额外的统计信息（用于调试）
+            # 统计信息
             "associated_raw_questions_count": len(std_q.raw_question_records),
             "std_answers_count": len(std_q.std_answers) if std_q.std_answers else 0,
         }

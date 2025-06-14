@@ -6,6 +6,7 @@ class DatasetBase(BaseModel):
     name: str
     description: str
     is_public: bool = True
+    version: int = 1
 
 class DatasetCreate(DatasetBase):
     pass
@@ -14,11 +15,13 @@ class DatasetUpdate(BaseModel):
     name: Optional[str] = None
     description: Optional[str] = None
     is_public: Optional[bool] = None
+    version: Optional[int] = None
 
 class DatasetResponse(DatasetBase):
     id: int
     created_by: int  # 用户ID
     create_time: datetime
+    version: int
     
     class Config:
         from_attributes = True

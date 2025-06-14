@@ -33,9 +33,10 @@ def create_llm_evaluation_task(
     user_id: int
 ) -> LLMEvaluationTask:
     """创建LLM评测任务"""
-    # 获取数据集的所有标准问题
+    # 获取数据集的所有标准问题，使用复合主键
     std_questions = db.query(StdQuestion).filter(
-        StdQuestion.dataset_id == task_data.dataset_id,  # 使用dataset_id而不是current_dataset_id
+        StdQuestion.dataset_id == task_data.dataset_id,
+        StdQuestion.current_version_id == task_data.dataset_version,  # 使用dataset_version
         StdQuestion.is_valid == True
     ).all()
     total_questions = len(std_questions)
@@ -49,6 +50,7 @@ def create_llm_evaluation_task(
         name=task_data.name,
         description=task_data.description,
         dataset_id=task_data.dataset_id,
+        dataset_version=task_data.dataset_version,  # 添加dataset_version字段
         created_by=user_id,
         model_id=task_data.model_id,
         api_key_hash=api_key_hash,
@@ -124,6 +126,7 @@ def get_user_evaluation_tasks(
 def get_dataset_evaluation_tasks(
     db: Session, 
     dataset_id: int, 
+    dataset_version: Optional[int] = None,
     user_id: Optional[int] = None,
     skip: int = 0, 
     limit: int = 10
@@ -132,6 +135,10 @@ def get_dataset_evaluation_tasks(
     query = db.query(LLMEvaluationTask).filter(
         LLMEvaluationTask.dataset_id == dataset_id
     )
+    
+    # 如果指定了版本，则过滤版本
+    if dataset_version is not None:
+        query = query.filter(LLMEvaluationTask.dataset_version == dataset_version)
     
     if user_id:
         query = query.filter(LLMEvaluationTask.created_by == user_id)
@@ -308,17 +315,17 @@ def create_manual_evaluation_task(
     from ..models.evaluation import Evaluation, EvaluatorType
     from ..models.std_question import StdQuestion
     
-    try:
-        # 验证所有问题ID是否有效
+    try:        # 验证所有问题ID是否有效
         question_ids = [entry.question_id for entry in task_data.entries]
         valid_questions = db.query(StdQuestion).filter(
             StdQuestion.id.in_(question_ids),
             StdQuestion.dataset_id == task_data.dataset_id,
+            StdQuestion.current_version_id == task_data.dataset_version,  # 添加版本检查
             StdQuestion.is_valid == True
         ).all()
         
         if len(valid_questions) != len(question_ids):
-            raise ValueError("部分问题ID无效或不属于指定数据集")
+            raise ValueError("部分问题ID无效或不属于指定数据集版本")
         
         # 计算平均分
         total_score = sum(entry.score for entry in task_data.entries)
@@ -329,6 +336,7 @@ def create_manual_evaluation_task(
             name=task_data.name,
             description=task_data.description,
             dataset_id=task_data.dataset_id,
+            dataset_version=task_data.dataset_version,  # 添加dataset_version字段
             created_by=user_id,
             model_id=task_data.model_id,
             status=TaskStatus.COMPLETED,

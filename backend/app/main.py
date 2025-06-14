@@ -53,8 +53,8 @@ from .routers import (
     std_qa_manual,
     expert,
     evaluations,
-    dataset_versions,
-    llm_evaluation
+    llm_evaluation,
+    dataset_version_work
 )
 
 app.include_router(auth.router)
@@ -64,6 +64,7 @@ app.include_router(raw_answers.router)
 app.include_router(expert_answers.router)
 app.include_router(data_import.router)
 app.include_router(datasets.router)
+app.include_router(dataset_version_work.router)
 app.include_router(std_questions.router)
 app.include_router(std_answers.router)
 app.include_router(std_qa_manual.router)
@@ -72,8 +73,6 @@ app.include_router(overview.router)
 app.include_router(relationship_records.router)
 app.include_router(std_qa_management.router)
 app.include_router(evaluations.router, prefix="/api/llm-evaluation/evaluations", tags=["evaluations"])
-app.include_router(dataset_versions.router)
-app.include_router(dataset_versions.version_router)
 app.include_router(llm_evaluation.router)
 
 @app.get("/")

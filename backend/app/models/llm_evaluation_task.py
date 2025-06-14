@@ -1,7 +1,7 @@
 """
 LLM Evaluation Task models for managing background evaluation processes
 """
-from sqlalchemy import Column, Integer, String, Text, DateTime, Boolean, ForeignKey, DECIMAL, JSON, Enum as SQLEnum, text
+from sqlalchemy import Column, Integer, String, Text, DateTime, Boolean, ForeignKey, DECIMAL, JSON, Enum as SQLEnum, text, ForeignKeyConstraint
 from sqlalchemy.sql import func
 from sqlalchemy.orm import relationship
 from datetime import datetime
@@ -28,7 +28,8 @@ class LLMEvaluationTask(Base):
     id = Column(Integer, primary_key=True, index=True)
     name = Column(String(255), nullable=False)  # 任务名称
     description = Column(Text, nullable=True)  # 任务描述
-    dataset_id = Column(Integer, ForeignKey("Dataset.id"), nullable=False, index=True)
+    dataset_id = Column(Integer, nullable=False, index=True)
+    dataset_version = Column(Integer, nullable=False, index=True)
     created_by = Column(Integer, ForeignKey("User.id"), nullable=False, index=True)
     created_at = Column(DateTime, server_default=text('CURRENT_TIMESTAMP'), index=True)
     
@@ -61,10 +62,18 @@ class LLMEvaluationTask(Base):
     # 时间记录
     started_at = Column(DateTime, nullable=True)
     completed_at = Column(DateTime, nullable=True)
+      # 错误和结果
+    error_message = Column(Text, nullable=True)
     
-    # 错误和结果
-    error_message = Column(Text, nullable=True)    # 关系
-    dataset = relationship("Dataset")
+    # 设置复合外键约束
+    __table_args__ = (
+        ForeignKeyConstraint(['dataset_id', 'dataset_version'], ['Dataset.id', 'Dataset.version']),
+    )
+    
+    # 关系
+    dataset = relationship("Dataset", 
+                         foreign_keys=[dataset_id, dataset_version],
+                         primaryjoin="and_(LLMEvaluationTask.dataset_id==Dataset.id, LLMEvaluationTask.dataset_version==Dataset.version)")
     user = relationship("User")  # 创建者
     model = relationship("LLM", foreign_keys=[model_id], back_populates="evaluation_tasks")  # 评测模型
     llm_answers = relationship("LLMAnswer", back_populates="task")

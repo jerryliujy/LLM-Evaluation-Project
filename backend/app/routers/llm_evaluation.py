@@ -58,7 +58,8 @@ def get_marketplace_datasets(
     db: Session = Depends(get_db),
     current_user: User = Depends(get_current_user)
 ):
-    """获取公开数据集市场列表"""    # 根据参数决定是否限制数量
+    """获取公开数据集市场列表"""
+    # 根据参数决定是否限制数量
     actual_limit = None if all_datasets else limit
     
     datasets, total_count = get_datasets_paginated(
@@ -71,22 +72,25 @@ def get_marketplace_datasets(
     
     marketplace_datasets = []
     for dataset in datasets:
-        # 统计问题总数
+        # 统计问题总数（使用复合外键）
         question_count = db.query(StdQuestion).filter(
             StdQuestion.dataset_id == dataset.id,
+            StdQuestion.dataset_version == dataset.version,
             StdQuestion.is_valid == True
         ).count()
         
-        # 统计选择题数量
+        # 统计选择题数量（使用复合外键）
         choice_question_count = db.query(StdQuestion).filter(
             StdQuestion.dataset_id == dataset.id,
+            StdQuestion.dataset_version == dataset.version,
             StdQuestion.is_valid == True,
             StdQuestion.question_type == 'choice'
         ).count()
         
-        # 统计文本题数量
+        # 统计文本题数量（使用复合外键）
         text_question_count = db.query(StdQuestion).filter(
             StdQuestion.dataset_id == dataset.id,
+            StdQuestion.dataset_version == dataset.version,
             StdQuestion.is_valid == True,
             StdQuestion.question_type == 'text'
         ).count()
@@ -110,25 +114,42 @@ def get_marketplace_datasets(
 @router.get("/marketplace/datasets/{dataset_id}", response_model=MarketplaceDatasetInfo)
 def get_marketplace_dataset(
     dataset_id: int,
+    version: Optional[int] = None,  # 可选版本参数
     db: Session = Depends(get_db),
     current_user: User = Depends(get_current_user)
 ):
     """获取单个数据集的详细信息（仅公开数据集）"""
-    # 验证数据集存在且公开
-    dataset = db.query(Dataset).filter(
-        Dataset.id == dataset_id,
-        Dataset.is_public == True
-    ).first()
+    # 如果未指定版本，获取最新版本
+    if version is None:
+        latest_dataset = db.query(Dataset).filter(
+            Dataset.id == dataset_id,
+            Dataset.is_public == True
+        ).order_by(Dataset.version.desc()).first()
+        
+        if not latest_dataset:
+            raise HTTPException(
+                status_code=status.HTTP_404_NOT_FOUND,
+                detail="Dataset not found or not public"
+            )
+        dataset = latest_dataset
+    else:
+        # 验证指定版本的数据集存在且公开
+        dataset = db.query(Dataset).filter(
+            Dataset.id == dataset_id,
+            Dataset.version == version,
+            Dataset.is_public == True
+        ).first()
+        
+        if not dataset:
+            raise HTTPException(
+                status_code=status.HTTP_404_NOT_FOUND,
+                detail="Dataset version not found or not public"
+            )
     
-    if not dataset:
-        raise HTTPException(
-            status_code=status.HTTP_404_NOT_FOUND,
-            detail="Dataset not found or not public"
-        )
-    
-    # 获取数据集的所有标准问题
+    # 获取数据集的所有标准问题（使用复合外键）
     std_questions = db.query(StdQuestion).filter(
-        StdQuestion.dataset_id == dataset.id,  # 使用dataset_id而不是current_dataset_id
+        StdQuestion.dataset_id == dataset.id,
+        StdQuestion.dataset_version == dataset.version,
         StdQuestion.is_valid == True
     ).all()
     
@@ -158,26 +179,43 @@ def get_marketplace_dataset(
 @router.get("/marketplace/datasets/{dataset_id}/download", response_model=DatasetDownloadResponse)
 def download_marketplace_dataset(
     dataset_id: int,
+    version: Optional[int] = None,  # 可选版本参数
     format: str = "json",
     db: Session = Depends(get_db),
     current_user: User = Depends(get_current_user)
 ):
     """下载数据集的问题数据"""
-    # 验证数据集存在且公开
-    dataset = db.query(Dataset).filter(
-        Dataset.id == dataset_id,
-        Dataset.is_public == True
-    ).first()
+    # 如果未指定版本，获取最新版本
+    if version is None:
+        latest_dataset = db.query(Dataset).filter(
+            Dataset.id == dataset_id,
+            Dataset.is_public == True
+        ).order_by(Dataset.version.desc()).first()
+        
+        if not latest_dataset:
+            raise HTTPException(
+                status_code=status.HTTP_404_NOT_FOUND,
+                detail="Dataset not found or not public"
+            )
+        dataset = latest_dataset
+    else:
+        # 验证指定版本的数据集存在且公开
+        dataset = db.query(Dataset).filter(
+            Dataset.id == dataset_id,
+            Dataset.version == version,
+            Dataset.is_public == True
+        ).first()
+        
+        if not dataset:
+            raise HTTPException(
+                status_code=status.HTTP_404_NOT_FOUND,
+                detail="Dataset version not found or not public"
+            )
     
-    if not dataset:
-        raise HTTPException(
-            status_code=status.HTTP_404_NOT_FOUND,
-            detail="Dataset not found or not public"
-        )
-    
-    # 获取数据集的所有标准问题
+    # 获取数据集的所有标准问题（使用复合外键）
     std_questions = db.query(StdQuestion).filter(
-        StdQuestion.dataset_id == dataset.id,  # 使用dataset_id而不是current_dataset_id
+        StdQuestion.dataset_id == dataset.id,
+        StdQuestion.dataset_version == dataset.version,
         StdQuestion.is_valid == True
     ).all()
     
@@ -392,14 +430,15 @@ async def create_evaluation_task(
     except Exception as e:
         print(f"Error in debug info: {e}")
         import traceback
-        traceback.print_exc()
-
-    # 验证数据集存在
-    dataset = db.query(Dataset).filter(Dataset.id == request.dataset_id).first()
+        traceback.print_exc()    # 验证数据集存在并且指定版本存在
+    dataset = db.query(Dataset).filter(
+        Dataset.id == request.dataset_id,
+        Dataset.version == (request.dataset_version or 1)  # 如果没有指定版本，使用版本1
+    ).first()
     if not dataset:        
         raise HTTPException(
             status_code=status.HTTP_404_NOT_FOUND,
-            detail="Dataset not found"
+            detail="Dataset or specified version not found"
         )
     
     # 直接通过model_id查找LLM模型记录
@@ -415,9 +454,10 @@ async def create_evaluation_task(
     llm = db.query(LLM).filter(LLM.id == model_id).first()
     if not llm:
         raise HTTPException(
-            status_code=status.HTTP_404_NOT_FOUND,
-            detail="Model not found"
-        )    # 创建任务数据
+            status_code=status.HTTP_404_NOT_FOUND,            detail="Model not found"
+        )
+    
+    # 创建任务数据
     def get_config_value(config, key, default=None):
         """从配置对象中获取值，支持Pydantic模型和字典"""
         if hasattr(config, key):
@@ -431,10 +471,12 @@ async def create_evaluation_task(
         name=request.task_name,
         description=f"LLM评测任务: {request.task_name}",
         dataset_id=request.dataset_id,
+        dataset_version=request.dataset_version or 1,  # 添加dataset_version字段
         model_id=llm.id,  # 使用验证过的LLM ID
         system_prompt=get_config_value(request.model_settings, 'system_prompt'),
         choice_system_prompt=get_config_value(request.model_settings, 'choice_system_prompt'),
-        text_system_prompt=get_config_value(request.model_settings, 'text_system_prompt'),        choice_evaluation_prompt=get_config_value(request.evaluation_config, 'choice_evaluation_prompt') if request.evaluation_config else None,
+        text_system_prompt=get_config_value(request.model_settings, 'text_system_prompt'),
+        choice_evaluation_prompt=get_config_value(request.evaluation_config, 'choice_evaluation_prompt') if request.evaluation_config else None,
         text_evaluation_prompt=get_config_value(request.evaluation_config, 'text_evaluation_prompt') if request.evaluation_config else None,
         temperature=Decimal(str(get_config_value(request.model_settings, 'temperature', 0.7))),  # 转换为Decimal
         max_tokens=get_config_value(request.model_settings, 'max_tokens', 2000),
@@ -482,13 +524,15 @@ def create_manual_evaluation_task_endpoint(
     """创建手动录入的评测任务"""
     try:
         logger.info(f"User {current_user.id} creating manual evaluation task: {task_data.name}")
-        
-        # 验证数据集是否存在且用户有权限访问
-        dataset = db.query(Dataset).filter(Dataset.id == task_data.dataset_id).first()
+          # 验证数据集是否存在且指定版本存在
+        dataset = db.query(Dataset).filter(
+            Dataset.id == task_data.dataset_id,
+            Dataset.version == (task_data.dataset_version or 1)
+        ).first()
         if not dataset:
             raise HTTPException(
                 status_code=status.HTTP_404_NOT_FOUND,
-                detail="Dataset not found"
+                detail="Dataset or specified version not found"
             )
         
         # 验证数据集是否公开或用户有权限
@@ -1056,6 +1100,7 @@ def get_task_detailed_results(
 @router.get("/datasets/{dataset_id}/questions")
 def get_dataset_questions(
     dataset_id: int,
+    version: Optional[int] = None,  # 可选版本参数
     skip: int = 0,
     limit: int = 100,
     db: Session = Depends(get_db),
@@ -1063,8 +1108,18 @@ def get_dataset_questions(
 ):
     """获取数据集中的问题列表（用于手动录入）"""
     try:
-        # 验证数据集是否存在且用户有权限访问
-        dataset = db.query(Dataset).filter(Dataset.id == dataset_id).first()
+        # 如果未指定版本，获取最新版本
+        if version is None:
+            dataset = db.query(Dataset).filter(
+                Dataset.id == dataset_id
+            ).order_by(Dataset.version.desc()).first()
+        else:
+            # 验证指定版本的数据集存在
+            dataset = db.query(Dataset).filter(
+                Dataset.id == dataset_id,
+                Dataset.version == version
+            ).first()
+        
         if not dataset:
             raise HTTPException(
                 status_code=status.HTTP_404_NOT_FOUND,
@@ -1078,13 +1133,13 @@ def get_dataset_questions(
                 detail="No permission to access this dataset"
             )
         
-        # 获取问题列表
+        # 获取问题列表（使用复合外键）
         questions = db.query(StdQuestion).filter(
-            StdQuestion.dataset_id == dataset_id,
+            StdQuestion.dataset_id == dataset.id,
+            StdQuestion.dataset_version == dataset.version,
             StdQuestion.is_valid == True
         ).offset(skip).limit(limit).all()
-        
-        # 转换为前端需要的格式
+          # 转换为前端需要的格式
         question_list = []
         for question in questions:
             # 获取标准答案
@@ -1104,7 +1159,8 @@ def get_dataset_questions(
         return {
             "questions": question_list,
             "total_count": db.query(StdQuestion).filter(
-                StdQuestion.dataset_id == dataset_id,
+                StdQuestion.dataset_id == dataset.id,
+                StdQuestion.dataset_version == dataset.version,
                 StdQuestion.is_valid == True
             ).count()
         }

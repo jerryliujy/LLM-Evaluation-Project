@@ -110,22 +110,42 @@ def get_std_answers_paginated(
     total = query.count()
     
     # 获取分页数据
-    answers = query.order_by(models.StdAnswer.id.asc()).offset(skip).limit(limit).all()
-      # 转换为字典格式以避免序列化问题
+    answers = query.order_by(models.StdAnswer.id.asc()).offset(skip).limit(limit).all()    # 转换为字典格式以避免序列化问题
     answers_data = []
-    for answer in answers:
-        # 获取得分点列表文本
+    for answer in answers:        # 获取得分点列表
         scoring_points_list = []
+        scoring_points_data = []
         if answer.scoring_points:
             for point in answer.scoring_points:
-                if point.is_valid:  
-                    scoring_points_list.append(point.answer)
+                # 临时显示所有得分点用于调试，包括无效的
+                scoring_points_list.append(point.scoring_point_text)
+                scoring_points_data.append({
+                    "id": point.id,
+                    "answer": point.scoring_point_text,  # 使用实际字段名而不是property
+                    "std_answer_id": point.std_answer_id,
+                    "point_order": point.point_order,
+                    "is_valid": point.is_valid,
+                    "previous_version_id": point.previous_version_id
+                })# 确保 answered_by 始终是字符串（用户名）
+        answered_by = answer.answered_by or "unknown"
         
+        # 如果 answered_by 看起来像数字ID，尝试查找对应的用户名
+        if answered_by.isdigit():
+            try:
+                user_id = int(answered_by)
+                user = db.query(models.User).filter(models.User.id == user_id).first()
+                if user and user.username:
+                    answered_by = user.username
+                else:
+                    answered_by = f"user_{answered_by}"  # 如果找不到用户，显示为 user_ID
+            except (ValueError, AttributeError):
+                pass  # 如果转换失败，保持原值
+
         answer_dict = {
             "id": answer.id,
             "std_question_id": answer.std_question_id,
             "answer": answer.answer,
-            "answered_by": answer.answered_by,
+            "answered_by": answered_by,
             "answered_at": answer.answered_at,
             "is_valid": answer.is_valid,
             "std_question": {
@@ -134,16 +154,7 @@ def get_std_answers_paginated(
                 "question_type": answer.std_question.question_type
             } if answer.std_question else None,
             "scoring_points_count": len(scoring_points_list),  # 新增：得分点数量
-            "scoring_points": [
-                {
-                    "id": point.id,
-                    "answer": point.answer,  
-                    "std_answer_id": point.std_answer_id,
-                    "point_order": point.point_order,
-                    "is_valid": point.is_valid,
-                    "previous_version_id": point.previous_version_id
-                } for point in answer.scoring_points
-            ] if answer.scoring_points else []
+            "scoring_points": scoring_points_data
         }
         answers_data.append(answer_dict)
     

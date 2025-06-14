@@ -58,7 +58,7 @@ class PromptTemplateInfo(BaseModel):
 
 class ModelConfigRequest(BaseModel):
     """模型配置请求Schema"""
-    model_id: int = Field(..., description="模型ID")
+    model_id: int = Field(..., description="模型ID", alias="model_id")
     api_key: str = Field(..., description="API密钥")
     system_prompt: Optional[str] = Field(None, description="系统提示词")
     choice_system_prompt: Optional[str] = Field(None, description="选择题系统提示词")
@@ -69,6 +69,9 @@ class ModelConfigRequest(BaseModel):
     enable_reasoning: Optional[bool] = Field(False, description="启用推理模式")
     
     class Config:
+        allow_population_by_field_name = True
+    
+    class Config:
         # 允许字段验证
         validate_assignment = True
 
@@ -76,6 +79,7 @@ class ModelConfigRequest(BaseModel):
 class EvaluationStartRequest(BaseModel):
     """开始评测请求Schema"""
     dataset_id: int = Field(..., description="数据集ID")
+    dataset_version: Optional[int] = Field(1, description="数据集版本")
     task_name: str = Field(..., description="任务名称")
     model_settings: ModelConfigRequest = Field(..., description="模型配置", alias="model_config")
     evaluation_config: Optional[Dict[str, Any]] = Field(None, description="评测配置")
@@ -92,7 +96,8 @@ class LLMEvaluationTaskBase(BaseModel):
     name: str = Field(..., description="任务名称")
     description: Optional[str] = Field(None, description="任务描述")
     dataset_id: int = Field(..., description="数据集ID")
-    model_id: int = Field(..., description="LLM模型ID")
+    dataset_version: Optional[int] = Field(1, description="数据集版本")
+    model_id: int = Field(..., description="LLM模型ID", alias="model_id")
     system_prompt: Optional[str] = Field(None, description="系统prompt")
     choice_system_prompt: Optional[str] = Field(None, description="选择题系统prompt")
     text_system_prompt: Optional[str] = Field(None, description="问答题系统prompt")
@@ -103,6 +108,9 @@ class LLMEvaluationTaskBase(BaseModel):
     top_k: Optional[int] = Field(50, description="Top-K采样")
     enable_reasoning: Optional[bool] = Field(False, description="启用推理模式")
     evaluation_prompt: Optional[str] = Field(None, description="评估prompt")
+    
+    class Config:
+        allow_population_by_field_name = True
 
 
 class LLMEvaluationTaskCreate(LLMEvaluationTaskBase):
@@ -291,7 +299,8 @@ class ManualEvaluationTaskCreate(BaseModel):
     name: str = Field(..., description="任务名称")
     description: Optional[str] = Field(None, description="任务描述")
     dataset_id: int = Field(..., description="数据集ID")
-    model_id: int = Field(..., description="LLM模型ID")
+    dataset_version: int = Field(1, description="数据集版本")
+    model_id: int = Field(..., description="LLM模型ID", alias="model_id")
     entries: List[ManualEvaluationEntry] = Field(..., description="评测条目列表")
     
     # 高级配置选项
@@ -307,11 +316,13 @@ class ManualEvaluationTaskCreate(BaseModel):
     enable_reasoning: Optional[bool] = Field(False, description="启用推理模式")
     
     class Config:
+        allow_population_by_field_name = True
         schema_extra = {
             "example": {
                 "name": "手动录入测试任务",
                 "description": "手动录入的评测结果",
                 "dataset_id": 1,
+                "dataset_version": 1,
                 "model_id": 1,
                 "entries": [
                     {
