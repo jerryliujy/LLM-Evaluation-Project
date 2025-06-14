@@ -24,7 +24,8 @@ from app.schemas.llm_evaluation_task import (
     LLMEvaluationTaskCreate, LLMEvaluationTaskResponse, LLMEvaluationTaskUpdate,
     LLMEvaluationTaskProgress, PromptTemplateInfo,
     EvaluationStartRequest, AvailableModel, EvaluationResultSummary,
-    EvaluationDownloadRequest, ModelConfigRequest
+    EvaluationDownloadRequest, ModelConfigRequest,
+    ManualEvaluationTaskCreate, ManualEvaluationTaskResponse
 )
 from app.schemas.llm_answer import (
     MarketplaceDatasetInfo, DatasetDownloadResponse
@@ -32,7 +33,7 @@ from app.schemas.llm_answer import (
 from app.schemas.evaluation import EvaluationResponse
 from app.crud.crud_llm_evaluation_task import (
     create_llm_evaluation_task, get_llm_evaluation_task, update_llm_evaluation_task,
-    get_user_evaluation_tasks, get_task_progress
+    get_user_evaluation_tasks, get_task_progress, create_manual_evaluation_task
 )
 from app.crud.crud_llm import get_active_llms
 from app.crud.crud_dataset import get_datasets_paginated
@@ -477,6 +478,89 @@ async def create_evaluation_task(
         # 即使后台任务失败，也要返回任务，但状态会是FAILED
     
     return LLMEvaluationTaskResponse.from_orm(task)
+
+
+@router.post("/tasks/manual", response_model=ManualEvaluationTaskResponse)
+def create_manual_evaluation_task_endpoint(
+    task_data: ManualEvaluationTaskCreate,
+    db: Session = Depends(get_db),
+    current_user: User = Depends(get_current_user)
+):
+    """创建手动录入的评测任务"""
+    try:
+        logger.info(f"User {current_user.id} creating manual evaluation task: {task_data.name}")
+        
+        # 验证数据集是否存在且用户有权限访问
+        dataset = db.query(Dataset).filter(Dataset.id == task_data.dataset_id).first()
+        if not dataset:
+            raise HTTPException(
+                status_code=status.HTTP_404_NOT_FOUND,
+                detail="Dataset not found"
+            )
+        
+        # 验证数据集是否公开或用户有权限
+        if not dataset.is_public and dataset.created_by != current_user.id:
+            raise HTTPException(
+                status_code=status.HTTP_403_FORBIDDEN,
+                detail="No permission to access this dataset"
+            )
+        
+        # 验证LLM模型是否存在
+        llm_model = db.query(LLM).filter(LLM.id == task_data.model_id).first()
+        if not llm_model:
+            raise HTTPException(
+                status_code=status.HTTP_404_NOT_FOUND,
+                detail="LLM model not found"
+            )
+        
+        # 验证评测条目不为空
+        if not task_data.entries:
+            raise HTTPException(
+                status_code=status.HTTP_400_BAD_REQUEST,
+                detail="Evaluation entries cannot be empty"
+            )
+        
+        # 创建手动评测任务
+        task = create_manual_evaluation_task(
+            db=db,
+            task_data=task_data,
+            user_id=current_user.id
+        )
+        
+        logger.info(f"Manual evaluation task created successfully: {task.id}")
+        
+        # 返回任务信息
+        return ManualEvaluationTaskResponse(
+            id=task.id,
+            name=task.name,
+            description=task.description,
+            dataset={
+                "id": dataset.id,
+                "name": dataset.name,
+                "description": dataset.description
+            },
+            model={
+                "id": llm_model.id,
+                "name": llm_model.name,
+                "display_name": llm_model.display_name or llm_model.name,
+                "version": llm_model.version
+            },
+            status=task.status,
+            score=float(task.score) if task.score else None,
+            total_questions=task.total_questions,
+            completed_questions=task.completed_questions,
+            created_at=task.created_at,
+            completed_at=task.completed_at
+        )
+        
+    except HTTPException:
+        raise
+    except Exception as e:
+        logger.error(f"Error creating manual evaluation task: {str(e)}")
+        raise HTTPException(
+            status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
+            detail=f"Failed to create manual evaluation task: {str(e)}"
+        )
 
 
 @router.get("/tasks", response_model=List[LLMEvaluationTaskResponse])
@@ -926,40 +1010,87 @@ def get_task_detailed_results(
             ],
             "average_score": avg_score
         })
-    
-    # 计算总体统计
+      # 计算总体统计
     overall_average = total_score / valid_scores if valid_scores > 0 else 0
+    overall_success_rate = sum(1 for answer in llm_answers if answer.is_valid) / len(llm_answers) if llm_answers else 0
     
     return {
-        "task_info": {
-            "id": task.id,
-            "name": task.name,
-            "dataset_name": task.dataset.name if task.dataset else "未知数据集",
-            "model_name": task.model.display_name if task.model else "未知模型",
-            "model_version": task.model.version if task.model else None,
-            "status": task.status.value if hasattr(task.status, 'value') else task.status,
-            "created_at": task.created_at.isoformat(),
-            "started_at": task.started_at.isoformat() if task.started_at else None,
-            "completed_at": task.completed_at.isoformat() if task.completed_at else None,
-            "total_questions": task.total_questions,
-            "completed_questions": task.completed_questions,
-            "failed_questions": task.failed_questions
-        },
-        "configuration": {
-            "system_prompt": task.system_prompt,
-            "evaluation_prompt": task.evaluation_prompt,
-            "temperature": float(task.temperature) if task.temperature else None,
-            "max_tokens": task.max_tokens,
-            "top_k": task.top_k,
-            "enable_reasoning": task.enable_reasoning
-        },
-        "statistics": {
-            "total_answers": len(detailed_answers),
-            "valid_answers": len([a for a in detailed_answers if a["llm_answer"]["is_valid"]]),
-            "evaluated_answers": valid_scores,
-            "overall_average_score": round(overall_average, 2),
-            "total_score": round(total_score, 2),
-            "completion_rate": task.completed_questions / task.total_questions if task.total_questions > 0 else 0
-        },
-        "detailed_answers": detailed_answers
+        "task_id": task.id,
+        "task_name": task.name,
+        "dataset_name": task.dataset.name,
+        "model_name": task.model.name if task.model else "Unknown",
+        "status": task.status,
+        "created_at": task.created_at,
+        "updated_at": task.updated_at,
+        "detailed_results": detailed_answers,
+        "total_score": total_score,
+        "average_score": overall_average,
+        "success_rate": overall_success_rate
     }
+
+
+@router.get("/datasets/{dataset_id}/questions")
+def get_dataset_questions(
+    dataset_id: int,
+    skip: int = 0,
+    limit: int = 100,
+    db: Session = Depends(get_db),
+    current_user: User = Depends(get_current_user)
+):
+    """获取数据集中的问题列表（用于手动录入）"""
+    try:
+        # 验证数据集是否存在且用户有权限访问
+        dataset = db.query(Dataset).filter(Dataset.id == dataset_id).first()
+        if not dataset:
+            raise HTTPException(
+                status_code=status.HTTP_404_NOT_FOUND,
+                detail="Dataset not found"
+            )
+        
+        # 验证数据集是否公开或用户有权限
+        if not dataset.is_public and dataset.created_by != current_user.id:
+            raise HTTPException(
+                status_code=status.HTTP_403_FORBIDDEN,
+                detail="No permission to access this dataset"
+            )
+        
+        # 获取问题列表
+        questions = db.query(StdQuestion).filter(
+            StdQuestion.current_dataset_id == dataset_id,
+            StdQuestion.is_valid == True
+        ).offset(skip).limit(limit).all()
+        
+        # 转换为前端需要的格式
+        question_list = []
+        for question in questions:
+            # 获取标准答案
+            std_answer = db.query(StdAnswer).filter(
+                StdAnswer.question_id == question.id
+            ).first()
+            
+            question_data = {
+                "id": question.id,
+                "body": question.body,
+                "question_type": question.question_type,
+                "choices": question.choices,
+                "standard_answer": std_answer.answer if std_answer else None,
+                "explanation": std_answer.explanation if std_answer else None
+            }
+            question_list.append(question_data)
+        
+        return {
+            "questions": question_list,
+            "total_count": db.query(StdQuestion).filter(
+                StdQuestion.current_dataset_id == dataset_id,
+                StdQuestion.is_valid == True
+            ).count()
+        }
+        
+    except HTTPException:
+        raise
+    except Exception as e:
+        logger.error(f"Error getting dataset questions: {str(e)}")
+        raise HTTPException(
+            status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
+            detail=f"Failed to get dataset questions: {str(e)}"
+        )

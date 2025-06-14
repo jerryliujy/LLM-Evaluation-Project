@@ -526,258 +526,141 @@ const formatDateTime = (dateString: string) => {
 
 <style scoped>
 /* 全局样式 */
-.llm-marketplace {
+.marketplace-container {
+  padding: 20px;
+  background-color: #f7f8fa; /* 更柔和的背景色 */
   min-height: 100vh;
-  background-color: #f5f5f5;
-  padding: 0;
 }
 
 /* 页面头部 */
-.header {
-  background: white;
-  padding: 30px 0;
-  margin-bottom: 20px;
-  border-bottom: 1px solid #e0e0e0;
-}
-
-.header-content {
-  max-width: 1200px;
-  margin: 0 auto;
-  padding: 0 20px;
+.page-header {
   display: flex;
   justify-content: space-between;
   align-items: center;
+  margin-bottom: 24px;
+  padding: 16px 24px;
+  background-color: #ffffff;
+  border-radius: 8px;
+  box-shadow: 0 2px 12px 0 rgba(0, 0, 0, 0.06);
 }
 
-.title-section {
-  flex: 1;
-}
-
-.page-title {
-  font-size: 2rem;
+.page-header h1 {
+  font-size: 1.8rem; /* 调整标题大小 */
   font-weight: 600;
-  color: #333;
-  margin: 0 0 8px 0;
-}
-
-.page-subtitle {
-  font-size: 1rem;
-  color: #666;
+  color: #303133;
   margin: 0;
 }
 
-.header-stats {
-  display: flex;
-  gap: 30px;
-}
-
-.stat-item {
-  display: flex;
-  align-items: center;
-  gap: 8px;
-}
-
-.stat-label {
-  color: #666;
+.page-header .stats {
   font-size: 0.9rem;
+  color: #606266;
 }
 
-.stat-number {
-  font-size: 1.2rem;
-  font-weight: 600;
-  color: #409eff;
+.page-header .stats span {
+  margin-left: 16px;
 }
 
-/* 标签页容器 */
-.tabs-container {
-  max-width: 1200px;
-  margin: 0 auto;
-  padding: 0 20px;
-}
 
-.custom-tabs {
-  background: white;
+/* 标签页 */
+.el-tabs {
+  background-color: #ffffff;
+  padding: 10px 20px; /* 调整内边距 */
   border-radius: 8px;
-  padding: 20px;
-  box-shadow: 0 2px 8px rgba(0, 0, 0, 0.1);
+  box-shadow: 0 2px 12px 0 rgba(0, 0, 0, 0.06);
 }
 
 .tab-label {
-  font-size: 1rem;
+  font-size: 1rem; /* 调整标签字体大小 */
   font-weight: 500;
 }
 
-/* 搜索和筛选区域 */
-.filters-section {
-  margin-bottom: 20px;
-}
-
-.search-bar {
-  display: flex;
-  gap: 12px;
-  align-items: center;
-}
-
-.search-input {
-  flex: 1;
-  max-width: 400px;
-}
-
-.refresh-btn {
-  border-radius: 4px;
-}
-
-/* 数据集网格 */
-.datasets-grid {
-  min-height: 400px;
-}
-
-.grid-container {
-  display: grid;
-  grid-template-columns: repeat(auto-fill, minmax(320px, 1fr));
-  gap: 20px;
-}
-
-.dataset-card {
-  background: white;
-  border-radius: 8px;
-  padding: 20px;
-  box-shadow: 0 2px 8px rgba(0, 0, 0, 0.1);
-  transition: box-shadow 0.3s ease;
-  border: 1px solid #e0e0e0;
-}
-
-.dataset-card:hover {
-  box-shadow: 0 4px 16px rgba(0, 0, 0, 0.15);
-}
-
-.card-header {
-  display: flex;
-  align-items: center;
-  gap: 12px;
-  margin-bottom: 16px;
-}
-
-.dataset-meta {
-  flex: 1;
-}
-
-.dataset-name {
-  font-size: 1.1rem;
-  font-weight: 600;
-  color: #333;
-  margin: 0 0 6px 0;
-}
-
-.card-body {
-  margin-bottom: 20px;
-}
-
-.dataset-description {
-  color: #666;
-  line-height: 1.5;
-  margin-bottom: 16px;
-  height: 3em;
-  overflow: hidden;
-  display: -webkit-box;
-  -webkit-line-clamp: 2;
-  line-clamp: 2;
-  -webkit-box-orient: vertical;
-}
-
-.dataset-stats {
-  display: flex;
-  flex-direction: column;
-  gap: 8px;
-}
-
-.stat-item {
-  color: #888;
-  font-size: 0.9rem;
-}
-
-.card-footer {
-  display: flex;
-  gap: 8px;
-}
-
-.action-btn {
-  flex: 1;
-  border-radius: 4px;
-}
-
-/* 任务相关样式 */
+/* 任务筛选器 */
 .task-filters {
   margin-bottom: 20px;
+  padding: 16px; /* 增加内边距 */
+  background-color: #fbfcfd; /* 轻微背景色区分 */
+  border-radius: 6px;
+  /* border: 1px solid #e9e9eb; */
 }
 
 .filter-group {
   display: flex;
-  gap: 12px;
+  gap: 16px; /* 调整元素间距 */
   align-items: center;
 }
 
+/* 任务列表 */
+.tasks-list {
+  min-height: 300px; /* 调整最小高度 */
+}
+
 .tasks-container {
-  display: flex;
-  flex-direction: column;
-  gap: 16px;
+  display: grid; /* 改为 grid 布局 */
+  grid-template-columns: repeat(auto-fill, minmax(350px, 1fr)); /* 响应式列 */
+  gap: 20px; /* 卡片间距 */
 }
 
 .task-card {
-  background: white;
-  border-radius: 8px;
+  background: #ffffff;
+  border-radius: 8px; /* 更大的圆角 */
   padding: 20px;
-  box-shadow: 0 2px 8px rgba(0, 0, 0, 0.1);
-  border: 1px solid #e0e0e0;
-  border-left: 4px solid #e0e0e0;
+  box-shadow: 0 2px 8px rgba(0, 0, 0, 0.08); /* 调整阴影 */
+  border: 1px solid #e9e9eb; /* 更淡的边框 */
+  transition: box-shadow 0.3s ease, transform 0.2s ease; /* 添加过渡效果 */
+  display: flex;
+  flex-direction: column;
+  justify-content: space-between; /* 使内容垂直分布 */
 }
 
-.task-card-pending {
-  border-left-color: #409eff;
+.task-card:hover {
+  box-shadow: 0 4px 16px rgba(0, 0, 0, 0.12); /* 悬停阴影 */
+  transform: translateY(-3px); /* 轻微上浮效果 */
 }
 
-.task-card-running {
-  border-left-color: #e6a23c;
-}
+/* 根据任务状态调整左边框颜色 */
+.task-card-config_params { border-left: 5px solid #409EFF; }
+.task-card-config_prompts { border-left: 5px solid #409EFF; }
+.task-card-generating_answers { border-left: 5px solid #E6A23C; }
+.task-card-evaluating_answers { border-left: 5px solid #E6A23C; }
+.task-card-completed { border-left: 5px solid #67C23A; }
+.task-card-failed { border-left: 5px solid #F56C6C; }
+.task-card-cancelled { border-left: 5px solid #909399; }
 
-.task-card-completed {
-  border-left-color: #67c23a;
-}
-
-.task-card-failed {
-  border-left-color: #f56c6c;
-}
-
-.task-card-cancelled {
-  border-left-color: #909399;
-}
 
 .task-header {
   display: flex;
   justify-content: space-between;
-  align-items: flex-start;
-  margin-bottom: 16px;
+  align-items: flex-start; /* 顶部对齐 */
+  margin-bottom: 12px; /* 调整间距 */
 }
 
 .task-title-section {
   display: flex;
-  align-items: center;
-  gap: 12px;
+  flex-direction: column; /* 标题和标签垂直排列 */
+  gap: 6px; /* 标题和标签间距 */
+  flex-grow: 1; /* 占据更多空间 */
 }
 
 .task-title {
-  font-size: 1.1rem;
+  font-size: 1.2rem; /* 调整标题大小 */
   font-weight: 600;
-  color: #333;
+  color: #303133;
   margin: 0;
+  line-height: 1.3;
+}
+
+.status-tag {
+  align-self: flex-start; /* 状态标签靠左 */
 }
 
 .task-time {
   display: flex;
   align-items: center;
-  gap: 4px;
-  color: #888;
-  font-size: 0.9rem;
+  gap: 6px; /* 图标和时间间距 */
+  color: #909399; /* 时间颜色 */
+  font-size: 0.85rem; /* 时间字体大小 */
+  white-space: nowrap; /* 防止时间换行 */
+  margin-left: 10px; /* 与标题部分隔开 */
 }
 
 .task-info {
@@ -786,25 +669,26 @@ const formatDateTime = (dateString: string) => {
 
 .info-grid {
   display: grid;
-  grid-template-columns: repeat(auto-fit, minmax(180px, 1fr));
-  gap: 12px;
+  grid-template-columns: repeat(2, 1fr); /* 两列布局 */
+  gap: 10px 16px; /* 行间距和列间距 */
 }
 
 .info-item {
   display: flex;
   flex-direction: column;
-  gap: 4px;
+  gap: 2px; /* 标签和值之间的间距 */
 }
 
 .info-label {
-  font-size: 0.9rem;
-  color: #666;
-  font-weight: 500;
+  font-size: 0.85rem;
+  color: #606266;
+  font-weight: 400; /* 标签字体不加粗 */
 }
 
 .info-value {
-  font-weight: 600;
-  color: #333;
+  font-weight: 500; /* 值字体稍粗 */
+  color: #303133;
+  font-size: 0.9rem;
 }
 
 .task-progress {
@@ -815,28 +699,79 @@ const formatDateTime = (dateString: string) => {
   display: flex;
   justify-content: space-between;
   margin-bottom: 6px;
-  font-size: 0.9rem;
-  color: #666;
+  font-size: 0.85rem;
+  color: #606266;
 }
+
+.progress-bar {
+  /* el-progress 默认样式通常不错，可按需调整 */
+  /* 例如：自定义高度 */
+  /* --el-progress-bar-height: 10px; */
+}
+.progress-bar .el-progress-bar__outer {
+  border-radius: 6px; /* 进度条圆角 */
+}
+.progress-bar .el-progress-bar__inner {
+  border-radius: 6px; /* 进度条内部圆角 */
+}
+
 
 .task-actions {
   display: flex;
-  gap: 8px;
-  flex-wrap: wrap;
+  gap: 10px; /* 按钮间距 */
+  flex-wrap: wrap; /* 按钮换行 */
+  margin-top: auto; /* 将按钮推到底部 */
+  padding-top: 16px; /* 与上方内容分隔 */
+  border-top: 1px solid #f0f2f5; /* 分隔线 */
+}
+
+.task-actions .action-btn {
+  /* 按钮样式已由 Element Plus 提供，可按需覆盖 */
+  /* 例如：统一大小 */
+  /* padding: 8px 12px; */
+  /* min-width: 80px; */ /* 示例：最小宽度 */
+  /* 添加一些实际样式以避免空规则 */
+  margin-right: 8px; /* 示例：按钮间添加一些右边距 */
+}
+
+/* 空状态 */
+.el-empty {
+  padding: 40px 0; /* 增加上下内边距 */
+}
+.el-empty p {
+  font-size: 1rem;
+  color: #909399;
+  margin-bottom: 20px;
 }
 
 /* 对话框样式 */
+.detail-dialog .el-dialog__header {
+  padding: 20px 24px 10px; /* 调整头部内边距 */
+  border-bottom: 1px solid #e9e9eb; /* 头部底边框 */
+  margin-right: 0; /* 移除element plus默认的margin */
+}
+
+.detail-dialog .el-dialog__title {
+  font-size: 1.3rem; /* 标题字体 */
+  font-weight: 600;
+  color: #303133;
+}
+
+.detail-dialog .el-dialog__body {
+  padding: 20px 24px; /* 主体内容内边距 */
+}
+
 .dataset-detail {
-  padding: 20px 0;
+  padding: 0; /* 移除内部的 padding，由 dialog body 控制 */
 }
 
 .detail-header {
   display: flex;
   align-items: center;
-  gap: 16px;
+  gap: 20px; /* 间距 */
   margin-bottom: 24px;
-  padding-bottom: 16px;
-  border-bottom: 1px solid #e0e0e0;
+  padding-bottom: 20px;
+  border-bottom: 1px solid #f0f2f5; /* 更柔和的分割线 */
 }
 
 .header-info {
@@ -844,67 +779,72 @@ const formatDateTime = (dateString: string) => {
 }
 
 .detail-title {
-  font-size: 1.5rem;
+  font-size: 1.6rem; /* 调整标题大小 */
   font-weight: 600;
-  color: #333;
-  margin: 0 0 12px 0;
+  color: #2c3e50; /* 深色标题 */
+  margin: 0 0 10px 0;
 }
 
-.detail-tags {
-  display: flex;
-  gap: 8px;
+.detail-tags .el-tag {
+  font-size: 0.9rem; /* 标签字体 */
+  padding: 0 12px; /* 标签内边距 */
+  height: 30px; /* 标签高度 */
+  line-height: 30px; /* 标签行高 */
 }
 
 .detail-content {
   display: flex;
   flex-direction: column;
-  gap: 24px;
+  gap: 28px; /* 区块间距 */
 }
 
 .info-section h3 {
-  font-size: 1.1rem;
+  font-size: 1.15rem; /* 小节标题 */
   font-weight: 600;
-  color: #333;
-  margin-bottom: 12px;
+  color: #34495e; /* 小节标题颜色 */
+  margin-bottom: 16px; /* 与内容间距 */
+  padding-bottom: 8px; /* 标题下划线间距 */
+  border-bottom: 2px solid #409EFF; /* 标题下划线 */
+  display: inline-block; /* 使下划线适应文字宽度 */
 }
 
 .description-text {
-  color: #666;
-  line-height: 1.6;
-  font-size: 1rem;
-  background: #f9f9f9;
+  color: #555;
+  line-height: 1.7;
+  font-size: 0.95rem;
+  background: #fdfdfd; /* 更亮的背景 */
   padding: 16px;
   border-radius: 6px;
+  border: 1px solid #f0f2f5;
 }
 
-.info-grid {
+.info-grid { /* 此处 info-grid 与任务卡片中的有重复，注意区分或合并 */
   display: grid;
-  grid-template-columns: repeat(auto-fit, minmax(200px, 1fr));
+  grid-template-columns: repeat(auto-fit, minmax(220px, 1fr)); /* 调整最小宽度 */
   gap: 16px;
 }
 
-.info-card {
-  background: #f9f9f9;
-  padding: 16px;
-  border-radius: 6px;
+.info-card { /* 用于数据集详情中的信息卡片 */
+  background: #f8f9fa; /* 卡片背景 */
+  padding: 20px;
+  border-radius: 8px;
   display: flex;
-  align-items: center;
-  gap: 12px;
-}
-
-.info-text {
-  flex: 1;
+  flex-direction: column; /* 垂直排列 */
+  align-items: flex-start; /* 左对齐 */
+  gap: 8px;
+  border: 1px solid #e9ecef;
+  box-shadow: 0 1px 3px rgba(0,0,0,0.03);
 }
 
 .info-number {
-  font-size: 1.2rem;
+  font-size: 1.5rem; /* 数字大小 */
   font-weight: 600;
-  color: #333;
-  margin-bottom: 4px;
+  color: #409EFF; /* 主题色 */
+  margin-bottom: 2px;
 }
 
 .info-desc {
-  color: #666;
+  color: #6c757d; /* 描述文字颜色 */
   font-size: 0.9rem;
 }
 
@@ -915,10 +855,11 @@ const formatDateTime = (dateString: string) => {
 }
 
 .question-card {
-  background: #f9f9f9;
+  background: #ffffff;
   border-radius: 6px;
   padding: 16px;
-  border-left: 3px solid #409eff;
+  border: 1px solid #e9ecef;
+  box-shadow: 0 1px 4px rgba(0,0,0,0.04);
 }
 
 .question-header {
@@ -929,71 +870,125 @@ const formatDateTime = (dateString: string) => {
 }
 
 .question-index {
-  background: #409eff;
+  background: #409EFF;
   color: white;
-  padding: 4px 10px;
-  border-radius: 12px;
-  font-weight: 600;
-  font-size: 0.9rem;
+  padding: 5px 12px; /* 调整内边距 */
+  border-radius: 16px; /* 更圆的角 */
+  font-weight: 500;
+  font-size: 0.85rem;
 }
 
 .question-body p {
   color: #333;
   line-height: 1.6;
-  margin-bottom: 12px;
+  margin-bottom: 10px;
+  font-size: 0.95rem;
+}
+.question-body p strong {
+  font-weight: 600;
+  color: #34495e;
 }
 
 .answers-section {
-  background: white;
+  background: #f9fafb; /* 答案区域背景 */
   padding: 12px;
   border-radius: 4px;
-  margin-top: 8px;
+  margin-top: 10px;
+  border: 1px solid #f0f2f5;
+}
+.answers-section p strong {
+  font-weight: 500;
+  color: #34495e;
 }
 
 .answers-list {
-  margin-left: 16px;
-  color: #666;
+  margin-left: 0; /* 移除默认的 ul 缩进 */
+  padding-left: 18px; /* 使用 padding 代替 margin */
+  list-style-type: disc; /* 使用实心圆点 */
+  color: #555;
 }
 
 .answers-list li {
-  margin-bottom: 4px;
-  line-height: 1.4;
+  margin-bottom: 6px;
+  line-height: 1.5;
 }
 
 .dialog-footer {
   display: flex;
   gap: 12px;
   justify-content: flex-end;
+  padding: 16px 24px; /* 页脚内边距 */
+  border-top: 1px solid #e9e9eb; /* 页脚上边框 */
 }
 
+.dialog-footer .el-button {
+  /* 可以为对话框按钮设置特定样式，如大小 */
+  /* padding: 10px 20px; */
+  /* min-width: 100px; */ /* 示例：最小宽度 */
+  /* 添加一些实际样式以避免空规则 */
+  margin-left: 10px; /* 示例：按钮间添加一些左边距 */
+}
+
+
+/* 移除旧的、可能冲突的样式 */
+/* .llm-marketplace, .header, .header-content, .title-section, .page-title, .page-subtitle, .header-stats, .stat-item, .stat-label, .stat-number, .tabs-container, .custom-tabs, .filters-section, .search-bar, .search-input, .refresh-btn, .datasets-grid, .grid-container, .dataset-card, .card-header, .dataset-meta, .dataset-name, .card-body, .dataset-description, .dataset-stats, .card-footer, .action-btn (部分保留，看具体情况) */
+/* .task-card-pending, .task-card-running, .task-card-completed, .task-card-failed, .task-card-cancelled (已用 border-left 替代) */
+
+
 /* 响应式设计 */
+@media (max-width: 992px) { /* 调整断点 */
+  .tasks-container {
+    grid-template-columns: repeat(auto-fill, minmax(320px, 1fr));
+  }
+  .info-grid { /* 任务卡片内的信息栅格 */
+    grid-template-columns: 1fr; /* 在较小屏幕上单列显示 */
+  }
+}
+
 @media (max-width: 768px) {
-  .header-content {
+  .page-header {
     flex-direction: column;
-    gap: 16px;
-    text-align: center;
+    align-items: flex-start; /* 左对齐 */
+    gap: 12px;
   }
-  
-  .grid-container {
-    grid-template-columns: 1fr;
+  .page-header h1 {
+    font-size: 1.6rem;
   }
-  
-  .search-bar {
+  .tasks-container {
+    grid-template-columns: 1fr; /* 单列显示任务卡片 */
+  }
+  .filter-group {
     flex-direction: column;
+    align-items: stretch; /* 筛选器元素撑满宽度 */
   }
-  
+  .filter-group .el-select {
+    width: 100% !important; /* Element Plus select 宽度覆盖 */
+  }
   .task-header {
     flex-direction: column;
+    align-items: flex-start;
     gap: 8px;
   }
-  
-  .info-grid {
-    grid-template-columns: 1fr;
+  .task-time {
+    margin-left: 0; /* 移除左边距 */
   }
-  
   .detail-header {
     flex-direction: column;
-    text-align: center;
+    align-items: flex-start;
+    text-align: left;
+  }
+  .detail-title {
+    font-size: 1.4rem;
+  }
+  .info-grid { /* 对话框内的信息栅格 */
+     grid-template-columns: 1fr;
+  }
+  .dialog-footer {
+    flex-direction: column; /* 按钮垂直排列 */
+    gap: 10px;
+  }
+  .dialog-footer .el-button {
+    width: 100%; /* 按钮撑满宽度 */
   }
 }
 </style>

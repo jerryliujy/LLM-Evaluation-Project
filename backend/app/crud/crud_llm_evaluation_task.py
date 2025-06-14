@@ -14,7 +14,7 @@ from ..models.dataset import Dataset
 from ..models.std_question import StdQuestion
 from ..schemas.llm_evaluation_task import (
     LLMEvaluationTaskCreate, LLMEvaluationTaskUpdate,
-    ModelConfigRequest
+    ModelConfigRequest, ManualEvaluationTaskCreate
 )
 
 logger = logging.getLogger(__name__)
@@ -258,3 +258,124 @@ def get_task_progress(db: Session, task_id: int) -> Dict[str, Any]:
         "latest_answer": latest_answer,
         "latest_score": latest_score
     }
+
+
+def create_manual_evaluation_task(
+    db: Session,
+    task_data: ManualEvaluationTaskCreate,
+    user_id: int
+) -> LLMEvaluationTask:
+    """创建手动录入的评测任务"""
+    from ..models.llm_answer import LLMAnswer
+    from ..models.evaluation import Evaluation, EvaluatorType
+    from ..models.std_question import StdQuestion
+    
+    try:
+        # 验证所有问题ID是否有效
+        question_ids = [entry.question_id for entry in task_data.entries]
+        valid_questions = db.query(StdQuestion).filter(
+            StdQuestion.id.in_(question_ids),
+            StdQuestion.current_dataset_id == task_data.dataset_id,
+            StdQuestion.is_valid == True
+        ).all()
+        
+        if len(valid_questions) != len(question_ids):
+            raise ValueError("部分问题ID无效或不属于指定数据集")
+        
+        # 计算平均分
+        total_score = sum(entry.score for entry in task_data.entries)
+        avg_score = total_score / len(task_data.entries) if task_data.entries else 0
+        
+        # 创建评测任务（直接设置为已完成状态）
+        task = LLMEvaluationTask(
+            name=task_data.name,
+            description=task_data.description,
+            dataset_id=task_data.dataset_id,
+            created_by=user_id,
+            model_id=task_data.model_id,
+            status=TaskStatus.COMPLETED,
+            progress=100,
+            score=avg_score,
+            total_questions=len(task_data.entries),
+            completed_questions=len(task_data.entries),
+            failed_questions=0,
+            started_at=datetime.now(),
+            completed_at=datetime.now(),
+            # 手动录入不需要以下配置
+            system_prompt="手动录入",
+            temperature=0.0,
+            max_tokens=0,
+            top_k=0,
+            enable_reasoning=False
+        )
+        
+        db.add(task)
+        db.flush()  # 获取任务ID
+        
+        # 创建LLM答案和评测记录
+        for entry in task_data.entries:
+            # 创建LLM答案记录
+            llm_answer = LLMAnswer(
+                task_id=task.id,
+                question_id=entry.question_id,
+                answer=entry.answer,
+                is_valid=True,
+                created_at=datetime.now()
+            )
+            db.add(llm_answer)
+            db.flush()  # 获取答案ID
+            
+            # 创建评测记录
+            evaluation = Evaluation(
+                std_question_id=entry.question_id,
+                llm_answer_id=llm_answer.id,
+                score=entry.score,
+                evaluator_type=EvaluatorType.USER,  # 用户手动评测
+                evaluator_id=user_id,
+                reasoning=entry.reasoning or "手动录入",
+                evaluation_prompt="手动录入评测结果"
+            )
+            db.add(evaluation)
+        
+        # 生成结果摘要
+        result_summary = {
+            "total_questions": len(task_data.entries),
+            "completed_questions": len(task_data.entries),
+            "failed_questions": 0,
+            "average_score": avg_score,
+            "score_distribution": _calculate_score_distribution([entry.score for entry in task_data.entries]),
+            "evaluation_type": "manual",
+            "created_at": datetime.now().isoformat()
+        }
+        task.result_summary = result_summary
+        
+        db.commit()
+        logger.info(f"Manual evaluation task created successfully: {task.id}")
+        return task
+        
+    except Exception as e:
+        db.rollback()
+        logger.error(f"Error creating manual evaluation task: {str(e)}")
+        raise
+
+
+def _calculate_score_distribution(scores: List[float]) -> Dict[str, int]:
+    """计算分数分布"""
+    distribution = {
+        "excellent": 0,  # 90-100
+        "good": 0,       # 70-89
+        "fair": 0,       # 50-69
+        "poor": 0        # 0-49
+    }
+    
+    for score in scores:
+        if score >= 90:
+            distribution["excellent"] += 1
+        elif score >= 70:
+            distribution["good"] += 1
+        elif score >= 50:
+            distribution["fair"] += 1
+        else:
+            distribution["poor"] += 1
+    
+    return distribution

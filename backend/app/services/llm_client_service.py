@@ -141,8 +141,7 @@ class LLMClient:
         
         Args:
             question: 原问题
-            answer: 待评测的答案
-            evaluation_prompt: 评测提示词
+            answer: 待评测的答案            evaluation_prompt: 评测提示词
             correct_answer: 标准答案（用于参考）
             question_type: 问题类型 (choice/text)
             **kwargs: 其他参数
@@ -155,14 +154,26 @@ class LLMClient:
             if not evaluation_prompt:
                 evaluation_prompt = get_default_evaluation_prompt(question_type)
 
-            evaluation_prompt = string.Template(evaluation_prompt)
-            
-            # 格式化评测提示词
-            evaluation_content = evaluation_prompt.format(
-                question=question,
-                answer=answer,
-                correct_answer=correct_answer or ""
-            )
+            # 安全地格式化评测提示词
+            try:
+                evaluation_content = evaluation_prompt.format(
+                    question=str(question),
+                    answer=str(answer),
+                    correct_answer=str(correct_answer or "")
+                )
+            except (KeyError, ValueError) as format_error:
+                logger.warning(f"Failed to format evaluation prompt: {format_error}")
+                # 如果格式化失败，使用简单的字符串拼接
+                evaluation_content = f"""
+请评估以下回答的质量：
+
+问题：{question}
+回答：{answer}
+标准答案：{correct_answer or "无"}
+
+请按照JSON格式返回评分结果：
+{{"score": 分数(0-100), "reasoning": "评分理由", "feedback": "反馈建议"}}
+"""
             
             messages = [
                 {"role": "system", "content": "你是一个专业的问答评测专家，请客观公正地评测答案质量。"},
@@ -171,8 +182,7 @@ class LLMClient:
             
             # 调用API进行评测
             completion = await self.client.chat.completions.create(
-                model=self.model_name,
-                messages=messages,
+                model=self.model_name,                messages=messages,
                 temperature=0.3,  # 评测时使用较低的temperature保证一致性
                 max_tokens=1000,
                 **kwargs
@@ -188,17 +198,8 @@ class LLMClient:
                 elif clean_text.startswith('```'):
                     clean_text = clean_text.replace('```', '').strip()
                 
-                # 尝试找到JSON部分
-                import re
-                json_match = re.search(r'\{{.*\}}', clean_text, re.DOTALL)
-                if json_match:
-                    json_str = json_match.group(0)
-                    # 替换可能的非标准引号
-                    json_str = json_str.replace('"', '"').replace('"', '"').replace(''', "'").replace(''', "'")
-                    evaluation_result = json.loads(json_str)
-                else:
-                    # 没有找到JSON格式，尝试直接解析
-                    evaluation_result = json.loads(clean_text)
+                # 改进的JSON解析逻辑
+                evaluation_result = self._parse_evaluation_json(clean_text)
                 
                 score = float(evaluation_result.get("score", 0))
                 reasoning = evaluation_result.get("reasoning", "")
@@ -210,7 +211,7 @@ class LLMClient:
                 # 如果不是JSON格式，尝试从文本中提取分数
                 score = self._extract_score_from_text(evaluation_text)
                 reasoning = evaluation_text
-                feedback = evaluation_text# 计算成o
+                feedback = evaluation_text
                 
             usage_info = {
                 "prompt_tokens": completion.usage.prompt_tokens if completion.usage else 0,
@@ -232,10 +233,22 @@ class LLMClient:
             
         except Exception as e:
             logger.error(f"Error evaluating answer: {str(e)}")
+            logger.error(f"Question: {question[:100]}...")
+            logger.error(f"Answer: {answer[:200]}...")
+            
+            # 添加详细的异常信息
+            if hasattr(e, '__class__'):
+                logger.error(f"Exception type: {e.__class__.__name__}")
+            
+            import traceback
+            logger.error(f"Full traceback:\n{traceback.format_exc()}")
+            
             return {
                 "success": False,
                 "error": str(e),
-                "score": 0
+                "score": 0,
+                "reasoning": f"评测过程中发生错误: {str(e)}",
+                "feedback": f"系统错误: {str(e)}"
             }
     def _extract_score_from_text(self, text: str) -> float:
         """从文本中提取分数"""
@@ -272,6 +285,69 @@ class LLMClient:
         logger.warning(f"Could not extract score from text: {text[:200]}...")
         return 60.0
     
+    def _parse_evaluation_json(self, text: str) -> dict:
+        """安全解析评测结果JSON"""
+        import re
+        
+        try:
+            # 首先尝试直接解析
+            return json.loads(text)
+        except json.JSONDecodeError:
+            pass
+        
+        try:
+            # 查找JSON对象的开始和结束
+            # 更安全的正则表达式，避免字段名中的大括号问题
+            json_pattern = r'\{[^{}]*(?:\{[^{}]*\}[^{}]*)*\}'
+            json_matches = re.finditer(json_pattern, text, re.DOTALL)
+            
+            for match in json_matches:
+                json_str = match.group(0)
+                try:
+                    # 清理非标准字符
+                    json_str = self._clean_json_string(json_str)
+                    return json.loads(json_str)
+                except json.JSONDecodeError:
+                    continue
+            
+            # 如果找不到完整的JSON，尝试构建一个基本的结果
+            score_match = re.search(r'"?score"?\s*[:：]\s*(\d+(?:\.\d+)?)', text, re.IGNORECASE)
+            reasoning_match = re.search(r'"?reasoning"?\s*[:：]\s*"([^"]*)"', text, re.IGNORECASE | re.DOTALL)
+            
+            result = {
+                "score": float(score_match.group(1)) if score_match else 0,
+                "reasoning": reasoning_match.group(1) if reasoning_match else text,
+                "feedback": text
+            }
+            return result            
+        except Exception as e:
+            logger.warning(f"Failed to parse evaluation JSON: {e}")
+            return {
+                "score": 0,
+                "reasoning": text,
+                "feedback": text
+            }
+    
+    def _clean_json_string(self, json_str: str) -> str:
+        """清理JSON字符串中的格式问题"""
+        import re
+        
+        # 替换非标准引号
+        json_str = json_str.replace('"', '"').replace('"', '"')
+        json_str = json_str.replace(''', "'").replace(''', "'")
+        
+        # 移除可能的控制字符
+        json_str = re.sub(r'[\x00-\x1f\x7f-\x9f]', '', json_str)
+        
+        # 修复可能的字段名问题
+        # 确保字段名被正确引用
+        json_str = re.sub(r'(\w+)\s*:', r'"\1":', json_str)
+        
+        # 修复可能的双引号问题
+        json_str = re.sub(r'""(\w+)""', r'"\1"', json_str)
+        
+        return json_str.strip()
+
     async def close(self):
         """关闭客户端连接"""
         if hasattr(self.client, 'close'):

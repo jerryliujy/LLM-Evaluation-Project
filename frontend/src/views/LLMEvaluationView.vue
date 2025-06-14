@@ -13,49 +13,81 @@
           📊 查看进度
         </button>
       </div>
-    </div>    <!-- 步骤指示器 -->
-    <div class="steps-container">
-      <div class="steps-wrapper">
-        <div class="step-item" :class="{ 
-          active: currentStep === 0, 
-          locked: isStepLocked(0) 
-        }">
-          <span class="step-number">
-            <span v-if="isStepLocked(0)">🔒</span>
-            <span v-else>1</span>
-          </span>
-          <span class="step-title">配置模型</span>
-        </div>
-        <div class="step-item" :class="{ 
-          active: currentStep === 1, 
-          locked: isStepLocked(1) 
-        }">
-          <span class="step-number">
-            <span v-if="isStepLocked(1)">🔒</span>
-            <span v-else>2</span>
-          </span>
-          <span class="step-title">配置系统Prompt</span>
-        </div>
-        <div class="step-item" :class="{ active: currentStep === 2 }">
-          <span class="step-number">3</span>
-          <span class="step-title">生成回答</span>
-        </div>
-        <div class="step-item" :class="{ 
-          active: currentStep === 3, 
-          locked: isStepLocked(3) 
-        }">
-          <span class="step-number">
-            <span v-if="isStepLocked(3)">🔒</span>
-            <span v-else>4</span>
-          </span>
-          <span class="step-title">配置评测</span>
-        </div>
-        <div class="step-item" :class="{ active: currentStep === 4 }">
-          <span class="step-number">5</span>
-          <span class="step-title">查看结果</span>
-        </div>
+    </div>
+
+    <!-- 评测模式选择 -->
+    <div v-if="!evaluationTask" class="mode-selector">
+      <div class="mode-tabs">
+        <button 
+          :class="['tab-btn', { active: evaluationMode === 'auto' }]"
+          @click="switchEvaluationMode('auto')"
+        >
+          🤖 自动评测
+        </button>
+        <button 
+          :class="['tab-btn', { active: evaluationMode === 'manual' }]"
+          @click="switchEvaluationMode('manual')"
+        >
+          📝 手动录入
+        </button>
       </div>
-    </div><!-- 步骤1: 模型配置 -->
+    </div>
+
+    <!-- 手动录入组件 -->
+    <ManualEvaluationEntry
+      v-if="evaluationMode === 'manual'"
+      :mode="evaluationMode"
+      :current-dataset="currentDataset"
+      :available-models="availableModels"
+      @switch-mode="switchEvaluationMode"
+      @task-created="onManualTaskCreated"
+    />
+
+    <!-- 自动评测流程 -->
+    <div v-else-if="evaluationMode === 'auto'">    <!-- 自动评测流程 -->
+      <!-- 步骤指示器 -->
+      <div class="steps-container">
+        <div class="steps-wrapper">
+          <div class="step-item" :class="{ 
+            active: currentStep === 0, 
+            locked: isStepLocked(0) 
+          }">
+            <span class="step-number">
+              <span v-if="isStepLocked(0)">🔒</span>
+              <span v-else>1</span>
+            </span>
+            <span class="step-title">配置模型</span>
+          </div>
+          <div class="step-item" :class="{ 
+            active: currentStep === 1, 
+            locked: isStepLocked(1) 
+          }">
+            <span class="step-number">
+              <span v-if="isStepLocked(1)">🔒</span>
+              <span v-else>2</span>
+            </span>
+            <span class="step-title">配置系统Prompt</span>
+          </div>
+          <div class="step-item" :class="{ active: currentStep === 2 }">
+            <span class="step-number">3</span>
+            <span class="step-title">生成回答</span>
+          </div>
+          <div class="step-item" :class="{ 
+            active: currentStep === 3, 
+            locked: isStepLocked(3) 
+          }">
+            <span class="step-number">
+              <span v-if="isStepLocked(3)">🔒</span>
+              <span v-else>4</span>
+            </span>
+            <span class="step-title">配置评测</span>
+          </div>
+          <div class="step-item" :class="{ active: currentStep === 4 }">
+            <span class="step-number">5</span>
+            <span class="step-title">查看结果</span>
+          </div>
+        </div>
+      </div><!-- 步骤1: 模型配置 -->
     <div v-if="currentStep === 0" class="step-content">
       <div class="content-card">
         <div class="card-header">
@@ -114,7 +146,8 @@
           <h4>🔑 API配置</h4>
           <div class="config-card">
             <div class="form-group">
-              <label class="form-label">API Key <span class="required">*</span></label>              <input 
+              <label class="form-label">API Key <span class="required">*</span></label>              
+              <input 
                 v-model="modelConfig.api_key" 
                 type="password" 
                 class="form-input"
@@ -151,7 +184,8 @@
               </div>
             </div>
               <div class="form-group">
-              <label class="form-label">最大Token数</label>              <input 
+              <label class="form-label">最大Token数</label>              
+              <input 
                 v-model.number="modelConfig.max_tokens" 
                 type="number" 
                 min="100" 
@@ -166,7 +200,8 @@
             </div>
             
             <div class="form-group">
-              <label class="form-label">Top-K采样: {{ modelConfig.top_k }}</label>              <input
+              <label class="form-label">Top-K采样: {{ modelConfig.top_k }}</label>              
+              <input
                 v-model.number="modelConfig.top_k" 
                 type="range" 
                 min="1" 
@@ -185,7 +220,8 @@
               </div>
             </div>
               <div class="form-group">
-              <label class="form-label">                <input 
+              <label class="form-label">                
+                <input 
                   v-model="modelConfig.enable_reasoning" 
                   type="checkbox"
                   class="form-checkbox"
@@ -266,7 +302,8 @@
               </div>
             </div>
             
-            <div class="prompt-editor">              <textarea
+            <div class="prompt-editor">              
+              <textarea
                 v-model="systemPromptConfig.choice_system_prompt"
                 rows="12"
                 placeholder="请输入选择题系统Prompt..."
@@ -296,7 +333,8 @@
               </div>
             </div>
             
-            <div class="prompt-editor">              <textarea
+            <div class="prompt-editor">              
+              <textarea
                 v-model="systemPromptConfig.text_system_prompt"
                 rows="12"
                 placeholder="请输入文本题系统Prompt..."
@@ -1168,8 +1206,7 @@
             @click="pauseEvaluation" 
             class="btn btn-warning"
           >
-            暂停评测
-          </button>
+            暂停评测          </button>
           <button 
             v-if="evaluationTask && evaluationTask.status === 'completed'" 
             @click="viewResultsFromProgress" 
@@ -1180,6 +1217,7 @@
         </div>
       </div>
     </div>
+    </div> <!-- 自动评测流程结束 -->
   </div>
 </template>
 
@@ -1187,6 +1225,7 @@
 import { ref, reactive, computed, onMounted, onUnmounted } from 'vue'
 import { useRoute, useRouter } from 'vue-router'
 import { llmEvaluationService } from '@/services/llmEvaluationService'
+import ManualEvaluationEntry from '@/components/ManualEvaluationEntry.vue'
 
 // 简单的消息提示函数
 const showMessage = (message: string, type: 'success' | 'error' | 'warning' | 'info' = 'info') => {
@@ -1245,6 +1284,7 @@ const router = useRouter()
 const currentStep = ref(0)
 const currentDataset = ref<any>(null)
 const availableModels = ref<any[]>([])
+const evaluationMode = ref<'auto' | 'manual'>('auto')  // 评测模式
 
 // 模型配置
 const modelConfig = reactive<{
@@ -1874,6 +1914,7 @@ const startAnswerGeneration = async () => {
   if (!modelConfig.model_id) {
     showMessage('请选择模型', 'error')
     return
+
   }
   starting.value = true
   try {    
@@ -2066,6 +2107,24 @@ const pauseEvaluation = async () => {
 
 const backToMarketplace = () => {
   router.push('/llm-marketplace')
+}
+
+// 评测模式切换
+const switchEvaluationMode = (mode: 'auto' | 'manual') => {
+  evaluationMode.value = mode
+  // 切换到手动模式时重置当前步骤
+  if (mode === 'manual') {
+    currentStep.value = 0
+  }
+}
+
+// 手动任务创建成功处理
+const onManualTaskCreated = (task: any) => {
+  console.log('Manual task created:', task)
+  evaluationTask.value = task
+  // 直接跳转到结果查看页面
+  currentStep.value = 4
+  showMessage('手动评测任务创建成功！', 'success')
 }
 
 // 进度弹窗相关方法
@@ -2294,6 +2353,56 @@ const downloadResults = async () => {
   position: relative;
   font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, sans-serif;
   padding: 20px;
+}
+
+/* 模式选择样式 */
+.mode-selector {
+  background: white;
+  padding: 2rem;
+  border-radius: 16px;
+  box-shadow: 0 4px 20px rgba(0, 0, 0, 0.08);
+  margin-bottom: 2rem;
+  text-align: center;
+}
+
+.mode-tabs {
+  display: flex;
+  justify-content: center;
+  gap: 1rem;
+  margin-top: 1rem;
+}
+
+.tab-btn {
+  padding: 0.75rem 2rem;
+  border: 2px solid #e9ecef;
+  background: white;
+  border-radius: 12px;
+  font-size: 1rem;
+  font-weight: 600;
+  cursor: pointer;
+  transition: all 0.3s ease;
+  display: flex;
+  align-items: center;
+  gap: 0.5rem;
+}
+
+.tab-btn:hover {
+  border-color: #007bff;
+  background: #f8f9fa;
+  transform: translateY(-2px);
+  box-shadow: 0 4px 12px rgba(0, 123, 255, 0.15);
+}
+
+.tab-btn.active {
+  border-color: #007bff;
+  background: #007bff;
+  color: white;
+  box-shadow: 0 4px 12px rgba(0, 123, 255, 0.3);
+}
+
+.tab-btn.active:hover {
+  background: #0056b3;
+  border-color: #0056b3;
 }
 
 /* 顶部标题栏 */
@@ -3149,35 +3258,61 @@ const downloadResults = async () => {
   border-bottom: 2px solid rgba(102, 126, 234, 0.1);
 }
 
-.section-header h3 {
-  margin: 0;
-  color: #2c3e50;
-  font-size: 20px;
-  font-weight: 600;
-}
+/* .statistics-section,
+.detailed-answers-section { margin: 0;
+  background: rgba(255, 255, 255, 0.95);  color: #2c3e50;
+  backdrop-filter: blur(20px); 20px;
+  border-radius: 16px;00;
+  padding: 24px;
+  margin-bottom: 24px;
+  box-shadow: 0 4px 20px rgba(0, 0, 0, 0.08);
+  border: 1px solid rgba(255, 255, 255, 0.2); font-size: 24px;
+  transition: all 0.3s ease;}
+} */
 
-.section-icon {
-  font-size: 24px;
-}
+/* .task-info-section:hover,
+.configuration-section:hover,
+.prompts-section:hover,ns: repeat(auto-fit, minmax(200px, 1fr));
+.statistics-section:hover,
+.detailed-answers-section:hover {
+  0px;
+  transform: translateY(-2px);
+  box-shadow: 0 8px 30px rgba(0, 0, 0, 0.12);
+}.stat-card {
+near-gradient(135deg, #f8f9fa 0%, #e9ecef 100%);
 
-/* 统计卡片 */
-.stats-grid {
-  display: grid;
-  grid-template-columns: repeat(auto-fit, minmax(200px, 1fr));
-  gap: 20px;
-  margin-bottom: 20px;
-}
+.mode-selector {
+  margin-bottom: 2rem; text-align: center;
+  text-align: center;  border: 1px solid #dee2e6;
+} 0.3s ease;  */
 
-.stat-card {
-  background: linear-gradient(135deg, #f8f9fa 0%, #e9ecef 100%);
-  border-radius: 12px;
-  padding: 20px;
-  text-align: center;
-  border: 1px solid #dee2e6;
+/* .mode-tabs {
+  display: flex; 
+  justify-content: 
+  center; transform: translateY(-2px);
+  gap: 1rem;
+  adow: 0 4px 15px rgba(0, 0, 0, 0.1);
+} */
+
+.tab-btn {
+  padding: 0.75rem 1.5rem;
+  border: 2px solid #007bff;
+  color: #007bff;
+  background: white;
   transition: all 0.3s ease;
+  cursor: pointer;
+  font-size: 1rem;
+  border-radius: 8px;
 }
 
-.stat-card:hover {
+.tab-btn.active {
+  background: #007bff;
+  color: white;
+  border-color: #007bff;
+}
+
+.tab-btn:hover {
+  transition: all 0.3s ease;
   transform: translateY(-2px);
   box-shadow: 0 4px 15px rgba(0, 0, 0, 0.1);
 }

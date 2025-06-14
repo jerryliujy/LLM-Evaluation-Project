@@ -265,3 +265,58 @@ class EvaluationDownloadRequest(BaseModel):
     format: str = Field("json", description="下载格式")
     include_raw_responses: bool = Field(False, description="是否包含原始响应")
     include_prompts: bool = Field(False, description="是否包含使用的prompt")
+
+
+class ManualEvaluationEntry(BaseModel):
+    """手动录入的单个评测条目"""
+    question_id: int = Field(..., description="问题ID")
+    answer: str = Field(..., description="LLM回答内容")
+    score: float = Field(..., ge=0, le=100, description="得分(0-100)")
+    reasoning: Optional[str] = Field(None, description="评分理由")
+    feedback: Optional[str] = Field(None, description="反馈意见")
+
+
+class ManualEvaluationTaskCreate(BaseModel):
+    """手动创建评测任务Schema"""
+    name: str = Field(..., description="任务名称")
+    description: Optional[str] = Field(None, description="任务描述")
+    dataset_id: int = Field(..., description="数据集ID")
+    model_id: int = Field(..., description="LLM模型ID")
+    entries: List[ManualEvaluationEntry] = Field(..., description="评测条目列表")
+    
+    class Config:
+        schema_extra = {
+            "example": {
+                "name": "手动录入测试任务",
+                "description": "手动录入的评测结果",
+                "dataset_id": 1,
+                "model_id": 1,
+                "entries": [
+                    {
+                        "question_id": 1,
+                        "answer": "这是LLM的回答",
+                        "score": 85.0,
+                        "reasoning": "回答准确性较高",
+                        "feedback": "可以更详细一些"
+                    }
+                ]
+            }
+        }
+
+
+class ManualEvaluationTaskResponse(BaseModel):
+    """手动评测任务响应Schema"""
+    id: int
+    name: str
+    description: Optional[str]
+    dataset: SimpleDatasetInfo
+    model: SimpleLLMInfo
+    status: TaskStatus
+    score: Optional[float]
+    total_questions: int
+    completed_questions: int
+    created_at: datetime
+    completed_at: Optional[datetime]
+    
+    class Config:
+        from_attributes = True
