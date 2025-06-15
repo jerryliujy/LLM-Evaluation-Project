@@ -21,6 +21,7 @@ async def get_std_questions_overview(
     limit: int = Query(20, ge=1, le=100),
     include_invalid: bool = Query(False),
     dataset_id: Optional[int] = Query(None),
+    version: Optional[int] = Query(None, description="数据集版本，不指定则使用最新版本"),
     search_query: Optional[str] = Query(None, description="搜索查询"),
     tag_filter: Optional[str] = Query(None, description="标签过滤"),
     question_type_filter: Optional[str] = Query(None, description="问题类型过滤"),
@@ -61,7 +62,16 @@ async def get_std_questions_overview(
     
     if dataset_id is not None:
         # 获取指定数据集的信息
-        dataset = db.query(Dataset).filter(Dataset.id == dataset_id).order_by(Dataset.version.desc()).first()
+        if version is not None:
+            # 如果指定了版本，获取特定版本的数据集
+            dataset = db.query(Dataset).filter(
+                Dataset.id == dataset_id,
+                Dataset.version == version
+            ).first()
+        else:
+            # 如果没有指定版本，获取最新版本的数据集
+            dataset = db.query(Dataset).filter(Dataset.id == dataset_id).order_by(Dataset.version.desc()).first()
+            
         if dataset:
             dataset_version = dataset.version
             # 先匹配数据集ID，再检查数据集version是否在标准问题的version区间中
@@ -235,7 +245,16 @@ async def get_std_questions_overview(
     
     if dataset_id is not None:
         # 获取指定数据集的信息
-        dataset = db.query(Dataset).filter(Dataset.id == dataset_id).order_by(Dataset.version.desc()).first()
+        if version is not None:
+            # 如果指定了版本，获取特定版本的数据集
+            dataset = db.query(Dataset).filter(
+                Dataset.id == dataset_id,
+                Dataset.version == version
+            ).first()
+        else:
+            # 如果没有指定版本，获取最新版本的数据集
+            dataset = db.query(Dataset).filter(Dataset.id == dataset_id).order_by(Dataset.version.desc()).first()
+            
         if dataset:
             dataset_version = dataset.version
             total_query = total_query.filter(

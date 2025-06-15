@@ -4,7 +4,7 @@ Provides version management capabilities for datasets
 """
 from fastapi import APIRouter, Depends, HTTPException, status
 from sqlalchemy.orm import Session
-from typing import List, Optional
+from typing import List, Optional, Dict, Any
 
 from app.db.database import get_db
 from app.auth import get_current_user
@@ -14,7 +14,7 @@ from app.schemas.dataset_version_work import (
     DatasetVersionWorkSummary, VersionStdQuestionCreate, VersionStdQuestionUpdate,
     VersionStdQuestionResponse, VersionStdAnswerCreate, VersionStdAnswerUpdate,
     VersionStdAnswerResponse, VersionTagCreate, VersionTagResponse,
-    VersionStdQaPairCreate, VersionStdQaPairResponse, WorkStatus
+    VersionStdQaPairCreate, VersionStdQaPairResponse, WorkStatus, VersionStdAnswerWithScoringPointsCreate
 )
 from app.crud.crud_dataset_version_work import (
     create_dataset_version_work, get_dataset_version_work, get_user_version_works,
@@ -22,7 +22,8 @@ from app.crud.crud_dataset_version_work import (
     cancel_dataset_version_work, delete_dataset_version_work, create_version_question,
     get_version_questions, update_version_question, delete_version_question,
     create_version_answer, update_version_answer, create_version_tag,
-    get_version_work_statistics, create_version_std_qa_pair
+    get_version_work_statistics, create_version_std_qa_pair, get_version_work_complete_data,
+    create_version_answer_with_scoring_points
 )
 
 router = APIRouter(prefix="/api/dataset-version-work", tags=["Dataset Version Work"])
@@ -66,6 +67,25 @@ def get_version_work(
         )
     
     return work
+
+
+@router.get("/{work_id}/complete-data")
+def get_version_work_complete_data_endpoint(
+    work_id: int,
+    db: Session = Depends(get_db),
+    current_user: User = Depends(get_current_user)
+):
+    """获取数据集版本工作的完整数据，包括版本答案"""
+    # 验证版本工作存在且用户有权限
+    work = get_dataset_version_work(db=db, work_id=work_id)
+    if not work or work.created_by != current_user.id:
+        raise HTTPException(
+            status_code=status.HTTP_404_NOT_FOUND,
+            detail="Version work not found or no permission"
+        )
+    
+    complete_data = get_version_work_complete_data(db=db, work_id=work_id)
+    return complete_data
 
 
 @router.get("/", response_model=List[DatasetVersionWorkSummary])
@@ -333,6 +353,43 @@ def create_answer_in_version_work(
         )
     
     answer = create_version_answer(db=db, work_id=work_id, answer_data=answer_data)
+    return answer
+
+
+@router.post("/{work_id}/answers-with-scoring-points", response_model=VersionStdAnswerResponse)
+def create_answer_with_scoring_points_in_version_work(
+    work_id: int,
+    answer_data: VersionStdAnswerWithScoringPointsCreate,
+    db: Session = Depends(get_db),
+    current_user: User = Depends(get_current_user)
+):
+    """在版本工作中创建答案并同时处理得分点"""
+    # 验证版本工作存在且用户有权限
+    work = get_dataset_version_work(db=db, work_id=work_id)
+    if not work or work.created_by != current_user.id:
+        raise HTTPException(
+            status_code=status.HTTP_404_NOT_FOUND,
+            detail="Version work not found or no permission"
+        )
+    
+    # 提取得分点数据
+    scoring_points_data = answer_data.scoring_points_data
+    # 创建不包含得分点数据的版本答案创建对象
+    answer_create_data = VersionStdAnswerCreate(
+        original_answer_id=answer_data.original_answer_id,
+        is_modified=answer_data.is_modified,
+        is_deleted=answer_data.is_deleted,
+        is_new=answer_data.is_new,
+        modified_answer=answer_data.modified_answer,
+        modified_answered_by=answer_data.modified_answered_by
+    )
+    
+    answer = create_version_answer_with_scoring_points(
+        db=db, 
+        work_id=work_id, 
+        answer_data=answer_create_data,
+        scoring_points_data=scoring_points_data
+    )
     return answer
 
 

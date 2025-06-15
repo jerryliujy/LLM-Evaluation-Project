@@ -488,9 +488,13 @@ const loadStdQuestions = async () => {
   }
   
   try {
-    // 1. 获取版本工作信息，确定要加载哪个版本的数据
-    const versionWork = await datasetVersionWorkService.getVersionWork(Number(workId.value));
-    console.log('版本工作信息:', versionWork);
+    // 1. 获取版本工作的完整数据（包括版本答案）
+    const completeData = await datasetVersionWorkService.getVersionWorkCompleteData(Number(workId.value));
+    console.log('版本工作完整数据:', completeData);
+    
+    const versionWork = completeData.work;
+    const versionQuestions = completeData.version_questions;
+    const versionAnswers = completeData.version_answers;
     
     // 2. 加载旧版本（current_version）的问答对数据
     const questions = await datasetService.getDatasetStdQA(
@@ -499,85 +503,274 @@ const loadStdQuestions = async () => {
     );
     
     console.log('加载的旧版本问答对数据:', questions);
-    
-    // 3. 加载版本工作表中的修改记录
-    const versionQuestions = await datasetVersionWorkService.getVersionQuestions(Number(workId.value));
     console.log('版本工作表中的问题记录:', versionQuestions);
+    console.log('版本工作表中的答案记录:', versionAnswers);
     
-    // 4. 合并数据：旧版本数据 + 新增数据
-    const allQuestions = [...questions];
+    // 3. 处理所有问题：原始数据 + 版本修改
+    const allQuestions: any[] = [];
     
-    // 5. 处理新增的数据（is_new的记录）
-    versionQuestions.forEach((vq: any) => {
-      if (vq.is_new && !vq.is_deleted) {
-        // 创建新增问题的显示对象
-        const newQuestion = {
-          id: vq.original_question_id || `new_${vq.id}`, // 使用标准问题ID或版本问题ID作为标识
-          body: vq.modified_body,
-          question_type: vq.modified_question_type || 'text',
-          is_valid: true,
-          tags: [], // 新增问题暂时没有标签
-          std_answers: [], // 新增问题的答案需要单独处理
-          is_new: true // 标记为新增
-        };
-        
-        // 检查是否已经存在（避免重复）
-        const exists = allQuestions.some((q: any) => q.id === newQuestion.id);
-        if (!exists) {
-          allQuestions.push(newQuestion);
-        }
+    // 处理原始问题
+    for (const question of questions) {
+      // 查找对应的版本问题记录
+      const versionQuestion = versionQuestions.find((vq: any) => 
+        vq.original_question_id === question.id
+      );
+      
+      const processedQuestion: any = {
+        id: question.id,
+        body: question.body,
+        question_type: question.question_type,
+        is_valid: question.is_valid,
+        tags: question.tags || [],
+        std_answers: [],
+        is_modified: false,
+        is_new: false
+      };
+      
+      // 如果问题有版本记录且被修改
+      if (versionQuestion && versionQuestion.is_modified && !versionQuestion.is_deleted) {
+        processedQuestion.body = versionQuestion.modified_body || question.body;
+        processedQuestion.question_type = versionQuestion.modified_question_type || question.question_type;
+        processedQuestion.is_modified = true;
       }
-    });
-    
-    // 6. 处理新增问题的答案
-    for (const question of allQuestions) {
-      if (question.is_new) {
-        // 查找对应的版本问题
-        const versionQuestion = versionQuestions.find((vq: any) => 
-          (vq.original_question_id === question.id) || 
-          (question.id === `new_${vq.id}` && vq.id === parseInt(question.id.replace('new_', '')))
+      
+      // 处理问题的答案
+      for (const answer of question.std_answers || []) {
+        // 查找对应的版本答案记录
+        const versionAnswer = versionAnswers.find((va: any) => 
+          va.original_answer_id === answer.id
         );
         
-        if (versionQuestion && versionQuestion.version_answers) {
-          // 使用版本答案信息
-          question.std_answers = versionQuestion.version_answers.map((va: any) => ({
-            id: va.original_answer_id || `new_answer_${va.id}`,
-            answer: va.modified_answer || '',
-            answered_by: va.modified_answered_by || '',
-            scoring_points: [], // 暂时不处理得分点
+        const processedAnswer: any = {
+          id: answer.id,
+          answer: answer.answer,
+          answered_by: answer.answered_by,
+          scoring_points: [],
+          is_modified: false,
+          is_new: false
+        };
+        
+        // 如果答案有版本记录且被修改
+        if (versionAnswer && versionAnswer.is_modified && !versionAnswer.is_deleted) {
+          processedAnswer.answer = versionAnswer.modified_answer || answer.answer;
+          processedAnswer.answered_by = versionAnswer.modified_answered_by || answer.answered_by;
+          processedAnswer.is_modified = versionAnswer.is_modified;
+        }
+        
+        // 处理答案的得分点
+        const processedPoints: any[] = [];
+        
+        // 1. 处理原始得分点
+        for (const point of answer.scoring_points || []) {
+          // 查找对应的版本得分点记录
+          const versionPoint = versionAnswer?.version_scoring_points?.find((vp: any) => 
+            vp.original_point_id === point.id
+          );
+          
+          if (versionPoint) {
+            // 有版本记录
+            if (versionPoint.is_deleted) {
+              // 被删除的得分点，跳过
+              continue;
+            } else if (versionPoint.is_modified || versionPoint.is_new) {
+              // 被修改的得分点，使用版本记录
+              processedPoints.push({
+                id: point.id,
+                answer: versionPoint.modified_answer || point.answer,
+                point_order: versionPoint.modified_point_order || point.point_order,
+                is_modified: versionPoint.is_modified,
+                is_new: versionPoint.is_new
+              });
+            } else {
+              // 未修改的得分点，使用原始内容
+              processedPoints.push({
+                id: point.id,
+                answer: point.answer,
+                point_order: point.point_order,
+                is_modified: false,
+                is_new: false
+              });
+            }
+          } else {
+            // 没有版本记录，使用原始得分点
+            processedPoints.push({
+              id: point.id,
+              answer: point.answer,
+              point_order: point.point_order,
+              is_modified: false,
+              is_new: false
+            });
+          }
+        }
+        
+        // 2. 处理新增的得分点（没有original_point_id的版本记录）
+        if (versionAnswer?.version_scoring_points) {
+          for (const versionPoint of versionAnswer.version_scoring_points) {
+            if (!versionPoint.original_point_id && !versionPoint.is_deleted) {
+              // 新增的得分点
+              processedPoints.push({
+                id: `new_point_${versionPoint.id}`,
+                answer: versionPoint.modified_answer || '',
+                point_order: versionPoint.modified_point_order || 1,
+                is_modified: false,
+                is_new: true
+              });
+            }
+          }
+        }
+        
+        // 按point_order排序
+        processedPoints.sort((a, b) => a.point_order - b.point_order);
+        processedAnswer.scoring_points = processedPoints;
+        
+        processedQuestion.std_answers.push(processedAnswer);
+      }
+      
+      allQuestions.push(processedQuestion);
+    }
+    
+    // 4. 处理新增的问题
+    for (const versionQuestion of versionQuestions) {
+      if (versionQuestion.is_new && !versionQuestion.is_deleted) {
+        // 查找对应的标准问题（新增的问题已经存储在标准表中）
+        const newQuestion = questions.find((q: any) => q.id === versionQuestion.original_question_id);
+        
+        if (newQuestion) {
+          const processedQuestion: any = {
+            id: newQuestion.id,
+            body: versionQuestion.modified_body || newQuestion.body,
+            question_type: versionQuestion.modified_question_type || newQuestion.question_type,
+            is_valid: true,
+            tags: [],
+            std_answers: [],
+            is_modified: false,
             is_new: true
-          }));
-        } else {
-          // 如果没有找到答案，使用默认值
-          question.std_answers = [{
-            id: `new_answer_${versionQuestion?.id || 'unknown'}`,
-            answer: versionQuestion?.modified_answer || '',
-            answered_by: '',
-            scoring_points: [],
-            is_new: true
-          }];
+          };
+          
+          // 处理新增问题的答案
+          for (const answer of newQuestion.std_answers || []) {
+            // 查找对应的版本答案记录
+            const versionAnswer = versionAnswers.find((va: any) => 
+              va.original_answer_id === answer.id
+            );
+            
+            const processedAnswer: any = {
+              id: answer.id,
+              answer: answer.answer,
+              answered_by: answer.answered_by,
+              scoring_points: [],
+              is_modified: false,
+              is_new: true
+            };
+            
+            // 如果答案有版本记录
+            if (versionAnswer && !versionAnswer.is_deleted) {
+              processedAnswer.answer = versionAnswer.modified_answer || answer.answer;
+              processedAnswer.answered_by = versionAnswer.modified_answered_by || answer.answered_by;
+              processedAnswer.is_modified = versionAnswer.is_modified;
+            }
+            
+            // 处理新增答案的得分点
+            const processedPoints: any[] = [];
+            
+            // 1. 处理原始得分点
+            for (const point of answer.scoring_points || []) {
+              // 查找对应的版本得分点记录
+              const versionPoint = versionAnswer?.version_scoring_points?.find((vp: any) => 
+                vp.original_point_id === point.id
+              );
+              
+              if (versionPoint) {
+                // 有版本记录
+                if (versionPoint.is_deleted) {
+                  // 被删除的得分点，跳过
+                  continue;
+                } else if (versionPoint.is_modified || versionPoint.is_new) {
+                  // 被修改的得分点，使用版本记录
+                  processedPoints.push({
+                    id: point.id,
+                    answer: versionPoint.modified_answer || point.answer,
+                    point_order: versionPoint.modified_point_order || point.point_order,
+                    is_modified: versionPoint.is_modified,
+                    is_new: versionPoint.is_new
+                  });
+                } else {
+                  // 未修改的得分点，使用原始内容
+                  processedPoints.push({
+                    id: point.id,
+                    answer: point.answer,
+                    point_order: point.point_order,
+                    is_modified: false,
+                    is_new: false
+                  });
+                }
+              } else {
+                // 没有版本记录，使用原始得分点
+                processedPoints.push({
+                  id: point.id,
+                  answer: point.answer,
+                  point_order: point.point_order,
+                  is_modified: false,
+                  is_new: false
+                });
+              }
+            }
+            
+            // 2. 处理新增的得分点（没有original_point_id的版本记录）
+            if (versionAnswer?.version_scoring_points) {
+              for (const versionPoint of versionAnswer.version_scoring_points) {
+                if (!versionPoint.original_point_id && !versionPoint.is_deleted) {
+                  // 新增的得分点
+                  processedPoints.push({
+                    id: `new_point_${versionPoint.id}`,
+                    answer: versionPoint.modified_answer || '',
+                    point_order: versionPoint.modified_point_order || 1,
+                    is_modified: false,
+                    is_new: true
+                  });
+                }
+              }
+            }
+            
+            // 按point_order排序
+            processedPoints.sort((a, b) => a.point_order - b.point_order);
+            processedAnswer.scoring_points = processedPoints;
+            
+            processedQuestion.std_answers.push(processedAnswer);
+          }
+          
+          // 检查是否已经存在（避免重复）
+          const exists = allQuestions.some((q: any) => q.id === processedQuestion.id);
+          if (!exists) {
+            allQuestions.push(processedQuestion);
+          }
         }
       }
     }
     
     stdQuestions.value = allQuestions;
     
-    // 7. 根据版本工作表记录判断修改项
+    // 5. 根据版本工作表记录判断修改项
     modifiedItems.value = [];
+    
+    // 添加修改的问题
     versionQuestions.forEach((vq: any) => {
-      if (vq.is_modified || vq.is_new || vq.is_deleted) {
-        // 如果是修改、新增或删除的记录，都算作修改项
-        if (vq.original_question_id) {
-          // 对于修改、删除或新增的问题
-          if (!modifiedItems.value.includes(vq.original_question_id)) {
-            modifiedItems.value.push(vq.original_question_id);
-          }
-        } else if (vq.is_new) {
-          // 对于新增的问题，使用版本问题ID作为标识
-          const newId = `new_${vq.id}`;
-          if (!modifiedItems.value.includes(newId)) {
-            modifiedItems.value.push(newId);
-          }
+      if ((vq.is_modified || vq.is_new || vq.is_deleted) && vq.original_question_id) {
+        if (!modifiedItems.value.includes(vq.original_question_id)) {
+          modifiedItems.value.push(vq.original_question_id);
+        }
+      }
+    });
+    
+    // 添加修改的答案（通过原始答案ID找到对应的问题）
+    versionAnswers.forEach((va: any) => {
+      if ((va.is_modified || va.is_new || va.is_deleted) && va.original_answer_id) {
+        // 找到这个答案属于哪个问题
+        const question = allQuestions.find((q: any) => 
+          q.std_answers.some((a: any) => a.id === va.original_answer_id)
+        );
+        if (question && !modifiedItems.value.includes(question.id)) {
+          modifiedItems.value.push(question.id);
         }
       }
     });
@@ -627,31 +820,96 @@ const saveEdit = async () => {
       return;
     }
     
-    // 检查是否有实际修改
-    const hasChanges = 
+    // 检查问题是否有修改
+    const questionChanged = 
       originalQuestion.body !== editForm.value.body ||
       originalQuestion.question_type !== editForm.value.question_type ||
-      JSON.stringify(originalQuestion.tags || []) !== JSON.stringify(editForm.value.tags || []) ||
-      JSON.stringify(originalQuestion.std_answers || []) !== JSON.stringify(editForm.value.std_answers || []);
+      JSON.stringify(originalQuestion.tags || []) !== JSON.stringify(editForm.value.tags || []);
     
-    if (!hasChanges) {
+    // 检查答案和得分点是否有修改
+    let answerChanged = false;
+    let scoringPointsChanged = false;
+    
+    for (const answer of editForm.value.std_answers) {
+      const originalAnswer = originalQuestion.std_answers?.find((a: any) => a.id === answer.id);
+      if (originalAnswer) {
+        // 检查答案内容是否有修改
+        if (originalAnswer.answer !== answer.answer) {
+          answerChanged = true;
+        }
+        
+        // 检查得分点是否有修改
+        const originalPoints = originalAnswer.scoring_points || [];
+        const newPoints = answer.scoring_points || [];
+        
+        if (originalPoints.length !== newPoints.length) {
+          scoringPointsChanged = true;
+        } else {
+          for (let i = 0; i < originalPoints.length; i++) {
+            const originalPoint = originalPoints[i];
+            const newPoint = newPoints[i];
+            if (originalPoint.answer !== newPoint.answer || 
+                originalPoint.point_order !== newPoint.point_order) {
+              scoringPointsChanged = true;
+              break;
+            }
+          }
+        }
+      }
+    }
+    
+    if (!questionChanged && !answerChanged && !scoringPointsChanged) {
       showMessage('没有修改内容', 'error');
       return;
     }
     
-    // 通过版本工作API记录修改
-    const updateData = {
-      original_question_id: editForm.value.id,
-      is_modified: true,
-      modified_body: editForm.value.body,
-      modified_question_type: editForm.value.question_type as 'text' | 'choice'
-    };
+    // 如果问题有修改，创建版本问题记录
+    if (questionChanged) {
+      const questionData = {
+        original_question_id: editForm.value.id,
+        is_modified: true,
+        is_new: false,
+        is_deleted: false,
+        modified_body: editForm.value.body,
+        modified_question_type: editForm.value.question_type as 'text' | 'choice'
+      };
+      
+      await datasetVersionWorkService.createVersionQuestion(
+        Number(workId.value),
+        questionData
+      );
+    }
     
-    // 创建或更新版本问题记录
-    await datasetVersionWorkService.createVersionQuestion(
-      Number(workId.value),
-      updateData
-    );
+    // 如果答案或得分点有修改，创建版本答案记录
+    if (answerChanged || scoringPointsChanged) {
+      for (const answer of editForm.value.std_answers) {
+        const originalAnswer = originalQuestion.std_answers?.find((a: any) => a.id === answer.id);
+        if (originalAnswer) {
+          // 检查这个答案是否有任何修改（答案内容或得分点）
+          const answerContentChanged = originalAnswer.answer !== answer.answer;
+          const pointsChanged = JSON.stringify(originalAnswer.scoring_points || []) !== 
+                               JSON.stringify(answer.scoring_points || []);
+          
+          if (answerContentChanged || pointsChanged) {
+            const answerData = {
+              original_answer_id: answer.id,
+              is_modified: true,
+              is_new: false,
+              is_deleted: false,
+              modified_answer: answer.answer,
+              modified_answered_by: 1 // 使用数字类型，可以从用户信息中获取
+            };
+            
+            // 使用新的API，同时处理得分点
+            await datasetVersionWorkService.createVersionAnswerWithScoringPoints(
+              Number(workId.value),
+              answerData,
+              answer.scoring_points
+            );
+          }
+        }
+      }
+    }
     
     // 更新本地数据
     const index = stdQuestions.value.findIndex(q => q.id === editForm.value.id);
@@ -673,7 +931,7 @@ const saveEdit = async () => {
     showMessage('保存成功', 'success');
     closeEditModal();
   } catch (error) {
-    showMessage('保存失败', 'error');
+    showMessage('保存失败: ' + (error as any).message, 'error');
     console.error('Save edit error:', error);
   } finally {
     editSaving.value = false;
@@ -742,13 +1000,13 @@ const createNewQA = async () => {
     
     // 添加到本地列表（使用标准问答对ID）
     const questionToAdd = {
-      id: response.std_question_id, // 使用标准问题ID
+      id: response.question_id, // 使用标准问题ID
       body: createForm.value.body,
       question_type: createForm.value.question_type,
       is_valid: true,
       tags: [],
       std_answers: [{
-        id: response.std_answer_id, // 使用标准答案ID
+        id: response.answer_id, // 使用标准答案ID
         answer: createForm.value.answer,
         answered_by: '',
         scoring_points: [],
@@ -760,8 +1018,8 @@ const createNewQA = async () => {
     stdQuestions.value.push(questionToAdd);
     
     // 新创建的问答对算作修改项
-    if (!modifiedItems.value.includes(response.std_question_id)) {
-      modifiedItems.value.push(response.std_question_id);
+    if (!modifiedItems.value.includes(response.question_id)) {
+      modifiedItems.value.push(response.question_id);
     }
     
     showMessage('创建成功', 'success');

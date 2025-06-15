@@ -866,11 +866,11 @@ const deletedCount = computed(() => {
   return currentData.value.filter(item => !item.is_valid).length;
 });
 
-const loadDataset = async () => {
+const loadDataset = async (versionNumber?: number) => {
   if (!currentDatasetId.value) return;
   
   try {
-    currentDataset.value = await datasetService.getDataset(currentDatasetId.value);
+    currentDataset.value = await datasetService.getDataset(currentDatasetId.value, versionNumber);
   } catch (error) {
     showMessage("加载数据集信息失败", "error");
     console.error("Load dataset error:", error);
@@ -894,6 +894,9 @@ const loadTableData = async () => {
       deletedOnly = true;
     }    
     
+    // 获取当前数据集的版本信息
+    const currentVersion = currentDataset.value?.version;
+    
     let result;
     if (selectedTable.value === 'overview_std') {
       result = await databaseService.getStdQuestionsOverview(
@@ -902,7 +905,8 @@ const loadTableData = async () => {
         currentDatasetId.value,
         searchQuery.value || undefined,
         tagFilter.value || undefined,
-        questionTypeFilter.value || undefined
+        questionTypeFilter.value || undefined,
+        currentVersion
       );    
     } else {
       result = await databaseService.getTableData(
@@ -917,7 +921,8 @@ const loadTableData = async () => {
         questionTypeFilter.value || undefined,
         stdQuestionFilter.value || undefined,
         scoringPointFilter.value || undefined,
-        scoringPointsFilter.value || undefined
+        scoringPointsFilter.value || undefined,
+        currentVersion
       );
     }
     currentData.value = result.data;    // 特殊处理标准问题数据，添加 tags、dataset_name 和答案摘要字段
@@ -1511,11 +1516,15 @@ const removeScoringPoint = (index: number) => {
 
 // 生命周期
 onMounted(async () => {
-  // 从路由参数获取数据集ID
+  // 从路由参数获取数据集ID和版本
   const datasetId = route.params.id || route.query.dataset;
+  const version = route.params.version || route.query.version;
+  
   if (datasetId && !isNaN(Number(datasetId))) {
     currentDatasetId.value = Number(datasetId);
-    await loadDataset();
+    // 如果有版本参数，传递给loadDataset
+    const versionNumber = version ? Number(version) : undefined;
+    await loadDataset(versionNumber);
   }
   
   loadTableData();

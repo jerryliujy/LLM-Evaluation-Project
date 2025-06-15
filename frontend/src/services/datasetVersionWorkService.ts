@@ -18,7 +18,6 @@ export interface VersionStdQuestionCreateRequest {
 }
 
 export interface VersionStdAnswerCreateRequest {
-  version_question_id: number;
   original_answer_id?: number;
   is_modified?: boolean;
   is_deleted?: boolean;
@@ -58,6 +57,12 @@ export class DatasetVersionWorkService {
   // 获取版本工作详情
   async getVersionWork(workId: number) {
     const response = await apiClient.get(`/dataset-version-work/${workId}`);
+    return response.data;
+  }
+
+  // 获取版本工作完整数据（包括版本答案）
+  async getVersionWorkCompleteData(workId: number) {
+    const response = await apiClient.get(`/dataset-version-work/${workId}/complete-data`);
     return response.data;
   }
 
@@ -133,6 +138,19 @@ export class DatasetVersionWorkService {
   // 创建版本答案
   async createVersionAnswer(workId: number, data: VersionStdAnswerCreateRequest) {
     const response = await apiClient.post(`/dataset-version-work/${workId}/answers`, data);
+    return response.data;
+  }
+
+  // 创建版本答案并同时处理得分点
+  async createVersionAnswerWithScoringPoints(
+    workId: number, 
+    data: VersionStdAnswerCreateRequest,
+    scoringPointsData?: any[]
+  ) {
+    const response = await apiClient.post(`/dataset-version-work/${workId}/answers-with-scoring-points`, {
+      ...data,
+      scoring_points_data: scoringPointsData
+    });
     return response.data;
   }
 

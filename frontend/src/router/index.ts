@@ -57,6 +57,13 @@ const routes: Array<RouteRecordRaw> = [
     props: true
   },
   {
+    path: "/database/:id/version/:version",
+    name: "DatabaseViewWithVersion",
+    component: DatabaseView,
+    meta: { requiresAuth: true },
+    props: true
+  },
+  {
     path: "/expert-dashboard",
     name: "ExpertDashboard",
     component: () => import("../views/ExpertDashboardView.vue"),

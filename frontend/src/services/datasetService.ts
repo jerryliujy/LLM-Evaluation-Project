@@ -76,9 +76,13 @@ export const datasetService = {
   },
 
   // 获取数据集详情
-  async getDataset(id: number): Promise<Dataset> {
+  async getDataset(id: number, version?: number): Promise<Dataset> {
     try {
-      const response = await apiClient.get(`/datasets/${id}`);
+      const params: any = {};
+      if (version !== undefined) {
+        params.version = version;
+      }
+      const response = await apiClient.get(`/datasets/${id}`, { params });
       return response.data;
     } catch (error) {
       throw new Error("Failed to fetch dataset");

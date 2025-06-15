@@ -55,7 +55,6 @@ class VersionStdQuestion(Base):
     # 关系
     version_work = relationship("DatasetVersionWork", back_populates="version_questions")
     original_question = relationship("StdQuestion")
-    version_answers = relationship("VersionStdAnswer", back_populates="version_question", cascade="all, delete-orphan")
     version_tags = relationship("VersionTag", back_populates="version_question", cascade="all, delete-orphan")
     
     class Config:
@@ -67,7 +66,6 @@ class VersionStdAnswer(Base):
     
     id = Column(Integer, primary_key=True, index=True)
     version_work_id = Column(Integer, ForeignKey("DatasetVersionWork.id"), nullable=False, index=True)
-    version_question_id = Column(Integer, ForeignKey("VersionStdQuestion.id"), nullable=False, index=True)
     original_answer_id = Column(Integer, ForeignKey("StdAnswer.id"), nullable=True, index=True)  # 可能为空（新增的答案）
     is_modified = Column(Boolean, default=False, nullable=False)  # 是否被修改
     is_deleted = Column(Boolean, default=False, nullable=False)  # 是否被删除
@@ -81,7 +79,6 @@ class VersionStdAnswer(Base):
     
     # 关系
     version_work = relationship("DatasetVersionWork", back_populates="version_answers")
-    version_question = relationship("VersionStdQuestion", back_populates="version_answers")
     original_answer = relationship("StdAnswer")
     version_scoring_points = relationship("VersionScoringPoint", back_populates="version_answer", cascade="all, delete-orphan")
     

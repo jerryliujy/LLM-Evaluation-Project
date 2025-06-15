@@ -472,7 +472,6 @@ CREATE TABLE `VersionStdQuestion` (
 CREATE TABLE `VersionStdAnswer` (
   `id` INT NOT NULL AUTO_INCREMENT,
   `version_work_id` INT NOT NULL,
-  `version_question_id` INT NOT NULL,
   `original_answer_id` INT DEFAULT NULL,
   `is_modified` TINYINT(1) NOT NULL DEFAULT 0,
   `is_deleted` TINYINT(1) NOT NULL DEFAULT 0,
@@ -482,13 +481,9 @@ CREATE TABLE `VersionStdAnswer` (
   `created_at` DATETIME NOT NULL DEFAULT CURRENT_TIMESTAMP,
   PRIMARY KEY (`id`),
   INDEX `idx_version_std_answer_work` (`version_work_id`),
-  INDEX `idx_version_std_answer_question` (`version_question_id`),
   INDEX `idx_version_std_answer_original` (`original_answer_id`),
   CONSTRAINT `fk_version_std_answer_work`
     FOREIGN KEY (`version_work_id`) REFERENCES `DatasetVersionWork` (`id`)
-    ON DELETE CASCADE ON UPDATE CASCADE,
-  CONSTRAINT `fk_version_std_answer_question`
-    FOREIGN KEY (`version_question_id`) REFERENCES `VersionStdQuestion` (`id`)
     ON DELETE CASCADE ON UPDATE CASCADE,
   CONSTRAINT `fk_version_std_answer_original`
     FOREIGN KEY (`original_answer_id`) REFERENCES `StdAnswer` (`id`)

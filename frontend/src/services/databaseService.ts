@@ -31,7 +31,8 @@ export const databaseService = {
     questionTypeFilter?: string,
     stdQuestionFilter?: string,
     scoringPointFilter?: string,
-    scoringPointsFilter?: string
+    scoringPointsFilter?: string,
+    version?: number
   ): Promise<TableDataResult> {
     const endpoint = this.getTableEndpoint(tableName);
     const params: any = {
@@ -49,13 +50,21 @@ export const databaseService = {
 
     if (datasetId) {
       params.dataset_id = datasetId.toString();
-    }    // 标准问题的搜索参数
+    }
+    
+    if (version !== undefined) {
+      params.version = version.toString();
+    }
+
+    // 标准问题的搜索参数
     if (tableName === 'std_questions') {
       if (searchQuery) params.search_query = searchQuery;
       if (tagFilter) params.tag_filter = tagFilter;
       if (questionTypeFilter) params.question_type_filter = questionTypeFilter;
       if (scoringPointsFilter) params.scoring_points_filter = scoringPointsFilter;
-    }    // 标准答案的搜索参数
+    }
+
+    // 标准答案的搜索参数
     if (tableName === 'std_answers') {
       if (searchQuery) params.search_query = searchQuery;
       if (stdQuestionFilter) params.std_question_filter = stdQuestionFilter;
@@ -207,7 +216,8 @@ export const databaseService = {
     datasetId?: number,
     searchQuery?: string,
     tagFilter?: string,
-    questionTypeFilter?: string
+    questionTypeFilter?: string,
+    version?: number
   ): Promise<TableDataResult> {
     const params: any = {
       skip: skip.toString(),
@@ -216,6 +226,10 @@ export const databaseService = {
 
     if (datasetId) {
       params.dataset_id = datasetId.toString();
+    }
+
+    if (version !== undefined) {
+      params.version = version.toString();
     }
 
     if (searchQuery) {

@@ -95,8 +95,12 @@ class VersionStdAnswerBase(BaseModel):
 
 class VersionStdAnswerCreate(VersionStdAnswerBase):
     """创建版本标准答案Schema"""
-    version_question_id: int = Field(..., description="版本问题ID")
     original_answer_id: Optional[int] = Field(None, description="原始答案ID")
+
+
+class VersionStdAnswerWithScoringPointsCreate(VersionStdAnswerCreate):
+    """创建包含得分点的版本标准答案Schema"""
+    scoring_points_data: Optional[List[Dict[str, Any]]] = Field(None, description="得分点数据列表")
 
 
 class VersionStdAnswerUpdate(BaseModel):
@@ -112,7 +116,6 @@ class VersionStdAnswerResponse(VersionStdAnswerBase):
     """版本标准答案响应Schema"""
     id: int
     version_work_id: int
-    version_question_id: int
     original_answer_id: Optional[int]
     created_at: datetime
     

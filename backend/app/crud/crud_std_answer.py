@@ -33,6 +33,7 @@ def get_std_answers_paginated(
     include_deleted: bool = False, 
     deleted_only: bool = False,
     dataset_id: Optional[int] = None,
+    version: Optional[int] = None,
     search_query: Optional[str] = None,
     std_question_filter: Optional[str] = None,
     scoring_point_filter: Optional[str] = None,
@@ -58,6 +59,15 @@ def get_std_answers_paginated(
         query = query.join(models.StdQuestion).filter(
             models.StdQuestion.dataset_id == dataset_id  
         )
+        
+        # 应用版本过滤
+        if version is not None:
+            query = query.filter(
+                and_(
+                    models.StdAnswer.original_version_id <= version,
+                    models.StdAnswer.current_version_id >= version
+                )
+            )
     
     # 应用搜索查询（搜索答案内容）
     if search_query:
