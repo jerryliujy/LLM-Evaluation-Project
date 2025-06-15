@@ -383,3 +383,104 @@ def create_tag_in_version_work(
     
     tag = create_version_tag(db=db, work_id=work_id, tag_data=tag_data)
     return tag
+
+
+@router.post("/{work_id}/create-version", response_model=dict)
+def create_new_version(
+    work_id: int,
+    db: Session = Depends(get_db),
+    current_user: User = Depends(get_current_user)
+):
+    """创建新版本 - 应用版本工作中的所有更改"""
+    try:
+        work = complete_dataset_version_work(db=db, work_id=work_id, user_id=current_user.id)
+        
+        if not work:
+            raise HTTPException(
+                status_code=status.HTTP_404_NOT_FOUND,
+                detail="Version work not found, already completed, or no permission"
+            )
+        
+        # 获取新创建的数据集版本信息
+        from ..models.dataset import Dataset
+        new_dataset = db.query(Dataset).filter(
+            Dataset.id == work.dataset_id,
+            Dataset.version == work.target_version
+        ).first()
+        
+        # 统计新版本的内容
+        from ..models.std_question import StdQuestion
+        questions_count = db.query(StdQuestion).filter(
+            StdQuestion.dataset_id == work.dataset_id,
+            StdQuestion.current_version_id == work.target_version,
+            StdQuestion.is_valid == True
+        ).count()
+        
+        return {
+            "success": True,
+            "message": f"Successfully created version {work.target_version}",
+            "version_info": {
+                "dataset_id": work.dataset_id,
+                "version": work.target_version,
+                "questions_count": questions_count,
+                "description": work.work_description,
+                "created_at": work.completed_at.isoformat() if work.completed_at else None
+            },
+            "work": work
+        }
+        
+    except Exception as e:
+        db.rollback()
+        raise HTTPException(
+            status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
+            detail=f"Failed to create new version: {str(e)}"
+        )
+
+
+@router.post("/{work_id}/load-dataset")
+def load_dataset_data(
+    work_id: int,
+    request: dict,
+    db: Session = Depends(get_db),
+    current_user: User = Depends(get_current_user)
+):
+    """将现有数据集版本加载到版本工作中"""
+    # 验证版本工作存在且用户有权限
+    work = get_dataset_version_work(db=db, work_id=work_id)
+    if not work or work.created_by != current_user.id:
+        raise HTTPException(
+            status_code=status.HTTP_404_NOT_FOUND,
+            detail="Version work not found or no permission"
+        )
+    
+    dataset_id = request.get('dataset_id')
+    version = request.get('version', 1)
+    
+    if not dataset_id:
+        raise HTTPException(
+            status_code=status.HTTP_400_BAD_REQUEST,
+            detail="dataset_id is required"
+        )
+    
+    try:
+        from ..crud.crud_dataset_version_work import load_dataset_to_version_work
+        success = load_dataset_to_version_work(db, work_id, dataset_id, version)
+        
+        if success:
+            return {"success": True, "message": "Dataset loaded successfully"}
+        else:
+            raise HTTPException(
+                status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
+                detail="Failed to load dataset"
+            )
+            
+    except ValueError as e:
+        raise HTTPException(
+            status_code=status.HTTP_400_BAD_REQUEST,
+            detail=str(e)
+        )
+    except Exception as e:
+        raise HTTPException(
+            status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
+            detail=f"Failed to load dataset: {str(e)}"
+        )

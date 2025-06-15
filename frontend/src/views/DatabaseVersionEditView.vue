@@ -14,10 +14,12 @@
             {{ currentVersion.description }}
           </p>
         </div>
-      </div>
-      <div class="header-actions">
+      </div>      <div class="header-actions">
+        <button @click="previewChanges" class="preview-btn" :disabled="!hasChanges">
+          📋 预览更改
+        </button>
         <button @click="saveVersion" class="save-version-btn" :disabled="saving || !hasChanges">
-          {{ saving ? "保存中..." : "保存版本" }}
+          {{ saving ? "创建版本中..." : "创建新版本" }}
         </button>
       </div>
     </div>
@@ -359,6 +361,7 @@ import { ref, computed, onMounted } from 'vue';
 import { useRoute, useRouter } from 'vue-router';
 import { datasetService } from '@/services/datasetService';
 import { versionService } from '@/services/versionService';
+import { datasetVersionWorkService } from '@/services/datasetVersionWorkService';
 
 // 路由
 const route = useRoute();
@@ -369,6 +372,7 @@ const datasetId = computed(() => route.params.datasetId as string);
 const versionId = computed(() => route.params.versionId as string);
 const currentDataset = ref<any>(null);
 const currentVersion = ref<any>(null);
+const versionWorkId = ref<number | null>(null); // 版本工作ID
 
 // 编辑相关
 const stdQuestions = ref<any[]>([]);
@@ -568,26 +572,40 @@ const saveVersion = async () => {
     return;
   }
   
-  // 询问用户是否公开
-  const isPublic = confirm('版本保存后是否立即公开发布？\n\n选择"确定"将公开发布，其他用户可以看到\n选择"取消"将保存为私有版本，仅您可以访问');
+  if (!versionWorkId.value) {
+    showMessage('版本工作ID不存在，无法创建版本', 'error');
+    return;
+  }
+  
+  // 询问用户确认
+  const confirmed = confirm('确定要创建新版本吗？\n\n这将应用所有修改并创建数据集的新版本。');
+  if (!confirmed) return;
   
   saving.value = true;
   try {
-    await versionService.commitVersion(Number(currentVersion.value.id), {
-      is_public: isPublic
-    });
-    showMessage(`版本保存成功，已${isPublic ? '公开发布' : '保存为私有'}`, 'success');
+    const result = await datasetVersionWorkService.createNewVersion(versionWorkId.value);
     
-    // 跳转回数据库管理
-    setTimeout(() => {
-      goBackToDatabase();
-    }, 1500);
-  } catch (error) {
-    showMessage('版本保存失败', 'error');
-    console.error('Save version error:', error);
+    if (result.success) {
+      showMessage(`版本创建成功！新版本号: ${result.version_info.version}`, 'success');
+      
+      // 跳转回数据库管理
+      setTimeout(() => {
+        goBackToDatabase();
+      }, 2000);
+    } else {
+      showMessage(result.message || '版本创建失败', 'error');
+    }
+  } catch (error: any) {
+    showMessage(error.response?.data?.detail || '版本创建失败', 'error');
+    console.error('Create version error:', error);
   } finally {
     saving.value = false;
   }
+};
+
+const previewChanges = () => {
+  // TODO: 实现预览更改功能
+  showMessage('预览功能开发中...', 'error');
 };
 
 // 标签编辑
@@ -709,11 +727,108 @@ const confirmImport = async () => {
   }
 };
 
+// 初始化版本工作
+const initVersionWork = async () => {
+  try {
+    // 检查路由参数中是否传递了versionWorkId
+    const workId = route.query.workId as string;
+    if (workId) {
+      versionWorkId.value = Number(workId);
+      return;
+    }
+    
+    // 如果没有传递工作ID，创建一个新的版本工作
+    if (currentDataset.value && currentVersion.value) {
+      const newVersionWork = await datasetVersionWorkService.createVersionWork({
+        dataset_id: Number(datasetId.value),
+        current_version: currentVersion.value.version || 1,
+        target_version: (currentVersion.value.version || 1) + 1,
+        work_description: `编辑版本 ${currentVersion.value.version || 1} 创建新版本`,
+        notes: `基于版本 ${currentVersion.value.version || 1} 的修改`
+      });
+      
+      versionWorkId.value = newVersionWork.id;
+      
+      // 加载当前版本的数据到版本工作中
+      await datasetVersionWorkService.loadDatasetToVersionWork(
+        newVersionWork.id,
+        Number(datasetId.value),
+        currentVersion.value.version || 1
+      );
+      
+      // 重新加载数据以显示加载的内容
+      await loadVersionWorkData();
+      
+      showMessage('版本工作环境初始化成功', 'success');
+    }
+  } catch (error: any) {
+    showMessage('初始化版本工作失败: ' + (error.response?.data?.detail || error.message), 'error');
+    console.error('Init version work error:', error);
+  }
+};
+
+const loadVersionWorkData = async () => {
+  if (!versionWorkId.value) return;
+  
+  try {
+    // 获取版本工作的详细信息
+    const versionWork = await datasetVersionWorkService.getVersionWork(versionWorkId.value);
+    
+    // 从版本工作中构建标准问题列表
+    const workQuestions = versionWork.version_questions || [];
+    stdQuestions.value = workQuestions.map((vq: any) => {
+      // 如果是新问题或修改的问题，使用修改后的内容
+      const questionData = vq.is_new || vq.is_modified ? {
+        id: vq.id,
+        body: vq.modified_body || '',
+        question_type: vq.modified_question_type || 'text',
+        is_valid: true,
+        tags: vq.version_tags?.map((tag: any) => tag.tag_label) || [],
+        std_answers: vq.version_answers?.map((va: any) => ({
+          id: va.id,
+          answer: va.modified_answer || '',
+          answered_by: va.modified_answered_by,
+          scoring_points: va.version_scoring_points?.map((vp: any) => ({
+            id: vp.id,
+            answer: vp.modified_answer || '',
+            point_order: vp.modified_point_order || 0
+          })) || []
+        })) || []
+      } : {
+        // 未修改的问题，使用原始内容
+        id: vq.original_question?.id || vq.id,
+        body: vq.original_question?.body || '',
+        question_type: vq.original_question?.question_type || 'text',
+        is_valid: vq.original_question?.is_valid || true,
+        tags: vq.version_tags?.map((tag: any) => tag.tag_label) || [],
+        std_answers: vq.original_question?.std_answers?.map((answer: any) => ({
+          id: answer.id,
+          answer: answer.answer,
+          answered_by: answer.answered_by,
+          scoring_points: answer.scoring_points || []
+        })) || []
+      };
+      
+      return questionData;
+    }).filter((q: any) => !workQuestions.find((vq: any) => vq.id === q.id && vq.is_deleted));
+    
+    // 计算修改的项目
+    modifiedItems.value = workQuestions
+      .filter((vq: any) => vq.is_modified || vq.is_new || vq.is_deleted)
+      .map((vq: any) => vq.id);
+      
+  } catch (error: any) {
+    showMessage('加载版本工作数据失败: ' + (error.response?.data?.detail || error.message), 'error');
+    console.error('Load version work data error:', error);
+  }
+};
+
 // 生命周期
 onMounted(async () => {
   await loadDataset();
   await loadVersion();
   await loadStdQuestions();
+  await initVersionWork();
 });
 </script>
 
@@ -1438,5 +1553,26 @@ onMounted(async () => {
   padding: 8px;
   background: #f8f9fa;
   border-top: 1px solid #dee2e6;
+}
+
+.preview-btn {
+  background: #6c757d;
+  color: white;
+  border: none;
+  padding: 10px 20px;
+  border-radius: 5px;
+  cursor: pointer;
+  margin-right: 10px;
+  transition: background-color 0.2s ease;
+}
+
+.preview-btn:hover:not(:disabled) {
+  background: #5a6268;
+}
+
+.preview-btn:disabled {
+  background: #e9ecef;
+  color: #6c757d;
+  cursor: not-allowed;
 }
 </style>

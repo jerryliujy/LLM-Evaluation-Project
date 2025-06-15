@@ -8,11 +8,11 @@
         </button>
         <h2>LLM在线评测</h2>
       </div>
-      <div class="header-right">
+      <!-- <div class="header-right">
         <button v-if="evaluationTask" @click="viewTaskProgress" class="progress-btn">
           📊 查看进度
         </button>
-      </div>
+      </div> -->
     </div>
 
     <!-- 评测模式选择 -->
@@ -158,7 +158,8 @@
               />
               <div class="form-tip">
                 ℹ️ API Key将被安全加密存储，仅用于本次评测
-              </div>            </div>
+              </div>            
+            </div>
           </div>
         </div>
 
@@ -242,7 +243,8 @@
               </div>
             </div>
           </div>
-        </div><div class="step-actions">
+        </div>
+        <div class="step-actions">
           <button @click="nextStep" :disabled="!isModelConfigValid" class="btn btn-primary">
             下一步 →
           </button>
@@ -348,7 +350,8 @@
                 class="prompt-textarea"
                 :disabled="isStepLocked(1)"
               ></textarea>
-              <div class="editor-info">                <div class="char-count">
+              <div class="editor-info">                
+                <div class="char-count">
                   📄 {{ systemPromptConfig?.text_system_prompt?.length || 0 }} 字符
                 </div>
               </div>
@@ -385,7 +388,8 @@
             下一步 →
           </button>
         </div>
-      </div>    </div>    <!-- 步骤3: 答案生成 -->
+      </div>    
+    </div>    <!-- 步骤3: 答案生成 -->
     <div v-if="currentStep === 2" class="step-content">
       <div class="content-card">
         <div class="card-header">
@@ -530,7 +534,7 @@
           </button>
         </div>
       </div>
-    </div>    <!-- 步骤4: 评测方式选择 -->
+    </div>    <!-- 步骤4: 评测方式选择 -->    
     <div v-if="currentStep === 3 && !hasSelectedEvaluationMode" class="step-content">
       <div class="content-card">
         <div class="card-header">
@@ -541,37 +545,72 @@
         <!-- 评测方式选择 -->
         <div class="evaluation-mode-selection">
           <h4>📊 评测方式选择</h4>
-          <div class="mode-cards">
-            <div 
-              :class="['mode-card', { active: evaluationConfig.evaluation_mode === 'auto' }]"
+          <div class="mode-buttons">
+            <button 
+              :class="['mode-button auto-mode', { 
+                selected: evaluationConfig.evaluation_mode === 'auto',
+                'not-selected': evaluationConfig.evaluation_mode && evaluationConfig.evaluation_mode !== 'auto'
+              }]"
               @click="selectEvaluationMode('auto')"
             >
-              <div class="mode-icon">🤖</div>
-              <div class="mode-content">
-                <h5>LLM自动评测</h5>
-                <p>使用大语言模型自动评测答案质量和准确性</p>
-                <ul class="mode-features">
-                  <li>✅ 快速批量评测</li>
-                  <li>✅ 标准化评分</li>
-                  <li>✅ 详细评测理由</li>
-                </ul>
+              <div class="button-header">
+                <div class="mode-icon">🤖</div>
+                <div class="mode-title">
+                  <h5>LLM自动评测</h5>
+                  <span class="mode-subtitle">智能化批量评测</span>
+                </div>
+                <div class="selection-indicator">
+                  <span v-if="evaluationConfig.evaluation_mode === 'auto'" class="check-mark">✓</span>
+                </div>
               </div>
-            </div>
+              <div class="mode-description">
+                <p>使用大语言模型自动评测答案质量和准确性，快速高效</p>
+                <div class="mode-features">
+                  <span class="feature-tag">⚡ 快速批量</span>
+                  <span class="feature-tag">📊 标准化评分</span>
+                  <span class="feature-tag">💡 详细理由</span>
+                </div>
+              </div>
+            </button>
             
-            <div 
-              :class="['mode-card', { active: evaluationConfig.evaluation_mode === 'manual' }]"
+            <button 
+              :class="['mode-button manual-mode', { 
+                selected: evaluationConfig.evaluation_mode === 'manual',
+                'not-selected': evaluationConfig.evaluation_mode && evaluationConfig.evaluation_mode !== 'manual'
+              }]"
               @click="selectEvaluationMode('manual')"
             >
-              <div class="mode-icon">👤</div>
-              <div class="mode-content">
-                <h5>手动评测</h5>
-                <p>人工逐个评测每个答案，提供精确的评分和反馈</p>
-                <ul class="mode-features">
-                  <li>✅ 精确控制评分</li>
-                  <li>✅ 个性化反馈</li>
-                  <li>✅ 随时保存进度</li>
-                </ul>
+              <div class="button-header">
+                <div class="mode-icon">👤</div>
+                <div class="mode-title">
+                  <h5>手动评测</h5>
+                  <span class="mode-subtitle">人工精确评测</span>
+                </div>
+                <div class="selection-indicator">
+                  <span v-if="evaluationConfig.evaluation_mode === 'manual'" class="check-mark">✓</span>
+                </div>
               </div>
+              <div class="mode-description">
+                <p>人工逐个评测每个答案，提供精确的评分和个性化反馈</p>
+                <div class="mode-features">
+                  <span class="feature-tag">🎯 精确控制</span>
+                  <span class="feature-tag">💭 个性化反馈</span>
+                  <span class="feature-tag">💾 随时保存</span>
+                </div>
+              </div>
+            </button>
+          </div>
+          
+          <!-- 选择提示 -->
+          <div v-if="evaluationConfig.evaluation_mode" class="selection-hint">
+            <div class="hint-content">
+              <span class="hint-icon">💡</span>
+              <span v-if="evaluationConfig.evaluation_mode === 'auto'">
+                您选择了<strong>LLM自动评测</strong>，系统将使用AI模型批量评测所有答案
+              </span>
+              <span v-else>
+                您选择了<strong>手动评测</strong>，您将逐个查看和评分每个答案
+              </span>
             </div>
           </div>
         </div>
@@ -585,8 +624,12 @@
             @click="confirmEvaluationMode" 
             :disabled="!evaluationConfig.evaluation_mode" 
             class="btn btn-primary"
+            :class="{ 'pulse': evaluationConfig.evaluation_mode }"
           >
-            确认选择 →
+            <span v-if="evaluationConfig.evaluation_mode">
+              {{ evaluationConfig.evaluation_mode === 'auto' ? '🚀 开始自动评测' : '👤 进入手动评测' }}
+            </span>
+            <span v-else>请先选择评测方式</span>
           </button>
         </div>
       </div>    
@@ -693,18 +736,6 @@
                 class="form-input"
               />
             </div>
-            
-            <div class="option-item">
-              <label>
-                <input
-                  v-model="evaluationOptions.is_auto_score"
-                  type="checkbox"
-                  class="form-checkbox"
-                />
-                启用自动打分
-              </label>
-              <p class="option-description">使用LLM自动对答案进行评分</p>
-            </div>
           </div>
         </div>
         </div>
@@ -804,166 +835,254 @@
           </button>
           <button @click="backToMarketplace" class="btn btn-secondary">
             返回数据集市场
-          </button>        </div> <!-- 自动评测流程结束 -->
+          </button>        
+        </div> <!-- 自动评测流程结束 -->
       </div>
-    </div>
-
-    <!-- 手动评测界面 -->
-    <div v-if="currentStep === 3 && isManualEvaluating" class="manual-evaluation-interface">
-      <div class="content-card">
+    </div>    <!-- 手动评测界面 -->
+    <div v-if="isManualEvaluating && evaluationConfig.evaluation_mode === 'manual'" class="manual-evaluation-interface">
+      <div class="content-card">        
         <div class="card-header">
           <h3>👤 手动评测界面</h3>
           <p>请对每个LLM生成的答案进行人工评分和评价</p>
         </div>
 
-        <!-- 进度信息 -->
-        <div class="manual-progress">
-          <div class="progress-header">
-            <div class="progress-info">
-              <span class="current-index">第 {{ currentAnswerIndex + 1 }} 题</span>
-              <span class="total-count">共 {{ manualEvaluationAnswers.length }} 题</span>
-            </div>
-            <div class="progress-percentage">
-              {{ manualEvaluationAnswers.length ? Math.round(((currentAnswerIndex + 1) / manualEvaluationAnswers.length) * 100) : 0 }}%
-            </div>
-          </div>
-          <div class="progress-bar">
-            <div 
-              class="progress-fill"
-              :style="{ width: manualEvaluationAnswers.length ? ((currentAnswerIndex + 1) / manualEvaluationAnswers.length) * 100 + '%' : '0%' }"
-            ></div>
-          </div>
+        <!-- 加载状态 -->
+        <div v-if="starting" class="loading-section">
+          <div class="loading-spinner"></div>
+          <p>正在加载评测数据...</p>
         </div>
 
-        <!-- 题目内容 -->
-        <div v-if="getCurrentQuestion()" class="question-section">
-          <div class="question-header">
-            <h4>📝 题目内容</h4>
-            <div class="question-type-badge">
-              {{ getCurrentQuestion().question_type === 'choice' ? '选择题' : '文本题' }}
+        <!-- 无数据状态 -->
+        <div v-else-if="!manualEvaluationAnswers.length" class="no-data-section">
+          <div class="no-data-content">
+            <span class="no-data-icon">📭</span>
+            <h4>暂无评测数据</h4>
+            <p>没有找到需要评测的答案，请检查答案生成任务是否完成。</p>
+            <button @click="exitManualEvaluation" class="btn btn-secondary">
+              返回上一步
+            </button>
+          </div>
+        </div>        <!-- 评测内容 -->
+        <div v-else>
+          <!-- 统计信息 -->
+          <div class="evaluation-stats">
+            <div class="stats-grid">
+              <div class="stat-item">
+                <span class="stat-label">总答案数</span>
+                <span class="stat-value">{{ manualEvaluationAnswers.length }}</span>
+              </div>
+              <div class="stat-item">
+                <span class="stat-label">已评测</span>
+                <span class="stat-value">{{ getEvaluatedCount() }}</span>
+              </div>
+              <div class="stat-item">
+                <span class="stat-label">未评测</span>
+                <span class="stat-value">{{ manualEvaluationAnswers.length - getEvaluatedCount() }}</span>
+              </div>
+              <div class="stat-item">
+                <span class="stat-label">完成率</span>
+                <span class="stat-value">{{ Math.round((getEvaluatedCount() / manualEvaluationAnswers.length) * 100) }}%</span>
+              </div>
             </div>
-          </div>          <div class="question-content">
-            <div class="question-body">
-              {{ getCurrentQuestion().body }}
-            </div>
-            <!-- 选择题选项 - 暂时隐藏，等待后端支持 -->
-            <!-- 
-            <div v-if="getCurrentQuestion().question_type === 'choice' && getCurrentQuestion().choices" class="choices-section">
-              <h5>选项：</h5>
-              <div class="choices-list">
-                <div 
-                  v-for="(choice, index) in getCurrentQuestion().choices" 
-                  :key="index"
-                  class="choice-item"
-                  :class="{ 'correct': choice.is_correct }"
+          </div>
+
+          <!-- 答案列表 -->
+          <div class="answers-list">
+            <div class="list-header">
+              <h4>📋 答案评测列表</h4>
+              <div class="list-actions">
+                <button @click="saveAllEvaluations" class="btn btn-info btn-small">
+                  💾 保存所有评测
+                </button>
+                <button 
+                  @click="completeManualEvaluation" 
+                  :disabled="!isAllEvaluated()"
+                  class="btn btn-primary btn-small"
                 >
-                  <span class="choice-label">{{ String.fromCharCode(65 + index) }}.</span>
-                  <span class="choice-text">{{ choice.text }}</span>
-                  <span v-if="choice.is_correct" class="correct-mark">✓ 正确答案</span>
+                  ✅ 完成评测
+                </button>
+              </div>
+            </div>
+            
+            <div class="answers-table">
+              <div class="table-header">
+                <div class="col col-index">#</div>
+                <div class="col col-question">题目</div>
+                <div class="col col-type">类型</div>
+                <div class="col col-score">评分</div>
+                <div class="col col-status">状态</div>
+                <div class="col col-actions">操作</div>
+              </div>
+              
+              <div class="table-body">
+                <div 
+                  v-for="(answer, index) in manualEvaluationAnswers" 
+                  :key="answer.id"
+                  :class="['table-row', { 
+                    'selected': selectedAnswerIndex === index,
+                    'evaluated': isAnswerEvaluated(answer),
+                    'not-evaluated': !isAnswerEvaluated(answer)
+                  }]"
+                  @click="selectAnswer(index)"
+                >
+                  <div class="col col-index">{{ index + 1 }}</div>
+                  <div class="col col-question">
+                    <div class="question-preview">
+                      {{ truncateText(answer.question?.body || '', 80) }}
+                    </div>
+                  </div>
+                  <div class="col col-type">
+                    <span class="type-badge" :class="answer.question?.question_type">
+                      {{ answer.question?.question_type === 'choice' ? '选择题' : '文本题' }}
+                    </span>
+                  </div>
+                  <div class="col col-score">
+                    <div v-if="answer.manual_score !== null && answer.manual_score !== undefined" class="score-display">
+                      <span class="score-value">{{ answer.manual_score }}</span>
+                      <span class="score-unit">分</span>
+                    </div>
+                    <span v-else class="no-score">未评分</span>
+                  </div>
+                  <div class="col col-status">
+                    <span :class="['status-badge', isAnswerEvaluated(answer) ? 'completed' : 'pending']">
+                      {{ isAnswerEvaluated(answer) ? '已完成' : '待评测' }}
+                    </span>
+                  </div>
+                  <div class="col col-actions">
+                    <button @click.stop="selectAnswer(index)" class="btn btn-small btn-primary">
+                      {{ isAnswerEvaluated(answer) ? '修改' : '评分' }}
+                    </button>
+                  </div>
                 </div>
               </div>
             </div>
-            -->
           </div>
-        </div>        <!-- 标准答案信息 -->
-        <div v-if="getCurrentAnswer()?.std_answers && getCurrentAnswer().std_answers.length > 0" class="standard-answer-section">
-          <h4>📋 标准答案</h4>
-          <div class="standard-answer-content">
-            <div v-for="(stdAnswer, index) in getCurrentAnswer().std_answers" :key="stdAnswer.id" class="std-answer-item">
-              <div v-if="getCurrentAnswer().std_answers.length > 1" class="std-answer-header">
-                <h5>标准答案 {{ index + 1 }}</h5>
-                <span v-if="stdAnswer.answered_by" class="answered-by">作者：{{ stdAnswer.answered_by }}</span>
-              </div>
-              <div class="answer-text">
-                {{ stdAnswer.answer }}
-              </div>
-              <div v-if="stdAnswer.scoring_points && stdAnswer.scoring_points.length > 0" class="scoring-points">
-                <h5>评分要点：</h5>
-                <ul class="scoring-points-list">
-                  <li 
-                    v-for="point in stdAnswer.scoring_points" 
-                    :key="point.id"
-                    class="scoring-point"
-                  >
-                    <span class="point-text">{{ point.answer }}</span>
-                    <span class="point-order">第{{ point.point_order }}点</span>
-                  </li>
-                </ul>
-              </div>
-            </div>
-          </div>
-        </div>        <!-- LLM答案 -->
-        <div v-if="getCurrentAnswer()" class="llm-answer-section">
-          <h4>🤖 LLM回答</h4>
-          <div class="llm-answer-content">
-            <div class="answer-text">
-              {{ getCurrentAnswer().llm_answer }}
-            </div>            <div class="answer-meta">
-              <span class="model-info">模型：{{ selectedModel?.display_name || modelConfig.model_id }}</span>
-              <span class="generated-time">生成时间：{{ formatDateTime(getCurrentAnswer().answered_at) }}</span>
-              <span v-if="getCurrentAnswer().is_valid !== undefined" 
-                    :class="['validity-status', getCurrentAnswer().is_valid ? 'valid' : 'invalid']">
-                {{ getCurrentAnswer().is_valid ? '✅ 有效答案' : '❌ 无效答案' }}
-              </span>
-            </div>
-          </div>
-        </div>
 
-        <!-- 评分表单 -->
-        <div v-if="getCurrentAnswer()" class="evaluation-form">
-          <h4>📊 评分</h4>
-          <div class="form-grid">
-            <div class="form-group">
-              <label class="form-label">分数 (0-100)</label>
-              <div class="score-input-container">
-                <input 
-                  v-model.number="getCurrentAnswer().manual_score" 
-                  type="number" 
-                  min="0" 
-                  max="100"
-                  class="form-input score-input"
-                  placeholder="请输入分数"
-                />
-                <div class="score-slider">
-                  <input 
-                    v-model.number="getCurrentAnswer().manual_score" 
-                    type="range" 
-                    min="0" 
-                    max="100"
-                    class="form-range"
-                  />
+          <!-- 选中答案的详细信息 -->
+          <div v-if="selectedAnswerIndex !== -1 && getCurrentAnswer()" class="answer-detail">
+            <div class="detail-header">
+              <h4>📝 答案详情 - 第{{ selectedAnswerIndex + 1 }}题</h4>
+              <button @click="closeDetail" class="btn btn-small btn-secondary">
+                ✕ 关闭
+              </button>
+            </div>            <!-- 题目内容 -->
+            <div class="question-section">
+              <div class="question-header">
+                <h5>📝 题目内容</h5>
+                <div class="question-type-badge">
+                  {{ getCurrentQuestion().question_type === 'choice' ? '选择题' : '文本题' }}
+                </div>
+              </div>
+              <div class="question-content">
+                <div class="question-body">
+                  {{ getCurrentQuestion().body }}
                 </div>
               </div>
             </div>
-            <div class="form-group">
-              <label class="form-label">评分理由</label>
-              <textarea 
-                v-model="getCurrentAnswer().manual_reasoning" 
-                rows="4"
-                class="form-textarea"
-                placeholder="请输入详细的评分理由和反馈..."
-              ></textarea>
-            </div>
-          </div>
-        </div>
 
-        <!-- 操作按钮 -->
-        <div class="manual-evaluation-actions">
-          <div class="navigation-buttons">
-            <button 
-              @click="previousAnswer" 
-              :disabled="currentAnswerIndex === 0"
-              class="btn btn-secondary"
-            >
-              ← 上一题
-            </button>
-            <button 
-              @click="nextAnswer" 
-              :disabled="currentAnswerIndex >= manualEvaluationAnswers.length - 1"
-              class="btn btn-secondary"
-            >
-              下一题 →
-            </button>
+            <!-- 标准答案信息 -->
+            <div v-if="getCurrentAnswer()?.std_answers && getCurrentAnswer().std_answers.length > 0" class="standard-answer-section">
+              <h5>📋 标准答案</h5>
+              <div class="standard-answer-content">
+                <div v-for="(stdAnswer, index) in getCurrentAnswer().std_answers" :key="stdAnswer.id" class="std-answer-item">
+                  <div v-if="getCurrentAnswer().std_answers.length > 1" class="std-answer-header">
+                    <h6>标准答案 {{ index + 1 }}</h6>
+                    <span v-if="stdAnswer.answered_by" class="answered-by">作者：{{ stdAnswer.answered_by }}</span>
+                  </div>
+                  <div class="answer-text">
+                    {{ stdAnswer.answer }}
+                  </div>
+                  <div v-if="stdAnswer.scoring_points && stdAnswer.scoring_points.length > 0" class="scoring-points">
+                    <h6>评分要点：</h6>
+                    <ul class="scoring-points-list">
+                      <li 
+                        v-for="point in stdAnswer.scoring_points" 
+                        :key="point.id"
+                        class="scoring-point"
+                      >
+                        <span class="point-text">{{ point.answer }}</span>
+                        <span class="point-order">第{{ point.point_order }}点</span>
+                      </li>
+                    </ul>
+                  </div>
+                </div>
+              </div>
+            </div>
+
+            <!-- LLM答案 -->
+            <div class="llm-answer-section">
+              <h5>🤖 LLM回答</h5>
+              <div class="llm-answer-content">
+                <div class="answer-text">
+                  {{ getCurrentAnswer().llm_answer }}
+                </div>
+                <div class="answer-meta">
+                  <span class="model-info">模型：{{ selectedModel?.display_name || modelConfig.model_id }}</span>
+                  <span class="generated-time">生成时间：{{ formatDateTime(getCurrentAnswer().answered_at) }}</span>
+                  <span v-if="getCurrentAnswer().is_valid !== undefined" 
+                        :class="['validity-status', getCurrentAnswer().is_valid ? 'valid' : 'invalid']">
+                    {{ getCurrentAnswer().is_valid ? '✅ 有效答案' : '❌ 无效答案' }}
+                  </span>
+                </div>
+              </div>
+            </div>
+
+            <!-- 评分表单 -->
+            <div class="evaluation-form">
+              <h5>📊 评分</h5>
+              <div class="form-grid">
+                <div class="form-group">
+                  <label class="form-label">分数 (0-100)</label>
+                  <div class="score-input-container">
+                    <input 
+                      v-model.number="getCurrentAnswer().manual_score" 
+                      type="number" 
+                      min="0" 
+                      max="100"
+                      class="form-input score-input"
+                      placeholder="请输入分数"
+                      @input="onScoreChange"
+                    />
+                    <div class="score-slider">
+                      <input 
+                        v-model.number="getCurrentAnswer().manual_score" 
+                        type="range" 
+                        min="0" 
+                        max="100"
+                        class="form-range"
+                        @input="onScoreChange"
+                      />
+                    </div>
+                  </div>
+                </div>
+                <div class="form-group">
+                  <label class="form-label">评分理由</label>
+                  <textarea 
+                    v-model="getCurrentAnswer().manual_reasoning" 
+                    rows="4"
+                    class="form-textarea"
+                    placeholder="请输入详细的评分理由和反馈..."
+                    @input="onReasoningChange"
+                  ></textarea>
+                </div>
+              </div>
+              
+              <!-- 评分操作按钮 -->
+              <div class="evaluation-actions">
+                <button 
+                  @click="saveCurrentEvaluation" 
+                  class="btn btn-info"
+                >
+                  💾 保存评分
+                </button>
+                <button 
+                  @click="clearCurrentEvaluation" 
+                  class="btn btn-warning"
+                >
+                  🗑️ 清除评分
+                </button>
+              </div>
+            </div>
           </div>
           
           <div class="action-buttons">
@@ -987,9 +1106,7 @@
               ✅ 完成评测
             </button>
           </div>
-        </div>
-
-        <!-- 评测完成状态 -->
+        </div>        <!-- 评测完成状态 -->
         <div v-if="isAllEvaluated()" class="completion-notice">
           <div class="notice-card">
             <span class="notice-icon">🎉</span>
@@ -1329,7 +1446,8 @@
           </button>
           <button @click="downloadAnswersOnly" class="btn btn-info">
             📄 下载答案数据
-          </button>          <button @click="showResultsDialog = false" class="btn btn-secondary">
+          </button>          
+          <button @click="showResultsDialog = false" class="btn btn-secondary">
             关闭
           </button>
         </div>
@@ -1663,6 +1781,8 @@ const starting = ref(false)
 const isManualEvaluating = ref(false) // 手动评测状态
 const manualEvaluationAnswers = ref<any[]>([]) // 手动评测答案列表
 const currentAnswerIndex = ref(0) // 当前评测的答案索引
+const selectedAnswerIndex = ref(-1) // 当前选中的答案索引（用于列表模式）
+const hasSelectedEvaluationMode = ref(false)
 
 // 详细结果数据
 const detailedResults = ref<any>(null)
@@ -1760,6 +1880,22 @@ const isStepLocked = computed(() => {
     return completedSteps.includes(stepIndex)
   }
 })
+
+const confirmEvaluationMode = async () => {
+  if (!evaluationConfig.evaluation_mode) {
+    showMessage('请先选择评测方式', 'error')
+    return
+  }
+  
+  hasSelectedEvaluationMode.value = true
+  console.log('确认评测方式:', evaluationConfig.evaluation_mode)
+  
+  if (evaluationConfig.evaluation_mode === 'manual') {
+    // 如果选择手动评测，直接启动手动评测流程
+    await startManualEvaluation()
+  }
+  // 自动评测的逻辑保持不变，用户需要在下一个界面配置后再启动
+}
 
 // 计算步骤是否可编辑
 const isStepEditable = computed(() => {
@@ -2547,13 +2683,20 @@ const startManualEvaluation = async () => {
     // 设置手动评测状态
     isManualEvaluating.value = true
     
-    // 直接加载需要手动评测的答案
+    // 加载需要手动评测的答案
     await loadAnswersForManualEvaluation()
     
-    showMessage('已进入手动评测模式', 'success')
+    // 如果有数据，显示成功消息
+    if (manualEvaluationAnswers.value.length > 0) {
+      showMessage(`已进入手动评测模式，共${manualEvaluationAnswers.value.length}个答案待评测`, 'success')
+    } else {
+      showMessage('没有找到需要评测的答案', 'warning')
+    }
   } catch (error: any) {
     console.error('启动手动评测失败:', error)
     showMessage('启动手动评测失败: ' + error.message, 'error')
+    // 出错时重置状态
+    isManualEvaluating.value = false
   } finally {
     starting.value = false
   }
@@ -2561,46 +2704,131 @@ const startManualEvaluation = async () => {
 
 // 加载需要手动评测的答案
 const loadAnswersForManualEvaluation = async () => {
-  if (!answerGenerationTask.value?.id) return
+  if (!answerGenerationTask.value?.id) {
+    throw new Error('没有找到答案生成任务ID')
+  }
   
   try {
+    console.log('开始加载答案，任务ID:', answerGenerationTask.value.id)
     // 使用正确的service方法
     const answers = await llmEvaluationService.getTaskAnswersForManualEvaluation(answerGenerationTask.value.id)
-    manualEvaluationAnswers.value = answers || []
+    
+    if (!answers || !Array.isArray(answers)) {
+      throw new Error('返回的答案数据格式不正确')
+    }
+    
+    manualEvaluationAnswers.value = answers
     currentAnswerIndex.value = 0
     
-    console.log('已加载', manualEvaluationAnswers.value.length, '个答案待评测')
-  } catch (error) {
+    console.log('成功加载', manualEvaluationAnswers.value.length, '个答案待评测')
+    console.log('第一个答案:', manualEvaluationAnswers.value[0])
+    
+    return answers
+  } catch (error: any) {
     console.error('加载答案失败:', error)
-    showMessage('加载评测答案失败', 'error')
+    throw error
   }
 }
 
 // 获取当前问题信息
 const getCurrentQuestion = () => {
-  if (!manualEvaluationAnswers.value[currentAnswerIndex.value]) return null
-  return manualEvaluationAnswers.value[currentAnswerIndex.value].question
+  const currentAnswer = getCurrentAnswer()
+  return currentAnswer?.question || null
 }
 
 // 获取当前答案信息
 const getCurrentAnswer = () => {
+  if (selectedAnswerIndex.value >= 0 && selectedAnswerIndex.value < manualEvaluationAnswers.value.length) {
+    return manualEvaluationAnswers.value[selectedAnswerIndex.value]
+  }
+  // 兼容旧的currentAnswerIndex逻辑
   if (!manualEvaluationAnswers.value[currentAnswerIndex.value]) return null
   return manualEvaluationAnswers.value[currentAnswerIndex.value]
 }
 
-// 上一题
-const previousAnswer = () => {
-  if (currentAnswerIndex.value > 0) {
-    currentAnswerIndex.value--
+// 列表模式相关函数
+const selectAnswer = (index: number) => {
+  selectedAnswerIndex.value = index
+  currentAnswerIndex.value = index // 保持兼容性
+}
+
+const closeDetail = () => {
+  selectedAnswerIndex.value = -1
+}
+
+// 检查答案是否已评测
+const isAnswerEvaluated = (answer: any) => {
+  return answer.manual_score !== null && answer.manual_score !== undefined && 
+         answer.manual_reasoning && answer.manual_reasoning.trim().length > 0
+}
+
+// 获取已评测数量
+const getEvaluatedCount = () => {
+  return manualEvaluationAnswers.value.filter(answer => isAnswerEvaluated(answer)).length
+}
+
+// 文本截断函数
+const truncateText = (text: string, maxLength: number) => {
+  if (text.length <= maxLength) return text
+  return text.substring(0, maxLength) + '...'
+}
+
+// 保存所有评测结果
+const saveAllEvaluations = async () => {
+  const unsavedAnswers = manualEvaluationAnswers.value.filter(answer => {
+    return isAnswerEvaluated(answer) && !answer.is_saved
+  })
+
+  if (unsavedAnswers.length === 0) {
+    showMessage('没有需要保存的评测结果', 'info')
+    return
+  }  try {
+    let savedCount = 0
+    for (const answer of unsavedAnswers) {
+      await llmEvaluationService.createEvaluation({
+        answer_id: answer.id,
+        score: answer.manual_score,
+        reasoning: answer.manual_reasoning,
+        evaluator_type: 'user'
+      })
+      answer.is_saved = true
+      savedCount++
+    }
+    showMessage(`已保存 ${savedCount} 个评测结果`, 'success')
+  } catch (error: any) {
+    console.error('批量保存失败:', error)
+    showMessage('保存失败: ' + error.message, 'error')
   }
 }
 
-// 下一题
-const nextAnswer = () => {
-  if (currentAnswerIndex.value < manualEvaluationAnswers.value.length - 1) {
-    currentAnswerIndex.value++
+// 清除当前评分
+const clearCurrentEvaluation = () => {
+  const currentAnswer = getCurrentAnswer()
+  if (currentAnswer) {
+    currentAnswer.manual_score = null
+    currentAnswer.manual_reasoning = ''
+    currentAnswer.is_evaluated = false
+    currentAnswer.is_saved = false
+    showMessage('已清除当前评分', 'info')
   }
 }
+
+// 评分变化处理
+const onScoreChange = () => {
+  const currentAnswer = getCurrentAnswer()
+  if (currentAnswer) {
+    currentAnswer.is_saved = false
+  }
+}
+
+// 理由变化处理
+const onReasoningChange = () => {
+  const currentAnswer = getCurrentAnswer()
+  if (currentAnswer) {
+    currentAnswer.is_saved = false
+  }
+}
+
 
 // 保存当前评测结果
 const saveCurrentEvaluation = async () => {
@@ -2619,9 +2847,7 @@ const saveCurrentEvaluation = async () => {
   if (!currentAnswer.manual_reasoning || currentAnswer.manual_reasoning.trim().length === 0) {
     showMessage('请输入评分理由', 'warning')
     return
-  }
-
-  try {    // 直接创建evaluation记录，指定evaluator_type为'user'
+  }  try {    // 使用通用的evaluation API
     await llmEvaluationService.createEvaluation({
       answer_id: currentAnswer.id,
       score: currentAnswer.manual_score,
@@ -2649,15 +2875,28 @@ const isAllEvaluated = () => {
 
 // 退出手动评测
 const exitManualEvaluation = async () => {
-  // 保存当前评测结果
-  await saveCurrentEvaluation()
-  
-  // 重置状态
-  isManualEvaluating.value = false
-  currentAnswerIndex.value = 0
-  
-  // 返回到评测配置步骤
-  showMessage('已退出手动评测，进度已保存', 'info')
+  try {
+    // 保存当前评测结果
+    if (manualEvaluationAnswers.value.length > 0) {
+      await saveCurrentEvaluation()
+    }    // 重置状态
+    isManualEvaluating.value = false
+    hasSelectedEvaluationMode.value = false
+    evaluationConfig.evaluation_mode = ''
+    currentAnswerIndex.value = 0
+    selectedAnswerIndex.value = -1
+    manualEvaluationAnswers.value = []
+    
+    // 返回到评测方式选择步骤
+    showMessage('已退出手动评测，进度已保存', 'info')
+  } catch (error: any) {
+    console.error('退出手动评测时出错:', error)
+    showMessage('退出时保存失败，但已成功退出', 'warning')
+      // 即使保存失败也要重置状态
+    isManualEvaluating.value = false
+    hasSelectedEvaluationMode.value = false
+    evaluationConfig.evaluation_mode = ''
+  }
 }
 
 // 完成手动评测
@@ -3684,18 +3923,6 @@ onBeforeRouteLeave((to, from, next) => {
   gap: 20px;
 }
 
-.option-item {
-  display: flex;
-  flex-direction: column;
-  gap: 8px;
-}
-
-.option-item label {
-  font-size: 14px;
-  font-weight: 500;
-  color: #495057;
-}
-
 /* 步骤操作 */
 .step-actions {
   display: flex;
@@ -4687,6 +4914,644 @@ onBeforeRouteLeave((to, from, next) => {
   margin: 0;
   color: #4a5568;
   font-size: 14px;
+}
+
+/* 手动评测列表样式 */
+.evaluation-stats {
+  background: white;
+  border-radius: 12px;
+  padding: 20px;
+  margin-bottom: 20px;
+  box-shadow: 0 2px 8px rgba(0, 0, 0, 0.04);
+}
+
+.stats-grid {
+  display: grid;
+  grid-template-columns: repeat(auto-fit, minmax(150px, 1fr));
+  gap: 20px;
+}
+
+.stat-item {
+  text-align: center;
+  padding: 16px;
+  background: #f8fafc;
+  border-radius: 8px;
+  border: 1px solid #e2e8f0;
+}
+
+.stat-label {
+  display: block;
+  font-size: 12px;
+  color: #718096;
+  font-weight: 500;
+  margin-bottom: 4px;
+}
+
+.stat-value {
+  display: block;
+  font-size: 24px;
+  font-weight: 600;
+  color: #2d3748;
+}
+
+.answers-list {
+  background: white;
+  border-radius: 12px;
+  box-shadow: 0 2px 8px rgba(0, 0, 0, 0.04);
+  overflow: hidden;
+}
+
+.list-header {
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+  padding: 20px;
+  border-bottom: 1px solid #e2e8f0;
+  background: #f8fafc;
+}
+
+.list-header h4 {
+  margin: 0;
+  color: #2d3748;
+  font-size: 16px;
+}
+
+.list-actions {
+  display: flex;
+  gap: 12px;
+}
+
+.btn-small {
+  padding: 6px 12px;
+  font-size: 12px;
+}
+
+.answers-table {
+  width: 100%;
+}
+
+.table-header {
+  display: grid;
+  grid-template-columns: 50px 1fr 80px 80px 80px 100px;
+  gap: 16px;
+  align-items: center;
+  padding: 16px 20px;
+  background: #f1f5f9;
+  border-bottom: 1px solid #e2e8f0;
+  font-weight: 600;
+  font-size: 14px;
+  color: #475569;
+}
+
+.table-body {
+  max-height: 400px;
+  overflow-y: auto;
+}
+
+.table-row {
+  display: grid;
+  grid-template-columns: 50px 1fr 80px 80px 80px 100px;
+  gap: 16px;
+  align-items: center;
+  padding: 16px 20px;
+  border-bottom: 1px solid #f1f5f9;
+  cursor: pointer;
+  transition: all 0.2s ease;
+}
+
+.table-row:hover {
+  background: #f8fafc;
+}
+
+.table-row.selected {
+  background: #e6f3ff;
+  border-color: #3b82f6;
+}
+
+.table-row.evaluated {
+  background: #f0f9ff;
+}
+
+.table-row.not-evaluated {
+  background: #fffbeb;
+}
+
+.col {
+  display: flex;
+  align-items: center;
+  font-size: 14px;
+}
+
+.col-index {
+  justify-content: center;
+  font-weight: 600;
+  color: #64748b;
+}
+
+.col-question {
+  flex: 1;
+}
+
+.question-preview {
+  color: #374151;
+  line-height: 1.4;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.type-badge {
+  padding: 4px 8px;
+  border-radius: 12px;
+  font-size: 12px;
+  font-weight: 500;
+}
+
+.type-badge.choice {
+  background: #dbeafe;
+  color: #1e40af;
+}
+
+.type-badge.text {
+  background: #dcfce7;
+  color: #166534;
+}
+
+.score-display {
+  display: flex;
+  align-items: baseline;
+  gap: 2px;
+}
+
+.score-value {
+  font-weight: 600;
+  color: #059669;
+}
+
+.score-unit {
+  font-size: 12px;
+  color: #6b7280;
+}
+
+.no-score {
+  color: #9ca3af;
+  font-style: italic;
+  font-size: 12px;
+}
+
+.status-badge {
+  padding: 4px 8px;
+  border-radius: 12px;
+  font-size: 12px;
+  font-weight: 500;
+  text-align: center;
+}
+
+.status-badge.completed {
+  background: #d1fae5;
+  color: #065f46;
+}
+
+.status-badge.pending {
+  background: #fef3c7;
+  color: #92400e;
+}
+
+.answer-detail {
+  background: white;
+  border-radius: 12px;
+  margin-top: 20px;
+  padding: 24px;
+  box-shadow: 0 4px 12px rgba(0, 0, 0, 0.08);
+  border: 2px solid #e6f3ff;
+}
+
+.detail-header {
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+  margin-bottom: 20px;
+  padding-bottom: 16px;
+  border-bottom: 1px solid #e2e8f0;
+}
+
+.detail-header h4 {
+  margin: 0;
+  color: #2d3748;
+  font-size: 18px;
+}
+
+.answer-detail .question-section,
+.answer-detail .standard-answer-section,
+.answer-detail .llm-answer-section,
+.answer-detail .evaluation-form {
+  margin-bottom: 24px;
+  padding: 20px;
+  background: #f8fafc;
+  border-radius: 8px;
+  border: 1px solid #e2e8f0;
+}
+
+.answer-detail h5 {
+  margin: 0 0 12px 0;
+  color: #2d3748;
+  font-size: 16px;
+  font-weight: 600;
+}
+
+.answer-detail h6 {
+  margin: 0 0 8px 0;
+  color: #374151;
+  font-size: 14px;
+  font-weight: 600;
+}
+
+.evaluation-actions {
+  display: flex;
+  gap: 12px;
+  margin-top: 16px;
+  justify-content: flex-end;
+}
+
+/* 手动评测加载和状态样式 */
+.loading-section {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  justify-content: center;
+  padding: 60px 20px;
+  text-align: center;
+}
+
+.loading-spinner {
+  width: 40px;
+  height: 40px;
+  border: 4px solid #e2e8f0;
+  border-left: 4px solid #667eea;
+  border-radius: 50%;
+  animation: spin 1s linear infinite;
+  margin-bottom: 16px;
+}
+
+@keyframes spin {
+  0% { transform: rotate(0deg); }
+  100% { transform: rotate(360deg); }
+}
+
+.loading-section p {
+  color: #718096;
+  font-size: 16px;
+  margin: 0;
+}
+
+.no-data-section {
+  display: flex;
+  justify-content: center;
+  align-items: center;
+  padding: 60px 20px;
+}
+
+.no-data-content {
+  text-align: center;
+  max-width: 400px;
+}
+
+.no-data-icon {
+  font-size: 48px;
+  display: block;
+  margin-bottom: 16px;
+}
+
+.no-data-content h4 {
+  color: #2d3748;
+  margin: 0 0 8px 0;
+  font-size: 20px;
+}
+
+.no-data-content p {
+  color: #718096;
+  margin: 0 0 24px 0;
+  line-height: 1.6;
+}
+
+/* 标准答案样式增强 */
+.std-answer-item {
+  background: #f8fafc;
+  border: 1px solid #e2e8f0;
+  border-radius: 8px;
+  padding: 16px;
+  margin-bottom: 12px;
+}
+
+.std-answer-item:last-child {
+  margin-bottom: 0;
+}
+
+.std-answer-header {
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+  margin-bottom: 12px;
+  padding-bottom: 8px;
+  border-bottom: 1px solid #e2e8f0;
+}
+
+.std-answer-header h5 {
+  margin: 0;
+  color: #2d3748;
+  font-size: 16px;
+  font-weight: 600;
+}
+
+.answered-by {
+  font-size: 12px;
+  color: #718096;
+  background: #edf2f7;
+  padding: 2px 8px;
+  border-radius: 12px;
+}
+
+.point-order {
+  font-size: 12px;
+  color: #718096;
+  font-weight: 500;
+}
+
+.validity-status {
+  font-size: 12px;
+  font-weight: 500;
+  padding: 2px 6px;
+  border-radius: 4px;
+}
+
+.validity-status.valid {
+  background: #c6f6d5;
+  color: #2f855a;
+}
+
+.validity-status.invalid {
+  background: #fed7d7;
+  color: #c53030;
+}
+
+/* 评测方式选择样式 */
+.evaluation-mode-selection {
+  margin: 24px 0;
+}
+
+.mode-buttons {
+  display: grid;
+  grid-template-columns: 1fr 1fr;
+  gap: 20px;
+  margin-top: 20px;
+}
+
+.mode-button {
+  background: white;
+  border: 2px solid #e2e8f0;
+  border-radius: 16px;
+  padding: 24px;
+  cursor: pointer;
+  transition: all 0.3s ease;
+  text-align: left;
+  box-shadow: 0 2px 8px rgba(0, 0, 0, 0.04);
+  position: relative;
+  overflow: hidden;
+}
+
+.mode-button:hover {
+  border-color: #cbd5e0;
+  box-shadow: 0 4px 12px rgba(0, 0, 0, 0.08);
+  transform: translateY(-2px);
+}
+
+.mode-button.selected {
+  border-color: #667eea;
+  background: linear-gradient(135deg, #f7fafc 0%, #edf2f7 100%);
+  box-shadow: 0 6px 20px rgba(102, 126, 234, 0.15);
+  transform: translateY(-4px);
+}
+
+.mode-button.selected::before {
+  content: '';
+  position: absolute;
+  top: 0;
+  left: 0;
+  right: 0;
+  height: 4px;
+  background: linear-gradient(90deg, #667eea 0%, #764ba2 100%);
+}
+
+.mode-button.not-selected {
+  opacity: 0.6;
+  filter: grayscale(0.3);
+}
+
+.auto-mode.selected {
+  border-color: #38a169;
+}
+
+.auto-mode.selected::before {
+  background: linear-gradient(90deg, #38a169 0%, #48bb78 100%);
+}
+
+.manual-mode.selected {
+  border-color: #3182ce;
+}
+
+.manual-mode.selected::before {
+  background: linear-gradient(90deg, #3182ce 0%, #4299e1 100%);
+}
+
+.button-header {
+  display: flex;
+  align-items: center;
+  gap: 16px;
+  margin-bottom: 16px;
+}
+
+.mode-icon {
+  font-size: 32px;
+  width: 48px;
+  height: 48px;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  background: #f7fafc;
+  border-radius: 12px;
+  flex-shrink: 0;
+}
+
+.mode-button.selected .mode-icon {
+  background: rgba(102, 126, 234, 0.1);
+}
+
+.auto-mode.selected .mode-icon {
+  background: rgba(56, 161, 105, 0.1);
+}
+
+.manual-mode.selected .mode-icon {
+  background: rgba(49, 130, 206, 0.1);
+}
+
+.mode-title {
+  flex: 1;
+}
+
+.mode-title h5 {
+  margin: 0 0 4px 0;
+  font-size: 18px;
+  font-weight: 600;
+  color: #2d3748;
+}
+
+.mode-subtitle {
+  font-size: 14px;
+  color: #718096;
+  font-weight: 500;
+}
+
+.selection-indicator {
+  width: 24px;
+  height: 24px;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+}
+
+.check-mark {
+  width: 20px;
+  height: 20px;
+  background: #48bb78;
+  color: white;
+  border-radius: 50%;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  font-size: 12px;
+  font-weight: bold;
+  animation: checkAppear 0.3s ease;
+}
+
+@keyframes checkAppear {
+  0% {
+    transform: scale(0);
+    opacity: 0;
+  }
+  50% {
+    transform: scale(1.2);
+  }
+  100% {
+    transform: scale(1);
+    opacity: 1;
+  }
+}
+
+.mode-description {
+  color: #4a5568;
+  line-height: 1.6;
+}
+
+.mode-description p {
+  margin: 0 0 12px 0;
+  font-size: 14px;
+}
+
+.mode-features {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 8px;
+}
+
+.feature-tag {
+  background: #edf2f7;
+  color: #4a5568;
+  padding: 4px 8px;
+  border-radius: 12px;
+  font-size: 12px;
+  font-weight: 500;
+}
+
+.mode-button.selected .feature-tag {
+  background: rgba(102, 126, 234, 0.1);
+  color: #553c9a;
+}
+
+.auto-mode.selected .feature-tag {
+  background: rgba(56, 161, 105, 0.1);
+  color: #2f855a;
+}
+
+.manual-mode.selected .feature-tag {
+  background: rgba(49, 130, 206, 0.1);
+  color: #2c5282;
+}
+
+.selection-hint {
+  margin-top: 24px;
+  padding: 16px;
+  background: linear-gradient(135deg, #f0f9ff 0%, #e0f2fe 100%);
+  border: 1px solid #bae6fd;
+  border-radius: 12px;
+}
+
+.hint-content {
+  display: flex;
+  align-items: center;
+  gap: 12px;
+  color: #0c4a6e;
+  font-size: 14px;
+}
+
+.hint-icon {
+  font-size: 20px;
+  flex-shrink: 0;
+}
+
+.btn.pulse {
+  animation: pulse 2s infinite;
+}
+
+@keyframes pulse {
+  0% {
+    box-shadow: 0 0 0 0 rgba(102, 126, 234, 0.4);
+  }
+  70% {
+    box-shadow: 0 0 0 10px rgba(102, 126, 234, 0);
+  }
+  100% {
+    box-shadow: 0 0 0 0 rgba(102, 126, 234, 0);
+  }
+}
+
+/* 响应式设计 */
+@media (max-width: 768px) {
+  .mode-buttons {
+    grid-template-columns: 1fr;
+    gap: 16px;
+  }
+  
+  .button-header {
+    gap: 12px;
+  }
+  
+  .mode-icon {
+    width: 40px;
+    height: 40px;
+    font-size: 24px;
+  }
+  
+  .mode-title h5 {
+    font-size: 16px;
+  }
+  
+  .mode-features {
+    gap: 6px;
+  }
+  
+  .feature-tag {
+    font-size: 11px;
+  }
 }
 
 /* 响应式设计 */

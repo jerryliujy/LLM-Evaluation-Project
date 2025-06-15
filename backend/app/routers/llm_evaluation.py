@@ -31,7 +31,7 @@ from app.schemas.llm_evaluation_task import (
 from app.schemas.llm_answer import (
     MarketplaceDatasetInfo, DatasetDownloadResponse
 )
-from app.schemas.evaluation import EvaluationResponse
+from app.schemas.evaluation import EvaluationResponse, EvaluationCreate
 from app.crud.crud_llm_evaluation_task import (
     create_llm_evaluation_task, get_llm_evaluation_task, update_llm_evaluation_task,
     get_user_evaluation_tasks, get_task_progress, create_manual_evaluation_task
@@ -1106,19 +1106,18 @@ def get_task_detailed_results(
                     "id": sa.id,
                     "answer": sa.answer
                 })
-        
-        # 计算平均分
+          # 计算平均分
         answer_scores = [e.score for e in evaluations if e.score is not None]
         avg_score = sum(answer_scores) / len(answer_scores) if answer_scores else None
         
         if avg_score is not None:
             total_score += avg_score
             valid_scores += 1
-        
+
         detailed_answers.append({
             "question_id": answer.std_question_id,
             "question_text": std_question.body if std_question else "未知问题",
-            "question_type": getattr(std_question, 'type', 'text') if std_question else 'text',
+            "question_type": getattr(std_question, 'question_type', 'text') if std_question else 'text',
             "standard_answers": std_answers,
             "llm_answer": {
                 "id": answer.id,
@@ -1322,8 +1321,7 @@ def get_task_answers_for_manual_evaluation(
                     "id": sa.id,
                     "answer": sa.answer
                 })
-        
-        # 获取已有的评测结果（如果有的话）
+          # 获取已有的评测结果（如果有的话）
         existing_evaluations = db.query(Evaluation).filter(
             Evaluation.llm_answer_id == answer.id,
             Evaluation.evaluator_type == 'manual'
@@ -1333,7 +1331,7 @@ def get_task_answers_for_manual_evaluation(
             "llm_answer_id": answer.id,
             "question_id": answer.std_question_id,
             "question_text": std_question.body if std_question else "未知问题",
-            "question_type": getattr(std_question, 'type', 'text') if std_question else 'text',
+            "question_type": getattr(std_question, 'question_type', 'text') if std_question else 'text',
             "standard_answers": std_answers,
             "llm_answer": answer.answer,
             "prompt_used": answer.prompt_used,
@@ -1586,8 +1584,7 @@ def import_manual_evaluations(
                 )
                 db.add(evaluation)
             
-            imported_count += 1
-        
+            imported_count += 1        
         db.commit()
         
         return {
@@ -1600,4 +1597,81 @@ def import_manual_evaluations(
         raise HTTPException(
             status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
             detail=f"Import failed: {str(e)}"
+        )
+
+
+@router.post("/evaluations", response_model=EvaluationResponse)
+def create_evaluation(
+    evaluation_data: EvaluationCreate,
+    db: Session = Depends(get_db),
+    current_user: User = Depends(get_current_user)
+):
+    """创建评测记录（通用接口）"""
+    # 获取LLM答案
+    llm_answer = db.query(LLMAnswer).filter(LLMAnswer.id == evaluation_data.answer_id).first()
+    
+    if not llm_answer:
+        raise HTTPException(
+            status_code=status.HTTP_404_NOT_FOUND,
+            detail="LLM answer not found"
+        )
+    
+    # 验证任务权限
+    task = get_llm_evaluation_task(db=db, task_id=llm_answer.task_id)
+    if not task or task.created_by != current_user.id:
+        raise HTTPException(
+            status_code=status.HTTP_403_FORBIDDEN,
+            detail="Access denied"
+        )
+    
+    try:
+        # 检查是否已有评测记录
+        existing_evaluation = db.query(Evaluation).filter(
+            Evaluation.llm_answer_id == evaluation_data.answer_id,
+            Evaluation.evaluator_type == evaluation_data.evaluator_type,
+            Evaluation.evaluator_id == current_user.id
+        ).first()
+        
+        if existing_evaluation:
+            # 更新现有评测
+            existing_evaluation.score = evaluation_data.score
+            existing_evaluation.reasoning = evaluation_data.reasoning
+            existing_evaluation.evaluation_time = datetime.now()
+            db.commit()
+            db.refresh(existing_evaluation)
+            evaluation = existing_evaluation
+        else:
+            # 创建新评测
+            evaluation = Evaluation(
+                std_question_id=llm_answer.std_question_id,
+                llm_answer_id=evaluation_data.answer_id,
+                score=evaluation_data.score,
+                evaluator_type=evaluation_data.evaluator_type,
+                evaluator_id=evaluation_data.evaluator_id or current_user.id,
+                reasoning=evaluation_data.reasoning,
+                evaluation_time=datetime.now()
+            )
+            db.add(evaluation)
+            db.commit()
+            db.refresh(evaluation)
+        
+        # 返回符合EvaluationResponse schema的数据
+        return EvaluationResponse(
+            id=evaluation.id,
+            std_question_id=evaluation.std_question_id,
+            llm_answer_id=evaluation.llm_answer_id,
+            score=evaluation.score,
+            evaluator_type=evaluation.evaluator_type,
+            evaluator_id=evaluation.evaluator_id,
+            reasoning=evaluation.reasoning,
+            notes=evaluation.notes,
+            created_at=evaluation.evaluation_time,  # 映射字段名
+            is_valid=evaluation.is_valid
+        )
+        
+    except Exception as e:
+        db.rollback()
+        raise HTTPException(
+            status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
+            detail=f"Failed to create evaluation: {str(e)}"
         )

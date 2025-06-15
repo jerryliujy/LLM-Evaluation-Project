@@ -146,19 +146,25 @@ class LLMEvaluationTaskProcessor:
                     update_llm_evaluation_task(db, task_id, update_data)
                     # 生成答案
                     start_time = time.time()
-                    logger.info(f"Generating answer for question: {question.body[:100]}...")
-                    
-                    # 根据问题类型选择合适的system prompt
-                    question_type = getattr(question, 'type', 'text')  # 默认为text类型
+                    logger.info(f"Generating answer for question: {question.body[:100]}...")                    # 根据问题类型选择合适的system prompt
+                    question_type = getattr(question, 'question_type', 'text')  # 默认为text类型
                     if question_type == 'choice':
-                        from ..config.llm_config import get_default_system_prompt
-                        system_prompt = get_default_system_prompt('choice')
+                        # 优先使用任务的选择题专用提示词，其次使用默认提示词
+                        if task.choice_system_prompt:
+                            system_prompt = task.choice_system_prompt
+                        else:
+                            from ..config.llm_config import get_default_system_prompt
+                            system_prompt = get_default_system_prompt('choice')
                     else:
-                        from ..config.llm_config import get_default_system_prompt  
-                        system_prompt = get_default_system_prompt('text')
+                        # 优先使用任务的文本题专用提示词，其次使用默认提示词
+                        if task.text_system_prompt:
+                            system_prompt = task.text_system_prompt
+                        else:
+                            from ..config.llm_config import get_default_system_prompt  
+                            system_prompt = get_default_system_prompt('text')
                     
-                    # 如果任务有自定义system prompt，使用它
-                    if task.system_prompt:
+                    # 如果都没有，最后才使用通用的system_prompt作为兜底
+                    if not system_prompt and task.system_prompt:
                         system_prompt = task.system_prompt
                     
                     answer_result = await llm_client.generate_answer(
@@ -388,10 +394,18 @@ class LLMEvaluationTaskProcessor:
                         logger.warning(f"Task {task_id}: 答案 {llm_answer.id} 的标准问题不存在")
                         failed_evaluations += 1
                         continue
-                    
-                    # 获取标准答案
+                      # 获取标准答案
                     std_answers = std_question.std_answers
                     correct_answer = std_answers[0].answer if std_answers else ""
+                    
+                    # 根据问题类型选择评测提示词
+                    question_type = getattr(std_question, 'question_type', 'text')
+                    if question_type == 'choice':
+                        # 优先使用任务的选择题专用评测提示词，其次使用通用评测提示词
+                        evaluation_prompt = task.choice_evaluation_prompt or task.evaluation_prompt
+                    else:
+                        # 优先使用任务的文本题专用评测提示词，其次使用通用评测提示词
+                        evaluation_prompt = task.text_evaluation_prompt or task.evaluation_prompt
                     
                     # 调用评测LLM
                     evaluation_result = await self._call_evaluation_llm(
@@ -399,9 +413,8 @@ class LLMEvaluationTaskProcessor:
                         std_question.body,
                         llm_answer.answer,
                         correct_answer,
-                        task.evaluation_prompt,
-                        getattr(std_question, 'type', 'text')                    
-                    )
+                        evaluation_prompt,
+                        question_type                     )
                     
                     if evaluation_result["success"]:
                         # 创建评测记录
@@ -412,7 +425,7 @@ class LLMEvaluationTaskProcessor:
                             evaluator_type=EvaluatorType.LLM,
                             evaluator_id=evaluation_llm.id,
                             reasoning=evaluation_result["reasoning"],
-                            evaluation_prompt=evaluation_result.get("evaluation_prompt", task.evaluation_prompt)
+                            evaluation_prompt=evaluation_prompt
                         )
                         db.add(evaluation)
                         db.commit()
