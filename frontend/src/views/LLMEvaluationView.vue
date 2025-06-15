@@ -842,12 +842,12 @@
             <div class="question-type-badge">
               {{ getCurrentQuestion().question_type === 'choice' ? '选择题' : '文本题' }}
             </div>
-          </div>
-          <div class="question-content">
+          </div>          <div class="question-content">
             <div class="question-body">
               {{ getCurrentQuestion().body }}
             </div>
-            <!-- 选择题选项 -->
+            <!-- 选择题选项 - 暂时隐藏，等待后端支持 -->
+            <!-- 
             <div v-if="getCurrentQuestion().question_type === 'choice' && getCurrentQuestion().choices" class="choices-section">
               <h5>选项：</h5>
               <div class="choices-list">
@@ -863,42 +863,48 @@
                 </div>
               </div>
             </div>
+            -->
           </div>
-        </div>
-
-        <!-- 标准答案信息 -->
-        <div v-if="getCurrentAnswer()?.std_answer" class="standard-answer-section">
+        </div>        <!-- 标准答案信息 -->
+        <div v-if="getCurrentAnswer()?.std_answers && getCurrentAnswer().std_answers.length > 0" class="standard-answer-section">
           <h4>📋 标准答案</h4>
           <div class="standard-answer-content">
-            <div class="answer-text">
-              {{ getCurrentAnswer().std_answer.answer }}
-            </div>
-            <div v-if="getCurrentAnswer().std_answer.scoring_points" class="scoring-points">
-              <h5>评分要点：</h5>
-              <ul class="scoring-points-list">
-                <li 
-                  v-for="point in getCurrentAnswer().std_answer.scoring_points" 
-                  :key="point.id"
-                  class="scoring-point"
-                >
-                  <span class="point-text">{{ point.answer }}</span>
-                  <span class="point-score">({{ point.score }}分)</span>
-                </li>
-              </ul>
+            <div v-for="(stdAnswer, index) in getCurrentAnswer().std_answers" :key="stdAnswer.id" class="std-answer-item">
+              <div v-if="getCurrentAnswer().std_answers.length > 1" class="std-answer-header">
+                <h5>标准答案 {{ index + 1 }}</h5>
+                <span v-if="stdAnswer.answered_by" class="answered-by">作者：{{ stdAnswer.answered_by }}</span>
+              </div>
+              <div class="answer-text">
+                {{ stdAnswer.answer }}
+              </div>
+              <div v-if="stdAnswer.scoring_points && stdAnswer.scoring_points.length > 0" class="scoring-points">
+                <h5>评分要点：</h5>
+                <ul class="scoring-points-list">
+                  <li 
+                    v-for="point in stdAnswer.scoring_points" 
+                    :key="point.id"
+                    class="scoring-point"
+                  >
+                    <span class="point-text">{{ point.answer }}</span>
+                    <span class="point-order">第{{ point.point_order }}点</span>
+                  </li>
+                </ul>
+              </div>
             </div>
           </div>
-        </div>
-
-        <!-- LLM答案 -->
+        </div>        <!-- LLM答案 -->
         <div v-if="getCurrentAnswer()" class="llm-answer-section">
           <h4>🤖 LLM回答</h4>
           <div class="llm-answer-content">
             <div class="answer-text">
-              {{ getCurrentAnswer().answer }}
-            </div>
-            <div class="answer-meta">
-              <span class="model-info">模型：{{ getCurrentAnswer().model_name }}</span>
-              <span class="generated-time">生成时间：{{ formatDateTime(getCurrentAnswer().created_at) }}</span>
+              {{ getCurrentAnswer().llm_answer }}
+            </div>            <div class="answer-meta">
+              <span class="model-info">模型：{{ selectedModel?.display_name || modelConfig.model_id }}</span>
+              <span class="generated-time">生成时间：{{ formatDateTime(getCurrentAnswer().answered_at) }}</span>
+              <span v-if="getCurrentAnswer().is_valid !== undefined" 
+                    :class="['validity-status', getCurrentAnswer().is_valid ? 'valid' : 'invalid']">
+                {{ getCurrentAnswer().is_valid ? '✅ 有效答案' : '❌ 无效答案' }}
+              </span>
             </div>
           </div>
         </div>

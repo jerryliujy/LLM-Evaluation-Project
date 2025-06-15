@@ -1,6 +1,35 @@
 # This is the final project of **Database System Design** in Fudan University.
 
-For starting backend: run `python run.py` in `backend` folder.
+## Setup
+
+* For starting backend, you should:
+
+1. Start a virtual environment
+
+```
+[.]$ ./venv/Scripts/activate
+```
+
+2. Download the requirements
+
+```
+[backend]$ pip install -r requirements.txt
+```
+
+3. Run the backend
+
+```
+[backend]$ python run.py
+```
+
+* For starting frontend, you should:
+
+1. Download npm
+
+2. Download dependency
+
+```
+[frontend]$ 
 
 For starting frontend: run `npm run serve` in `frontend` folder.
 
