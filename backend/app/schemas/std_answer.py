@@ -28,6 +28,7 @@ class StdAnswerResponse(StdAnswerBase):
     answered_at: datetime  # 使用 answered_at 而不是 create_time
     answered_by: Optional[str] = None  # 响应时返回用户名而不是ID
     scoring_points: Optional[List['StdAnswerScoringPointResponse']] = None  # 添加得分点列表
+    std_question: Optional[dict] = None  # 添加关联的标准问题信息
     
     class Config:
         from_attributes = True

@@ -95,6 +95,7 @@
 import { ref, computed, onMounted } from 'vue'
 import { useRouter } from 'vue-router'
 import InviteCodeCopy from '@/components/InviteCodeCopy.vue'
+import { authService } from '@/services/authService'
 
 const router = useRouter()
 
@@ -122,10 +123,16 @@ const goToMyDatasets = () => {
 }
 
 // 退出登录
-const logout = () => {
-  localStorage.removeItem('userInfo')
-  localStorage.removeItem('userRole')
-  router.push({ name: 'RoleSelection' })
+const logout = async () => {
+  try {
+    await authService.logout()
+    router.push({ name: 'RoleSelection' })
+  } catch (error) {
+    console.error('退出登录失败:', error)
+    // 即使退出失败，也强制清理本地数据并跳转
+    authService.clearToken()
+    router.push({ name: 'RoleSelection' })
+  }
 }
 </script>
 

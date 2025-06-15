@@ -538,9 +538,16 @@ const goToHome = () => {
   router.push({ name: 'Home' });
 };
 
-const logout = () => {
-  authService.logout();
-  router.push({ name: 'RoleSelection' });
+const logout = async () => {
+  try {
+    await authService.logout();
+    router.push({ name: 'RoleSelection' });
+  } catch (error) {
+    console.error('退出登录失败:', error);
+    // 即使退出失败，也强制清理本地数据并跳转
+    authService.clearToken();
+    router.push({ name: 'RoleSelection' });
+  }
 };
 
 // 检查用户是否是数据集的创建者

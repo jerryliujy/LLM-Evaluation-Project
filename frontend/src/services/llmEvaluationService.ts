@@ -247,6 +247,8 @@ export const llmEvaluationService = {  // 获取数据集市场列表
     const response = await apiClient.post(`/llm-evaluation/tasks/${taskId}/download`, {
       task_id: taskId,
       ...options
+    }, {
+      responseType: 'blob' 
     });
     return response.data;
   },
@@ -275,9 +277,31 @@ export const llmEvaluationService = {  // 获取数据集市场列表
     const response = await apiClient.post('/llm-evaluation/evaluations', evaluation);
     return response.data;
   },
+  
   // 获取任务的答案列表用于手动评测
   async getTaskAnswersForManualEvaluation(taskId: number): Promise<any[]> {
     const response = await apiClient.get(`/llm-evaluation/tasks/${taskId}/answers`);
+    return response.data;
+  },
+
+  // 提交手动评测
+  async submitManualEvaluation(answerId: number, evaluation: {
+    score: number;
+    reasoning: string;
+  }): Promise<any> {
+    const response = await apiClient.post(`/llm-evaluation/answers/${answerId}/manual-evaluate`, evaluation);
+    return response.data;
+  },
+
+  // 批量导入手动评测结果
+  async importManualEvaluations(taskId: number, evaluations: Array<{
+    answer_id: number;
+    score: number;
+    reasoning?: string;
+  }>): Promise<any> {
+    const response = await apiClient.post(`/llm-evaluation/tasks/${taskId}/import-evaluations`, {
+      evaluations
+    });
     return response.data;
   },
 
@@ -325,15 +349,6 @@ export const llmEvaluationService = {  // 获取数据集市场列表
     enable_reasoning?: boolean;
   }): Promise<any> {
     const response = await apiClient.post('/llm-evaluation/tasks/manual', taskData);
-    return response.data;
-  },
-
-  // 提交手动评测
-  async submitManualEvaluation(answerId: number, evaluation: {
-    score: number;
-    reasoning: string;
-  }): Promise<any> {
-    const response = await apiClient.post(`/llm-evaluation/answers/${answerId}/manual-evaluate`, evaluation);
     return response.data;
   },
 };

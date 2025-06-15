@@ -220,16 +220,27 @@
                 :value="item.id" 
                 v-model="selectedItems"
               />
-            </td>            <td v-for="column in tableColumns" :key="column.key" :class="column.className">
+            </td>            
+            <td v-for="column in tableColumns" :key="column.key" :class="column.className">
               <div class="cell-content" :class="column.type">
                 <span v-if="column.type === 'text'" class="text-content">
                   <template v-if="column.key === 'std_question_body'">
                     {{ formatCellValue(item.std_question_body, column) }}
                   </template>
+                  <template v-else-if="column.key === 'expert_answers'">
+                    <!-- 专家回答的特殊处理：优先显示详细信息，后备显示文本 -->
+                    <span v-if="item.expert_answers_detail && item.expert_answers_detail.length > 0">
+                      {{ item.expert_answers_detail.map((answer: any) => answer.content).join('; ').substring(0, 100) }}{{ item.expert_answers_detail.map((answer: any) => answer.content).join('; ').length > 100 ? '...' : '' }}
+                    </span>
+                    <span v-else-if="item.expert_answers && item.expert_answers !== '无专家回答'">
+                      {{ formatCellValue(item.expert_answers, column) }}
+                    </span>
+                    <span v-else class="no-data-text">无专家回答</span>
+                  </template>
                   <template v-else>
                     {{ formatCellValue(item[column.key], column) }}
                   </template>
-                </span>                <span v-else-if="column.type === 'number' && column.key === 'scoring_points_count'" class="number-content">
+                </span><span v-else-if="column.type === 'number' && column.key === 'scoring_points_count'" class="number-content">
                   <div class="scoring-points-count">
                     <div class="valid-count-container">
                       <span class="valid-count">{{ getScoringPointsCount(item) }}</span>
@@ -246,7 +257,8 @@
                 </span>
                 <span v-else-if="column.type === 'date'" class="date-content">
                   {{ formatDate(item[column.key]) }}
-                </span>                <span v-else-if="column.type === 'tags'" class="tags-content">
+                </span>                
+                <span v-else-if="column.type === 'tags'" class="tags-content">
                   <span 
                     v-for="tag in parseTagsValue(item[column.key])" 
                     :key="tag" 
@@ -444,22 +456,39 @@
                       <div class="detail-box-content">{{ answer.content }}</div>
                     </div>
                   </div>
-                </template>
-                
-                <template v-else-if="column.key === 'expert_answers' && selectedItem.expert_answers_detail">
-                  <div v-if="selectedItem.expert_answers_detail.length === 0" class="no-data">
-                    无专家回答
+                </template>                <template v-else-if="column.key === 'expert_answers'">
+                  <!-- 调试信息 -->
+                  <div style="color: red; font-size: 12px; margin-bottom: 5px;">
+                    调试专家回答: column.key={{ column.key }}, expert_answers_detail存在={{ !!selectedItem.expert_answers_detail }}, 长度={{ selectedItem.expert_answers_detail?.length }}, expert_answers字段={{ selectedItem.expert_answers }}
                   </div>
-                  <div v-else class="detail-list">
-                    <div v-for="answer in selectedItem.expert_answers_detail" :key="answer.id" class="detail-box">
-                      <div class="detail-box-header">
-                        <span class="item-id">专家回答 #{{ answer.id }}</span>
-                        <span class="item-author">专家: {{ answer.author || '匿名' }}</span>
-                        <span class="item-relation">关联问题: {{ answer.question_title }}</span>
-                      </div>
-                      <div class="detail-box-content">{{ answer.content }}</div>
+                  
+                  <!-- 优先使用expert_answers_detail -->
+                  <template v-if="selectedItem.expert_answers_detail">
+                    <div v-if="selectedItem.expert_answers_detail.length === 0" class="no-data">
+                      无专家回答
                     </div>
-                  </div>                </template>                <!-- 标准答案得分点的特殊显示 -->
+                    <div v-else class="detail-list">
+                      <div v-for="answer in selectedItem.expert_answers_detail" :key="answer.id" class="detail-box">
+                        <div class="detail-box-header">
+                          <span class="item-id">专家回答 #{{ answer.id }}</span>
+                          <span class="item-author">专家: {{ answer.author || '匿名' }}</span>
+                          <span class="item-relation">关联问题: {{ answer.question_title }}</span>
+                        </div>
+                        <div class="detail-box-content">{{ answer.content }}</div>
+                      </div>
+                    </div>
+                  </template>
+                  
+                  <!-- 如果没有expert_answers_detail，则显示expert_answers的原始文本 -->
+                  <template v-else>
+                    <div v-if="!selectedItem.expert_answers || selectedItem.expert_answers === '无专家回答'" class="no-data">
+                      无专家回答
+                    </div>
+                    <div v-else class="text-value">
+                      {{ selectedItem.expert_answers }}
+                    </div>
+                  </template>
+                </template><!-- 标准答案得分点的特殊显示 -->
                 <template v-else-if="column.key === 'scoring_points_count'">
                   <!-- 调试信息 -->
                   <div v-if="selectedItem.id === 8" style="color: blue; font-size: 12px; margin-bottom: 5px;">
@@ -644,7 +673,8 @@
           <div v-if="scoringPointsData.length === 0" class="no-data">
             暂无得分点
           </div>
-          <div v-else class="scoring-points-list">            <div v-for="point in scoringPointsData" :key="point.id" 
+          <div v-else class="scoring-points-list">            
+            <div v-for="point in scoringPointsData" :key="point.id" 
                  :class="['scoring-point-item', { 'deleted-point': !point.is_valid }]">
               <div class="point-header">
                 <span :class="['point-id', { 'deleted-text': !point.is_valid }]">得分点 #{{ point.id }}</span>
@@ -893,14 +923,41 @@ const loadTableData = async () => {
         scoringPointsFilter.value || undefined
       );
     }
-    currentData.value = result.data;
-    // 特殊处理标准问题数据，添加 tags、dataset_name 和答案摘要字段
+    currentData.value = result.data;    // 特殊处理标准问题数据，添加 tags、dataset_name 和答案摘要字段
     if (selectedTable.value === 'std_questions') {
+      console.log('开始处理标准问题数据，原始数据:', result.data);
+      
       currentData.value = result.data.map(item => {
-        // 处理标准答案摘要
-        const stdAnswersSummary = item.std_answers && item.std_answers.length > 0 
-          ? item.std_answers.map((answer: any) => answer.answer).join('\n')
-          : '无标准答案';
+        // 调试输出
+        console.log(`处理标准问题 ID ${item.id}:`, {
+          id: item.id,
+          std_answers: item.std_answers,
+          std_answers_length: item.std_answers?.length,
+          std_answers_type: typeof item.std_answers,
+          std_answers_detail: item.std_answers
+        });
+        
+        let stdAnswersSummary = '无标准答案';
+        
+        if (item.std_answers) {
+          if (Array.isArray(item.std_answers)) {
+            console.log(`标准问题 ${item.id} 的答案数组:`, item.std_answers);
+            const validAnswers = item.std_answers.filter((answer: any) => answer.is_valid !== false);
+            console.log(`标准问题 ${item.id} 的有效答案:`, validAnswers);
+            
+            if (validAnswers.length > 0) {
+              stdAnswersSummary = validAnswers
+                .map((answer: any) => answer.answer || '无内容')
+                .join('\n');
+            }
+          } else {
+            console.log(`标准问题 ${item.id} 的答案不是数组:`, typeof item.std_answers, item.std_answers);
+          }
+        } else {
+          console.log(`标准问题 ${item.id} 没有std_answers字段`);
+        }
+
+        console.log(`标准问题 ID ${item.id} 的最终答案摘要:`, stdAnswersSummary);
 
         return {
           ...item,
@@ -908,7 +965,9 @@ const loadTableData = async () => {
           std_answers_summary: stdAnswersSummary,
         };
       });
-    }      
+      
+      console.log('处理后的标准问题数据:', currentData.value);
+    }
     
     // 特殊处理标准答案数据，添加 std_question_body 和得分点相关字段
     if (selectedTable.value === 'std_answers') {
@@ -916,6 +975,7 @@ const loadTableData = async () => {
         // 调试输出
         console.log(`处理标准答案 ID ${item.id}:`, {
           id: item.id,
+          std_question: item.std_question,
           scoring_points: item.scoring_points,
           scoring_points_count: item.scoring_points_count,
           scoring_points_length: item.scoring_points?.length
@@ -924,6 +984,7 @@ const loadTableData = async () => {
         // 处理得分点摘要
         const scoringPointsSummary = item.scoring_points && item.scoring_points.length > 0
           ? item.scoring_points
+              .filter((point: any) => point.is_valid) // 只显示有效的得分点
               .sort((a: any, b: any) => a.point_order - b.point_order)
               .map((point: any) => `${point.point_order}. ${point.answer}`)
               .join('; ')
@@ -933,7 +994,7 @@ const loadTableData = async () => {
           ...item,
           std_question_body: item.std_question?.body || '无关联问题',
           scoring_points_summary: scoringPointsSummary,
-          scoring_points_count: item.scoring_points_count || 0
+          scoring_points_count: item.scoring_points ? item.scoring_points.filter((p: any) => p.is_valid).length : 0
         };
         
         console.log(`处理后的标准答案 ID ${item.id}:`, processedItem);
@@ -1297,7 +1358,7 @@ const goToPage = (page: number) => {
 };
 
 const formatCellValue = (value: any, column: any) => {
-  if (!value) return "";
+  if (!value) return "无";
   
   if (column.type === "text") {
     let text = "";
@@ -1311,11 +1372,17 @@ const formatCellValue = (value: any, column: any) => {
           return item.content || item.answer || item.text || item.title || JSON.stringify(item);
         }
         return String(item);
-      }).join("; ");    } else if (typeof value === 'object') {
+      }).join("; ");
+    } else if (typeof value === 'object') {
       // 处理对象类型
       text = value.content || value.answer || value.text || value.title || value.body || JSON.stringify(value);
     } else {
       text = String(value);
+    }
+    
+    // 处理特殊情况：如果是"无专家回答"或类似的文本，直接显示
+    if (text === "无专家回答" || text === "无关联原始问题" || text === "无原始回答") {
+      return text;
     }
     
     return text.length > 100 ? text.substring(0, 100) + "..." : text;

@@ -6,7 +6,8 @@ from datetime import datetime
 def get_std_question(db: Session, question_id: int, include_deleted: bool = False) -> Optional[models.StdQuestion]:
     query = db.query(models.StdQuestion).options(
         selectinload(models.StdQuestion.dataset),
-        selectinload(models.StdQuestion.std_answers.and_(models.StdAnswer.is_valid == True)),
+        selectinload(models.StdQuestion.std_answers.and_(models.StdAnswer.is_valid == True)).selectinload(models.StdAnswer.answered_by_user),
+        selectinload(models.StdQuestion.std_answers.and_(models.StdAnswer.is_valid == True)).selectinload(models.StdAnswer.scoring_points.and_(models.StdAnswerScoringPoint.is_valid == True)),
         selectinload(models.StdQuestion.tags),
         selectinload(models.StdQuestion.created_by_user)  # 添加用户信息的加载
     ).filter(models.StdQuestion.id == question_id)
@@ -42,11 +43,11 @@ def get_std_questions_paginated(
 ):
     """获取分页的标准问题数据和元数据，支持搜索和筛选"""
     from ..schemas.common import PaginatedResponse
-    from sqlalchemy import and_, or_
-    # 构建基础查询
+    from sqlalchemy import and_, or_    # 构建基础查询
     query = db.query(models.StdQuestion).options(
         selectinload(models.StdQuestion.dataset),
-        selectinload(models.StdQuestion.std_answers.and_(models.StdAnswer.is_valid == True)),
+        selectinload(models.StdQuestion.std_answers.and_(models.StdAnswer.is_valid == True)).selectinload(models.StdAnswer.answered_by_user),
+        selectinload(models.StdQuestion.std_answers.and_(models.StdAnswer.is_valid == True)).selectinload(models.StdAnswer.scoring_points.and_(models.StdAnswerScoringPoint.is_valid == True)),
         selectinload(models.StdQuestion.tags),
         selectinload(models.StdQuestion.created_by_user)  
     )
@@ -130,12 +131,11 @@ def get_std_questions_paginated(
                 "description": question.dataset.description,
                 "version": question.dataset.version  
             } if question.dataset else None,
-            "tags": [tag.label for tag in question.tags] if question.tags else [],            
-            "std_answers": [
+            "tags": [tag.label for tag in question.tags] if question.tags else [],              "std_answers": [
                 {
                     "id": answer.id,
                     "answer": answer.answer,
-                    "answered_by": answer.answered_by,
+                    "answered_by": answer.answered_by_user.username if answer.answered_by_user else "unknown",
                     "is_valid": answer.is_valid,
                     "scoring_points": [
                         {

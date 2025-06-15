@@ -530,12 +530,12 @@
           </button>
         </div>
       </div>
-    </div>    <!-- 步骤4: 评测配置 -->
-    <div v-if="currentStep === 3" class="step-content">
+    </div>    <!-- 步骤4: 评测方式选择 -->
+    <div v-if="currentStep === 3 && !hasSelectedEvaluationMode" class="step-content">
       <div class="content-card">
         <div class="card-header">
-          <h3>⚖️ 配置评测方式</h3>
-          <p>选择评测方式：自动LLM评测或手动评测</p>
+          <h3>⚖️ 选择评测方式</h3>
+          <p>答案生成完成！请选择您希望使用的评测方式</p>
         </div>
         
         <!-- 评测方式选择 -->
@@ -575,9 +575,29 @@
             </div>
           </div>
         </div>
-
-        <!-- LLM自动评测配置 -->
-        <div v-if="evaluationConfig.evaluation_mode === 'auto'" class="auto-evaluation-config">
+        
+        <!-- 操作按钮 -->
+        <div class="card-actions">
+          <button @click="prevStep" class="btn btn-secondary">
+            ← 上一步
+          </button>          
+          <button 
+            @click="confirmEvaluationMode" 
+            :disabled="!evaluationConfig.evaluation_mode" 
+            class="btn btn-primary"
+          >
+            确认选择 →
+          </button>
+        </div>
+      </div>    
+    </div>    <!-- 步骤4: 自动评测配置 -->
+    <div v-if="currentStep === 3 && hasSelectedEvaluationMode && evaluationConfig.evaluation_mode === 'auto'" class="step-content">
+      <div class="content-card">
+        <div class="card-header">
+          <h3>⚖️ 配置自动评测</h3>
+          <p>配置LLM自动评测的参数和Prompt</p>
+        </div>
+        
         <!-- 评测Prompt配置 -->
         <div class="prompt-container">
           <div class="tabs">
@@ -1356,7 +1376,8 @@
                 class="form-range"
               />
             </div>
-            <div class="form-group">              <label class="form-label">评测理由</label>
+            <div class="form-group">              
+              <label class="form-label">评测理由</label>
               <textarea 
                 v-model="manualEvaluation.reasoning" 
                 rows="3"
@@ -1425,7 +1446,8 @@
               </div>
               
               <div class="progress-bar-container">
-                <div class="progress-bar">                  <div 
+                <div class="progress-bar">                  
+                  <div 
                     class="progress-fill" 
                     :style="{ width: (evaluationTask?.progress || 0) + '%' }"
                     :class="{ 
@@ -1506,13 +1528,12 @@
         </div>
       </div>
     </div>
-    </div> <!-- 自动评测流程结束 -->
   </div>
 </template>
 
 <script setup lang="ts">
 import { ref, reactive, computed, watch, onMounted, onUnmounted } from 'vue'
-import { useRoute, useRouter } from 'vue-router'
+import { useRoute, useRouter, onBeforeRouteLeave } from 'vue-router'
 import { llmEvaluationService } from '@/services/llmEvaluationService'
 import ManualEvaluationEntry from '@/components/ManualEvaluationEntry.vue'
 
@@ -1940,12 +1961,18 @@ const resumeTask = async (taskId: number) => {
       currentTaskType.value = 'answer_generation'
       showProgressDialog.value = true      
       startProgressPolling()
-      showMessage('正在生成答案，请查看进度...', 'info')
-    } else if (task?.status === 'evaluating_answers') {
-      // 答案生成完成，进入评测阶段 - 跳转到评测配置步骤
+      showMessage('正在生成答案，请查看进度...', 'info')    } else if (task?.status === 'evaluating_answers') {
+      // 答案生成完成，正在评测阶段 - 显示评测进度弹窗
       currentStep.value = 3
       answerGenerationTask.value = task // 设置答案生成任务，用于评测
-      showMessage('答案生成已完成，请配置评测参数', 'success')
+      evaluationTask.value = task // 确保设置评测任务
+      
+      // 显示评测进度弹窗
+      currentTaskType.value = 'evaluation'
+      showProgressDialog.value = true
+      startProgressPolling()
+      
+      showMessage('正在进行LLM评测，请查看进度...', 'info')
     } else if (task?.status === 'completed') {
       // 已完成 - 跳转到结果页面并加载详细结果
       currentStep.value = 4
@@ -2328,6 +2355,15 @@ const startEvaluation = async () => {
   }
 }
 
+// 停止进度轮询的通用函数
+const stopProgressPolling = () => {
+  if (progressTimer) {
+    clearInterval(progressTimer)
+    progressTimer = null
+    console.log('已停止进度轮询')
+  }
+}
+
 const startProgressPolling = () => {
   if (progressTimer) {
     clearInterval(progressTimer)
@@ -2335,6 +2371,13 @@ const startProgressPolling = () => {
   
   progressTimer = setInterval(async () => {
     if (!evaluationTask.value?.id) return
+      // 检查用户是否还在登录状态
+    const token = localStorage.getItem('access_token')
+    if (!token) {
+      console.log('用户已退出登录，停止轮询')
+      stopProgressPolling()
+      return
+    }
     
     try {
       const progress = await llmEvaluationService.getTaskProgress(evaluationTask.value.id)
@@ -2362,12 +2405,10 @@ const startProgressPolling = () => {
         console.log('任务类型已切换为评测')
       }
       
-      console.log('轮询进度 - 任务状态:', progress?.status, '任务类型:', currentTaskType.value)
-          // 如果任务完成，停止轮询并加载结果
+      console.log('轮询进度 - 任务状态:', progress?.status, '任务类型:', currentTaskType.value)      // 如果任务完成，停止轮询并加载结果
       if (progress?.status === 'completed' || progress?.status === 'failed' || progress?.status === 'answers_generated') {
-        clearInterval(progressTimer!)
-        progressTimer = null
-        if (progress?.status === 'completed') {          // 根据任务类型决定下一步操作
+        stopProgressPolling()
+        if (progress?.status === 'completed') {// 根据任务类型决定下一步操作
           if (currentTaskType.value === 'answer_generation') {
             showMessage('答案生成完成！', 'success')
             
@@ -2406,9 +2447,14 @@ const startProgressPolling = () => {
           document.body.style.overflow = 'auto'
           currentStep.value = 4 // 跳转到结果页面显示错误
         }
-      }
-    } catch (error) {
+      }    } catch (error: any) {
       console.error('获取进度失败:', error)
+        // 如果是403错误（未授权），说明用户已退出登录，停止轮询
+      if (error.response?.status === 403) {
+        console.log('用户未授权，停止轮询')
+        stopProgressPolling()
+        return
+      }
     }
   }, 2000) // 每2秒轮询一次
 }
@@ -2819,6 +2865,8 @@ const submitManualEvaluation = async () => {
 const closeProgressDialog = () => {
   showProgressDialog.value = false
   document.body.style.overflow = 'auto'
+  // 关闭弹窗时也停止轮询，避免后台继续请求
+  stopProgressPolling()
 }
 
 // 格式化时间
@@ -2850,6 +2898,19 @@ const viewResultsFromProgress = async () => {
   await loadTaskDetailedResults()
   currentStep.value = 4
 }
+
+// 组件清理：在组件销毁时清理定时器
+onUnmounted(() => {
+  stopProgressPolling()
+  console.log('组件销毁，已清理进度轮询定时器')
+})
+
+// 路由离开守卫：在路由切换时清理定时器
+onBeforeRouteLeave((to, from, next) => {
+  stopProgressPolling()
+  console.log('路由离开，已清理进度轮询定时器')
+  next()
+})
 
 </script>
 

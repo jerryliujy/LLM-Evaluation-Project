@@ -201,6 +201,8 @@ def create_scoring_point(
     db: Session = Depends(get_db)
 ):
     """为标准答案添加评分点"""
+    from sqlalchemy.orm import joinedload
+    
     # 验证标准答案是否存在
     if not db.query(StdAnswer).filter(StdAnswer.id == std_answer_id).first():
         raise HTTPException(status_code=404, detail="Standard answer not found")
@@ -214,7 +216,12 @@ def create_scoring_point(
     db.commit()
     db.refresh(db_scoring_point)
     
-    return db_scoring_point
+    # 重新查询以获取用户关系
+    db_scoring_point_with_user = db.query(StdAnswerScoringPoint).options(
+        joinedload(StdAnswerScoringPoint.answered_by_user)
+    ).filter(StdAnswerScoringPoint.id == db_scoring_point.id).first()
+    
+    return StdAnswerScoringPointResponse.from_db_model(db_scoring_point_with_user)
 
 @router.get("/{std_answer_id}/scoring-points", response_model=List[StdAnswerScoringPointResponse])
 def list_scoring_points(
@@ -223,14 +230,21 @@ def list_scoring_points(
     db: Session = Depends(get_db)
 ):
     """获取标准答案的评分点列表"""
-    query = db.query(StdAnswerScoringPoint).filter(
+    from sqlalchemy.orm import joinedload
+    
+    query = db.query(StdAnswerScoringPoint).options(
+        joinedload(StdAnswerScoringPoint.answered_by_user)  # 加载用户关系
+    ).filter(
         StdAnswerScoringPoint.std_answer_id == std_answer_id
     )
     
     if is_valid is not None:
         query = query.filter(StdAnswerScoringPoint.is_valid == is_valid)
     
-    return query.order_by(StdAnswerScoringPoint.point_order).all()
+    scoring_points = query.order_by(StdAnswerScoringPoint.point_order).all()
+    
+    # 使用 from_db_model 方法转换数据
+    return [StdAnswerScoringPointResponse.from_db_model(sp) for sp in scoring_points]
 
 @router.put("/scoring-points/{scoring_point_id}", response_model=StdAnswerScoringPointResponse)
 def update_scoring_point(
@@ -241,6 +255,8 @@ def update_scoring_point(
     db: Session = Depends(get_db)
 ):
     """更新评分点（版本控制）"""
+    from sqlalchemy.orm import joinedload
+    
     # 获取当前评分点
     current_point = db.query(StdAnswerScoringPoint).filter(
         StdAnswerScoringPoint.id == scoring_point_id
@@ -253,7 +269,11 @@ def update_scoring_point(
                   (point_order is not None and current_point.point_order != point_order))
     
     if not has_changes:
-        return current_point
+        # 重新查询以获取用户关系
+        current_point_with_user = db.query(StdAnswerScoringPoint).options(
+            joinedload(StdAnswerScoringPoint.answered_by_user)
+        ).filter(StdAnswerScoringPoint.id == current_point.id).first()
+        return StdAnswerScoringPointResponse.from_db_model(current_point_with_user)
     
     # 标记当前版本为无效
     current_point.is_valid = False
@@ -271,7 +291,12 @@ def update_scoring_point(
     db.commit()
     db.refresh(new_point)
     
-    return new_point
+    # 重新查询以获取用户关系
+    new_point_with_user = db.query(StdAnswerScoringPoint).options(
+        joinedload(StdAnswerScoringPoint.answered_by_user)
+    ).filter(StdAnswerScoringPoint.id == new_point.id).first()
+    
+    return StdAnswerScoringPointResponse.from_db_model(new_point_with_user)
 
 @router.delete("/scoring-points/{scoring_point_id}")
 def delete_scoring_point(scoring_point_id: int, db: Session = Depends(get_db)):

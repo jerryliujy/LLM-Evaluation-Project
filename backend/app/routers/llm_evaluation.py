@@ -3,7 +3,7 @@ LLM Evaluation Router for regular users
 Provides marketplace access, task-based LLM evaluation, and result management
 """
 from fastapi import APIRouter, Depends, HTTPException, status, BackgroundTasks, Request
-from sqlalchemy.orm import Session
+from sqlalchemy.orm import Session, joinedload
 from typing import List, Optional, Dict, Any
 import json
 import logging
@@ -16,16 +16,17 @@ from app.models.user import User
 from app.models.dataset import Dataset
 from app.models.std_question import StdQuestion
 from app.models.std_answer import StdAnswer
+from app.models.tag import Tag
 from app.models.llm import LLM
 from app.models.llm_answer import LLMAnswer
 from app.models.llm_evaluation_task import LLMEvaluationTask, TaskStatus
-from app.models.evaluation import Evaluation
+from app.models.evaluation import Evaluation, EvaluatorType
 from app.schemas.llm_evaluation_task import (
     LLMEvaluationTaskCreate, LLMEvaluationTaskResponse, LLMEvaluationTaskUpdate,
     LLMEvaluationTaskProgress, PromptTemplateInfo,
     EvaluationStartRequest, AvailableModel, EvaluationResultSummary,
     EvaluationDownloadRequest, ModelConfigRequest,
-    ManualEvaluationTaskCreate, ManualEvaluationTaskResponse
+    ManualEvaluationTaskCreate, ManualEvaluationTaskResponse, ManualEvaluationRequest
 )
 from app.schemas.llm_answer import (
     MarketplaceDatasetInfo, DatasetDownloadResponse
@@ -210,7 +211,8 @@ def download_marketplace_dataset(
         
         if not dataset:
             raise HTTPException(
-                status_code=status.HTTP_404_NOT_FOUND,                detail="Dataset version not found or not public"
+                status_code=status.HTTP_404_NOT_FOUND,                
+                detail="Dataset version not found or not public"
             )
     
     # 获取数据集的所有标准问题（使用版本范围查询）
@@ -812,17 +814,18 @@ def download_task_results(
         answer_data["evaluations"] = []
         for eval in evaluations:
             answer_data["evaluations"].append({
-                "score": eval.score,
+                "score": float(eval.score) if eval.score is not None else None,
+                "reasoning": eval.reasoning,
                 "evaluator_type": eval.evaluator_type.value,
                 "evaluation_time": eval.evaluation_time.isoformat()
             })
         
         results.append(answer_data)
     
-    return {
+    result = {
         "task_info": {
             "id": task.id,
-            "name": task.name,  # 使用name字段
+            "name": task.name,  
             "model": task.model.name if task.model else "Unknown",  # 使用关联的模型名称
             "dataset": task.dataset.name,
             "created_at": task.created_at.isoformat()
@@ -832,10 +835,96 @@ def download_task_results(
             "total_questions": task.total_questions,
             "successful_count": task.completed_questions,  # 使用completed_questions
             "failed_count": task.failed_questions,
-            "average_score": task.score  # 使用score字段
+            "average_score": float(task.score) if task.score is not None else None,
         }
     }
 
+    from fastapi.responses import Response
+    import json
+    
+    json_content = json.dumps(result, ensure_ascii=False, indent=2)
+    
+    return Response(
+        content=json_content,
+        media_type="application/json",
+        headers={
+            "Content-Disposition": f"attachment; filename=task_{task_id}_detailed_results.json"
+        }
+    )
+
+@router.get("/tasks/{task_id}/download/answers")
+def download_task_answers_only(
+    task_id: int,
+    db: Session = Depends(get_db),
+    current_user: User = Depends(get_current_user)
+):
+    """下载任务的答案数据（仅答案，不包含评测结果）"""
+    task = get_llm_evaluation_task(db=db, task_id=task_id)
+    
+    if not task:
+        raise HTTPException(
+            status_code=status.HTTP_404_NOT_FOUND,
+            detail="Task not found"
+        )
+    
+    if task.created_by != current_user.id:
+        raise HTTPException(
+            status_code=status.HTTP_403_FORBIDDEN,
+            detail="Access denied"
+        )
+    
+    # 获取任务的所有答案
+    answers = db.query(LLMAnswer).filter(
+        LLMAnswer.task_id == task_id
+    ).all()
+    
+    # 构建仅包含答案的数据
+    answers_data = []
+    for answer in answers:
+        # 获取标准问题
+        std_question = db.query(StdQuestion).filter(
+            StdQuestion.id == answer.std_question_id
+        ).first()
+        
+        answer_data = {
+            "question_id": answer.std_question_id,
+            "question_text": std_question.body if std_question else "未知问题",
+            "question_type": getattr(std_question, 'question_type', 'text') if std_question else 'text',
+            "llm_answer": answer.answer,
+            "answered_at": answer.answered_at.isoformat() if answer.answered_at else None,
+            "is_valid": answer.is_valid,
+            "prompt_used": answer.prompt_used
+        }
+        answers_data.append(answer_data)
+    
+    # 构建响应数据
+    result = {
+        "task_info": {
+            "id": task.id,
+            "name": task.name,
+            "model": task.model.display_name if task.model else "Unknown",
+            "dataset": task.dataset.name if task.dataset else "Unknown",
+            "created_at": task.created_at.isoformat() if task.created_at else None
+        },
+        "answers": answers_data,
+        "summary": {
+            "total_answers": len(answers_data),
+            "valid_answers": sum(1 for a in answers_data if a["is_valid"])
+        }
+    }
+    
+    from fastapi.responses import Response
+    import json
+    
+    json_content = json.dumps(result, ensure_ascii=False, indent=2)
+    
+    return Response(
+        content=json_content,
+        media_type="application/json",
+        headers={
+            "Content-Disposition": f"attachment; filename=task_{task_id}_answers.json"
+        }
+    )
 
 @router.put("/tasks/{task_id}/status", response_model=LLMEvaluationTaskResponse)
 def update_task_status(
@@ -1263,3 +1352,252 @@ def get_task_answers_for_manual_evaluation(
         "answers": answers_data,
         "total_count": len(answers_data)
     }
+
+
+@router.get("/tasks/{task_id}/answers")
+def get_task_answers(
+    task_id: int,
+    db: Session = Depends(get_db),
+    current_user: User = Depends(get_current_user)
+):
+    """获取任务的答案列表，用于手动评测"""
+    task = get_llm_evaluation_task(db=db, task_id=task_id)
+    
+    if not task:
+        raise HTTPException(
+            status_code=status.HTTP_404_NOT_FOUND,
+            detail="Task not found"
+        )
+    
+    if task.created_by != current_user.id:
+        raise HTTPException(
+            status_code=status.HTTP_403_FORBIDDEN,
+            detail="Access denied"
+        )
+    
+    # 获取所有LLM答案
+    llm_answers = db.query(LLMAnswer).filter(
+        LLMAnswer.task_id == task_id
+    ).all()
+    
+    # 构建答案列表，包含标准问题和标准答案信息
+    answers_data = []
+    
+    for answer in llm_answers:
+        # 获取标准问题
+        std_question = db.query(StdQuestion).options(
+            joinedload(StdQuestion.std_answers).joinedload(StdAnswer.scoring_points),
+            joinedload(StdQuestion.tags)
+        ).filter(
+            StdQuestion.id == answer.std_question_id
+        ).first()
+        
+        if not std_question:
+            continue
+        
+        # 获取标准答案及其得分点
+        std_answers = []
+        for sa in std_question.std_answers:
+            if sa.is_valid:
+                scoring_points = []
+                for sp in sa.scoring_points:
+                    if sp.is_valid:
+                        scoring_points.append({
+                            "id": sp.id,
+                            "answer": sp.answer,
+                            "point_order": sp.point_order
+                        })
+                
+                std_answers.append({
+                    "id": sa.id,
+                    "answer": sa.answer,
+                    "answered_by": sa.answered_by,
+                    "scoring_points": scoring_points
+                })
+        
+        # 获取已有的手动评测结果
+        existing_evaluations = db.query(Evaluation).filter(
+            Evaluation.llm_answer_id == answer.id,
+            Evaluation.evaluator_type == EvaluatorType.USER
+        ).all()
+        
+        # 获取最新的手动评测结果
+        latest_evaluation = None
+        if existing_evaluations:
+            latest_evaluation = max(existing_evaluations, key=lambda x: x.evaluation_time)
+        
+        answers_data.append({
+            "id": answer.id,
+            "question": {
+                "id": std_question.id,
+                "body": std_question.body,
+                "question_type": getattr(std_question, 'question_type', 'text'),
+                "tags": [tag.label for tag in std_question.tags]
+            },
+            "std_answers": std_answers,
+            "llm_answer": answer.answer,
+            "prompt_used": answer.prompt_used,
+            "answered_at": answer.answered_at.isoformat() if answer.answered_at else None,
+            "is_valid": answer.is_valid,
+            # 手动评测相关字段
+            "manual_score": float(latest_evaluation.score) if latest_evaluation and latest_evaluation.score else None,
+            "manual_reasoning": latest_evaluation.reasoning if latest_evaluation else None,
+            "is_evaluated": latest_evaluation is not None,
+            "evaluation_time": latest_evaluation.evaluation_time.isoformat() if latest_evaluation else None
+        })
+    
+    return answers_data
+
+
+@router.post("/answers/{answer_id}/manual-evaluate")
+def submit_manual_evaluation(
+    answer_id: int,
+    evaluation_data: ManualEvaluationRequest,
+    db: Session = Depends(get_db),
+    current_user: User = Depends(get_current_user)
+):
+    """提交手动评测结果"""
+    # 获取LLM答案
+    llm_answer = db.query(LLMAnswer).filter(LLMAnswer.id == answer_id).first()
+    
+    if not llm_answer:
+        raise HTTPException(
+            status_code=status.HTTP_404_NOT_FOUND,
+            detail="LLM answer not found"
+        )
+    
+    # 验证任务权限
+    task = get_llm_evaluation_task(db=db, task_id=llm_answer.task_id)
+    if not task or task.created_by != current_user.id:
+        raise HTTPException(
+            status_code=status.HTTP_403_FORBIDDEN,
+            detail="Access denied"
+        )
+    
+    try:
+        # 创建或更新手动评测记录
+        existing_evaluation = db.query(Evaluation).filter(
+            Evaluation.llm_answer_id == answer_id,
+            Evaluation.evaluator_type == EvaluatorType.USER,
+            Evaluation.evaluator_id == current_user.id
+        ).first()
+        
+        if existing_evaluation:
+            # 更新现有评测
+            existing_evaluation.score = evaluation_data.score
+            existing_evaluation.reasoning = evaluation_data.reasoning
+            existing_evaluation.evaluation_time = datetime.now()
+        else:
+            # 创建新评测
+            evaluation = Evaluation(
+                std_question_id=llm_answer.std_question_id,
+                llm_answer_id=answer_id,
+                score=evaluation_data.score,
+                evaluator_type=EvaluatorType.USER,
+                evaluator_id=current_user.id,
+                reasoning=evaluation_data.reasoning,
+                evaluation_time=datetime.now()
+            )
+            db.add(evaluation)
+        
+        db.commit()
+        
+        return {
+            "message": "Manual evaluation submitted successfully",
+            "evaluation": {
+                "score": evaluation_data.score,
+                "reasoning": evaluation_data.reasoning,
+                "evaluator_type": "user",
+                "evaluation_time": datetime.now().isoformat()
+            }
+        }
+        
+    except Exception as e:
+        db.rollback()
+        raise HTTPException(
+            status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
+            detail=f"Failed to submit evaluation: {str(e)}"
+        )
+
+
+@router.post("/tasks/{task_id}/import-evaluations")
+def import_manual_evaluations(
+    task_id: int,
+    import_data: dict,
+    db: Session = Depends(get_db),
+    current_user: User = Depends(get_current_user)
+):
+    """批量导入手动评测结果"""
+    task = get_llm_evaluation_task(db=db, task_id=task_id)
+    
+    if not task:
+        raise HTTPException(
+            status_code=status.HTTP_404_NOT_FOUND,
+            detail="Task not found"
+        )
+    
+    if task.created_by != current_user.id:
+        raise HTTPException(
+            status_code=status.HTTP_403_FORBIDDEN,
+            detail="Access denied"
+        )
+    
+    try:
+        evaluations_data = import_data.get("evaluations", [])
+        imported_count = 0
+        
+        for eval_data in evaluations_data:
+            answer_id = eval_data.get("answer_id")
+            score = eval_data.get("score")
+            reasoning = eval_data.get("reasoning", "")
+            
+            if not answer_id or score is None:
+                continue
+            
+            # 验证答案是否属于该任务
+            llm_answer = db.query(LLMAnswer).filter(
+                LLMAnswer.id == answer_id,
+                LLMAnswer.task_id == task_id
+            ).first()
+            
+            if not llm_answer:
+                continue
+            
+            # 创建或更新评测记录
+            existing_evaluation = db.query(Evaluation).filter(
+                Evaluation.llm_answer_id == answer_id,
+                Evaluation.evaluator_type == EvaluatorType.USER,
+                Evaluation.evaluator_id == current_user.id
+            ).first()
+            
+            if existing_evaluation:
+                existing_evaluation.score = score
+                existing_evaluation.reasoning = reasoning
+                existing_evaluation.evaluation_time = datetime.now()
+            else:
+                evaluation = Evaluation(
+                    std_question_id=llm_answer.std_question_id,
+                    llm_answer_id=answer_id,
+                    score=score,
+                    evaluator_type=EvaluatorType.USER,
+                    evaluator_id=current_user.id,
+                    reasoning=reasoning,
+                    evaluation_time=datetime.now()
+                )
+                db.add(evaluation)
+            
+            imported_count += 1
+        
+        db.commit()
+        
+        return {
+            "message": f"Successfully imported {imported_count} evaluations",
+            "imported_count": imported_count
+        }
+        
+    except Exception as e:
+        db.rollback()
+        raise HTTPException(
+            status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
+            detail=f"Import failed: {str(e)}"
+        )

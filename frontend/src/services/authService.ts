@@ -108,10 +108,33 @@ class AuthService {
   getToken(): string | null {
     return localStorage.getItem('access_token');
   }
-
   clearToken(): void {
+    // 清理认证相关数据
     localStorage.removeItem('access_token');
     localStorage.removeItem('userInfo');
+    localStorage.removeItem('userRole');
+    
+    // 清理业务数据
+    localStorage.removeItem('rawQuestionPool');
+    localStorage.removeItem('expertStore');
+    localStorage.removeItem('selectedDatasetId');
+    localStorage.removeItem('currentDataset');
+    
+    // 清理其他可能的缓存数据
+    const keysToRemove = [];
+    for (let i = 0; i < localStorage.length; i++) {
+      const key = localStorage.key(i);
+      if (key && (
+        key.startsWith('dataset_') || 
+        key.startsWith('question_') || 
+        key.startsWith('answer_') ||
+        key.startsWith('cache_') ||
+        key.startsWith('temp_')
+      )) {
+        keysToRemove.push(key);
+      }
+    }
+    keysToRemove.forEach(key => localStorage.removeItem(key));
   }
 
   isAuthenticated(): boolean {

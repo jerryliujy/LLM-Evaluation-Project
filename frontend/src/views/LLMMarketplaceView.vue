@@ -186,6 +186,57 @@ import { useRouter } from 'vue-router'
 import { Clock } from '@element-plus/icons-vue'
 import apiClient from '@/services/api'
 
+import { llmEvaluationService } from '@/services/llmEvaluationService'
+
+const showMessage = (message: string, type: 'success' | 'error' | 'warning' | 'info' = 'info') => {
+  // 创建消息元素
+  const messageEl = document.createElement('div')
+  messageEl.className = `message-toast message-${type}`
+  messageEl.textContent = message
+  messageEl.style.cssText = `
+    position: fixed;
+    top: 20px;
+    right: 20px;
+    padding: 12px 20px;
+    border-radius: 4px;
+    color: white;
+    font-size: 14px;
+    z-index: 9999;
+    transform: translateX(100%);
+    transition: transform 0.3s ease;
+  `
+  
+  // 设置背景色
+  switch (type) {
+    case 'success':
+      messageEl.style.backgroundColor = '#67c23a'
+      break
+    case 'error':
+      messageEl.style.backgroundColor = '#f56c6c'
+      break
+    case 'warning':
+      messageEl.style.backgroundColor = '#e6a23c'
+      break
+    default:
+      messageEl.style.backgroundColor = '#409eff'
+  }
+  
+  document.body.appendChild(messageEl)
+  
+  // 显示动画
+  setTimeout(() => {
+    messageEl.style.transform = 'translateX(0)'
+  }, 100)
+  
+  // 自动消失
+  setTimeout(() => {
+    messageEl.style.transform = 'translateX(100%)'
+    setTimeout(() => {
+      document.body.removeChild(messageEl)
+    }, 300)
+  }, 3000)
+}
+
 const router = useRouter()
 
 // 响应式数据
@@ -202,11 +253,6 @@ const downloading = reactive<Record<number, boolean>>({})
 const tasks = ref<any[]>([])
 const tasksLoading = ref(false)
 const taskStatusFilter = ref('')
-
-// 对话框相关
-const showDetailDialog = ref(false)
-const selectedDataset = ref<any>(null)
-const sampleQuestions = ref<any[]>([])
 
 // 计算属性
 const completedTasksCount = computed(() => {
@@ -265,70 +311,6 @@ const loadTasks = async () => {
   }
 }
 
-const handleSearch = () => {
-  currentPage.value = 1
-  loadDatasets()
-}
-
-const viewDataset = async (dataset: any) => {
-  selectedDataset.value = dataset
-  showDetailDialog.value = true
-  
-  try {
-    const response = await apiClient.get(`/llm-evaluation/marketplace/datasets/${dataset.id}/download`)
-    if (response.data.questions) {
-      sampleQuestions.value = response.data.questions.slice(0, 3)
-    }
-  } catch (error) {
-    console.error('加载示例问题失败:', error)
-  }
-}
-
-const downloadDataset = async (dataset: any) => {
-  downloading[dataset.id] = true
-  try {
-    const response = await apiClient.get(`/llm-evaluation/marketplace/datasets/${dataset.id}/download`, {
-      params: { format: 'json' }
-    })
-    
-    const blob = new Blob([JSON.stringify(response.data, null, 2)], {
-      type: 'application/json'
-    })
-    const url = window.URL.createObjectURL(blob)
-    const link = document.createElement('a')
-    link.href = url
-    link.download = `${dataset.name}_v${dataset.version}.json`
-    document.body.appendChild(link)
-    link.click()
-    document.body.removeChild(link)
-    window.URL.revokeObjectURL(url)
-    
-    ElMessage.success('数据集下载成功')
-  } catch (error) {
-    console.error('下载失败:', error)
-    ElMessage.error('下载失败')
-  } finally {
-    downloading[dataset.id] = false
-  }
-}
-
-const startEvaluation = (dataset: any) => {
-  showDetailDialog.value = false
-  router.push({
-    name: 'LLMEvaluation',
-    params: { datasetId: dataset.id }
-  })
-}
-
-// 任务相关方法
-const viewTaskProgress = (task: any) => {
-  router.push({
-    name: 'LLMEvaluation',
-    params: { datasetId: task.dataset_id },
-    query: { taskId: task.id }
-  })
-}
-
 const viewTaskResults = (task: any) => {
   router.push({
     name: 'LLMEvaluation',
@@ -362,27 +344,18 @@ const cancelTask = async (task: any) => {
 
 const downloadTaskResults = async (task: any) => {
   try {
-    const response = await apiClient.post(`/llm-evaluation/tasks/${task.id}/download`, {
-      format: 'json'
-    })
-    
-    const blob = new Blob([JSON.stringify(response.data, null, 2)], {
-      type: 'application/json'
-    })
+    const blob = await llmEvaluationService.downloadTaskResults(task.id)
     const url = window.URL.createObjectURL(blob)
-    const link = document.createElement('a')
-    link.href = url
-    link.download = `task_${task.id}_results.json`
-    document.body.appendChild(link)
-    link.click()
-    document.body.removeChild(link)
+    const a = document.createElement('a')
+    a.href = url
+    a.download = `evaluation-results-${task.id}.json`
+    a.click()
     window.URL.revokeObjectURL(url)
-    
-    ElMessage.success('结果下载成功')
-  } catch (error) {
-    console.error('下载结果失败:', error)
-    ElMessage.error('下载结果失败')
-  }
+    showMessage('结果下载成功', 'success')
+  } catch (error: any) {
+    console.error('下载失败:', error)
+    showMessage('下载失败: ' + error.message, 'error')
+  } 
 }
 
 // 继续任务

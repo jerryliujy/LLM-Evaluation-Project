@@ -570,6 +570,9 @@ async function logout() {
     router.push({ name: 'Login' })
   } catch (error) {
     console.error('退出登录失败:', error)
+    // 即使退出失败，也强制清理本地数据并跳转
+    authService.clearToken()
+    router.push({ name: 'Login' })
   }
 }
 
