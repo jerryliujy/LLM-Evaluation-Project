@@ -68,7 +68,7 @@ def get_version_question_data(db: Session, version_question: VersionStdQuestion)
                         point_answer = version_point.modified_answer
                         point_order = version_point.modified_point_order
                     else:
-                        point_answer = version_point.original_point.scoring_point_text  # 使用scoring_point_text字段
+                        point_answer = version_point.original_point.answer  
                         point_order = version_point.original_point.point_order
                     
                     point_data = {
@@ -639,10 +639,10 @@ def commit_version(
                                 if not version_point.is_deleted:
                                     new_point = StdAnswerScoringPoint(
                                         std_answer_id=new_answer.id,
-                                        scoring_point_text=version_point.modified_answer,
+                                        answer=version_point.modified_answer,
                                         point_order=version_point.modified_point_order,
                                         is_valid=True,
-                                        created_by="version_creation",
+                                        answered_by="version_creation",
                                         version=1 if version_point.is_new else (version_point.original_point.version + 1),
                                         previous_version_id=version_point.original_point_id if version_point.is_modified else None
                                     )

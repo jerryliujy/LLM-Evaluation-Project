@@ -12,6 +12,7 @@ class Dataset(Base):
     description = Column(Text, nullable=False)    
     created_by = Column(Integer, ForeignKey("User.id"), nullable=False)  # 创建者用户ID
     is_public = Column(Boolean, server_default=text('0'))  # 是否公开，默认为私有
+    is_valid = Column(Boolean, server_default=text('1'), nullable=False, index=True)  # 是否有效，用于软删除
     create_time = Column(DateTime(timezone=True), server_default=text('CURRENT_TIMESTAMP'))
     
     # 设置复合主键

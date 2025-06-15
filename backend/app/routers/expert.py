@@ -327,7 +327,8 @@ async def import_expert_answers_to_task(
                 existing_answer.answer = answer_text
                 existing_answer.answered_at = datetime.now()
                 # 注意：referenced_raw_answer_ids 在当前模型中可能需要额外处理
-            else:                # 创建新回答
+            else:                
+                # 创建新回答
                 expert_answer = ExpertAnswerModel(
                     question_id=question_id,
                     answer=answer_text,

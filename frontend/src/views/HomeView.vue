@@ -47,18 +47,11 @@
         </div>
 
         <div class="feature-card">
-          <div class="feature-icon">📈</div>
-          <h3>数据统计</h3>
-          <p>查看数据库使用统计，了解数据集的访问情况</p>
-          <button @click="goToMarketplace" class="feature-link">查看统计 →</button>
-        </div>
-
-        <div class="feature-card">
           <div class="feature-icon">🎫</div>
           <h3>专家邀请</h3>
-          <p>生成邀请码邀请专家加入系统，管理专家团队</p>
+          <p>复制邀请码邀请专家加入系统</p>
           <button @click="showInviteManager = !showInviteManager" class="feature-link">
-            {{ showInviteManager ? '隐藏管理器' : '管理邀请码' }} →
+            {{ showInviteManager ? '隐藏邀请码' : '查看邀请码' }} →
           </button>
         </div>
       </div>
@@ -66,7 +59,7 @@
 
     <!-- 邀请码管理器 -->
     <div v-if="showInviteManager" class="invite-manager-section">
-      <InviteCodeManager />
+      <InviteCodeCopy />
     </div>
 
     <div class="quick-start">
@@ -101,7 +94,7 @@
 <script setup lang="ts">
 import { ref, computed, onMounted } from 'vue'
 import { useRouter } from 'vue-router'
-import InviteCodeManager from '@/components/InviteCodeManager.vue'
+import InviteCodeCopy from '@/components/InviteCodeCopy.vue'
 
 const router = useRouter()
 

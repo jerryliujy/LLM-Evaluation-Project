@@ -12,26 +12,38 @@ from ..schemas.std_answer import (
 )
 from ..schemas.common import PaginatedResponse
 from ..schemas import Msg
+from ..auth import get_current_active_user
 
 router = APIRouter(prefix="/api/std-answers", tags=["Standard Answers"])
 
 @router.post("/", response_model=StdAnswerResponse)
 def create_std_answer(
     std_answer: StdAnswerCreate,
-    db: Session = Depends(get_db)
+    db: Session = Depends(get_db),
+    current_user = Depends(get_current_active_user)
 ):
     """创建标准答案"""
     # 验证标准问题是否存在
     if not db.query(StdQuestion).filter(StdQuestion.id == std_answer.std_question_id).first():
         raise HTTPException(status_code=404, detail="Standard question not found")
+      # 创建标准答案，如果没有指定answered_by则使用当前用户
+    answer_data = std_answer.dict()
+    if not answer_data.get('answered_by'):
+        answer_data['answered_by'] = current_user.id
     
-    # 创建标准答案
-    db_std_answer = StdAnswer(**std_answer.dict())
+    db_std_answer = StdAnswer(**answer_data)
     db.add(db_std_answer)
     db.commit()
     db.refresh(db_std_answer)
     
-    return db_std_answer
+    # 重新查询以获取关联数据
+    std_answer_with_relations = db.query(StdAnswer).options(
+        joinedload(StdAnswer.std_question),
+        joinedload(StdAnswer.scoring_points),
+        joinedload(StdAnswer.answered_by_user)
+    ).filter(StdAnswer.id == db_std_answer.id).first()
+    
+    return StdAnswerResponse.from_db_model(std_answer_with_relations)
 
 @router.get("/", response_model=PaginatedResponse[StdAnswerResponse])
 def read_std_answers_api(
@@ -66,13 +78,14 @@ def get_std_answer(std_answer_id: int, db: Session = Depends(get_db)):
     """获取标准答案详情"""
     std_answer = db.query(StdAnswer).options(
         joinedload(StdAnswer.std_question),
-        joinedload(StdAnswer.scoring_points)
+        joinedload(StdAnswer.scoring_points),
+        joinedload(StdAnswer.answered_by_user)  # 加载用户关系
     ).filter(StdAnswer.id == std_answer_id).first()
     
     if not std_answer:
         raise HTTPException(status_code=404, detail="Standard answer not found")
     
-    return std_answer
+    return StdAnswerResponse.from_db_model(std_answer)
 
 @router.put("/{std_answer_id}", response_model=StdAnswerResponse)
 def update_std_answer(
@@ -84,11 +97,11 @@ def update_std_answer(
     updated_answer = crud_std_answer.update_std_answer(db, std_answer_id, std_answer_update)
     if not updated_answer:
         raise HTTPException(status_code=404, detail="Standard answer not found")
-    
-    # 重新查询以获取关联数据
+      # 重新查询以获取关联数据，包括用户关系
     std_answer_with_relations = db.query(StdAnswer).options(
         joinedload(StdAnswer.std_question),
-        joinedload(StdAnswer.scoring_points)
+        joinedload(StdAnswer.scoring_points),
+        joinedload(StdAnswer.answered_by_user)  # 加载用户关系
     ).filter(StdAnswer.id == updated_answer.id).first()
     
     return StdAnswerResponse.from_db_model(std_answer_with_relations)
@@ -111,11 +124,11 @@ def restore_std_answer_api(std_answer_id: int, db: Session = Depends(get_db)):
     db_answer = crud_std_answer.set_std_answer_deleted_status(db, answer_id=std_answer_id, deleted_status=False)
     if db_answer is None:
         raise HTTPException(status_code=404, detail="Error restoring StdAnswer")
-    
-    # 重新查询以获取关联数据
+      # 重新查询以获取关联数据
     std_answer_with_relations = db.query(StdAnswer).options(
         joinedload(StdAnswer.std_question),
-        joinedload(StdAnswer.scoring_points)
+        joinedload(StdAnswer.scoring_points),
+        joinedload(StdAnswer.answered_by_user)  # 加载用户关系
     ).filter(StdAnswer.id == db_answer.id).first()
     
     return StdAnswerResponse.from_db_model(std_answer_with_relations)

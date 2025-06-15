@@ -13,4 +13,4 @@ from .evaluation import Evaluation, EvaluatorType
 from .llm import LLM
 from .llm_answer import LLMAnswer
 from .llm_evaluation_task import LLMEvaluationTask, TaskStatus
-from .relationship_records import StdQuestionRawQuestionRecord, StdAnswerExpertAnswerRecord
+from .relationship_records import StdQuestionRawQuestionRecord, StdAnswerExpertAnswerRecord, StdAnswerRawAnswerRecord

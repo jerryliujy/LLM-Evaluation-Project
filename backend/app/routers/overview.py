@@ -50,13 +50,12 @@ async def get_std_questions_overview(
             ExpertAnswer.is_deleted == False
         )),        selectinload(StdQuestion.raw_question_records).selectinload(
             StdQuestionRawQuestionRecord.raw_question
-        ).selectinload(RawQuestion.tags),        selectinload(StdQuestion.std_answers.and_(
+        ).selectinload(RawQuestion.tags),          selectinload(StdQuestion.std_answers.and_(
             StdAnswer.is_valid == True if not include_invalid else True
-        )),
+        )).selectinload(StdAnswer.answered_by_user),
         joinedload(StdQuestion.dataset),  # 修正为正确的关系名称
         selectinload(StdQuestion.created_by_user)  # 添加用户信息加载
-    )
-    
+    )    
     if not include_invalid:
         query = query.filter(StdQuestion.is_valid == True)
     
@@ -68,16 +67,17 @@ async def get_std_questions_overview(
             # 先匹配数据集ID，再检查数据集version是否在标准问题的version区间中
             query = query.filter(
                 and_(
+                    StdQuestion.is_valid == True,
                     StdQuestion.dataset_id == dataset_id,
                     StdQuestion.original_version_id <= dataset_version,  # 标准问题的原始版本 <= 数据集版本
-                    StdQuestion.current_version_id >= dataset_version,   # 标准问题的当前版本 >= 数据集版本
-                    StdQuestion.is_valid == True
+                    StdQuestion.current_version_id >= dataset_version   # 标准问题的当前版本 >= 数据集版本
                 )
             )
         else:
             # 如果数据集不存在，返回空结果
             query = query.filter(StdQuestion.id == -1)  # 确保没有结果
-      # 添加搜索查询过滤
+    
+    # 添加搜索查询过滤
     if search_query:
         search_term = f"%{search_query}%"
         # 需要左外连接标准答案表，以便在搜索中包含标准答案内容
@@ -178,8 +178,8 @@ async def get_std_questions_overview(
         
         std_question_data = {
             "id": std_q.id,
-            "dataset_id": std_q.dataset_id, 
-            "body": std_q.body,  
+            "text": std_q.body, 
+            "dataset_id": std_q.dataset_id,
             "question_type": std_q.question_type,
             "created_by": std_q.created_by_user.username if std_q.created_by_user else "unknown",  # 返回用户名
             "created_at": std_q.created_at,
@@ -195,11 +195,10 @@ async def get_std_questions_overview(
                 "version": std_q.dataset.version
             } if std_q.dataset else None,
             "tags": list(all_tags),  
-            "std_answers": [
-                {
+            "std_answers": [                {
                     "id": answer.id,
                     "answer": answer.answer,
-                    "answered_by": answer.answered_by,
+                    "answered_by": answer.answered_by_user.username if answer.answered_by_user else "unknown",
                     "is_valid": answer.is_valid
                 } for answer in std_q.std_answers if answer.is_valid
             ] if std_q.std_answers else [],
@@ -220,6 +219,7 @@ async def get_std_questions_overview(
             "std_answers_count": len(std_q.std_answers) if std_q.std_answers else 0,
         }
         result.append(std_question_data)      # 获取总数 - 只计算有关联原始问题且原始问题未删除的标准问题
+    
     total_query = db.query(StdQuestion).join(
         StdQuestionRawQuestionRecord, 
         StdQuestion.id == StdQuestionRawQuestionRecord.std_question_id
@@ -229,19 +229,27 @@ async def get_std_questions_overview(
             StdQuestionRawQuestionRecord.raw_question_id == RawQuestion.id,
             RawQuestion.is_deleted == False
         )
-    )
-    
+    )    
     if not include_invalid:
         total_query = total_query.filter(StdQuestion.is_valid == True)
     
     if dataset_id is not None:
-        total_query = total_query.filter(
-            and_(
-                StdQuestion.dataset_id <= dataset_id,
-                StdQuestion.is_valid == True
+        # 获取指定数据集的信息
+        dataset = db.query(Dataset).filter(Dataset.id == dataset_id).order_by(Dataset.version.desc()).first()
+        if dataset:
+            dataset_version = dataset.version
+            total_query = total_query.filter(
+                and_(
+                    StdQuestion.dataset_id == dataset_id,
+                    StdQuestion.original_version_id <= dataset_version,
+                    StdQuestion.current_version_id >= dataset_version
+                )
             )
-        )
-      # 添加与主查询相同的搜索过滤条件
+        else:
+            # 如果数据集不存在，返回空结果
+            total_query = total_query.filter(StdQuestion.id == -1)
+    
+    # 添加与主查询相同的搜索过滤条件
     if search_query:
         search_term = f"%{search_query}%"
         from sqlalchemy import or_

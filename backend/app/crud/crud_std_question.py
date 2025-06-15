@@ -217,16 +217,40 @@ def set_multiple_std_questions_deleted_status(db: Session, question_ids: List[in
 def force_delete_std_question(db: Session, question_id: int) -> bool:
     """永久删除标准问题"""
     try:
-        # 首先删除相关的标准答案和评分点
+        # 获取该问题下的所有标准答案
         std_answers = db.query(models.StdAnswer).filter(models.StdAnswer.std_question_id == question_id).all()
+        
+        # 对每个标准答案，删除其相关的所有引用
         for answer in std_answers:
+            answer_id = answer.id
+            
             # 删除评分点
             db.query(models.StdAnswerScoringPoint).filter(
-                models.StdAnswerScoringPoint.std_answer_id == answer.id
+                models.StdAnswerScoringPoint.std_answer_id == answer_id
             ).delete(synchronize_session=False)
             
+            # 删除标准答案和原始答案的关联记录
+            db.query(models.StdAnswerRawAnswerRecord).filter(
+                models.StdAnswerRawAnswerRecord.std_answer_id == answer_id
+            ).delete(synchronize_session=False)
+            
+            # 删除标准答案和专家答案的关联记录  
+            db.query(models.StdAnswerExpertAnswerRecord).filter(
+                models.StdAnswerExpertAnswerRecord.std_answer_id == answer_id
+            ).delete(synchronize_session=False)
+        
         # 删除标准答案
         db.query(models.StdAnswer).filter(models.StdAnswer.std_question_id == question_id).delete(synchronize_session=False)
+        
+        # 删除标准问题的关联记录
+        db.query(models.StdQuestionRawQuestionRecord).filter(
+            models.StdQuestionRawQuestionRecord.std_question_id == question_id
+        ).delete(synchronize_session=False)
+        # 清除标准问题的标签关联（多对多关系）
+        std_question = db.query(models.StdQuestion).filter(models.StdQuestion.id == question_id).first()
+        if std_question:
+            std_question.tags.clear()
+            db.flush()  # 确保标签关系被清理
         
         # 删除标准问题
         db.query(models.StdQuestion).filter(models.StdQuestion.id == question_id).delete(synchronize_session=False)
@@ -240,20 +264,33 @@ def force_delete_std_question(db: Session, question_id: int) -> bool:
 
 def create_std_question(db: Session, question: schemas.StdQuestionCreate) -> models.StdQuestion:
     """创建标准问题，支持嵌套的标准回答"""
+    # 获取数据集信息以确定版本
+    dataset = db.query(models.Dataset).filter(models.Dataset.id == question.dataset_id).first()
+    if not dataset:
+        raise ValueError(f"Dataset with id {question.dataset_id} not found")
+    
+    current_version = dataset.version
     db_question = models.StdQuestion(
         dataset_id=question.dataset_id,
-        dataset_version=getattr(question, 'dataset_version', 1),  # 默认版本为1
-        raw_question_id=getattr(question, 'raw_question_id', None),  # 如果有原始问题ID
         body=question.body,  # 统一字段名为body
         question_type=question.question_type,
         created_by=getattr(question, 'created_by_id', None),  # 用户ID，不是用户名
+        original_version_id=current_version,  # 设置原始版本号
+        current_version_id=current_version,   # 设置当前版本号
     )
     
     db.add(db_question)
     db.flush()  # 获取question的ID
-    
-    # 处理标签
-    if question.tags:
+      # 创建标准问题时，处理原始问题关联
+    if hasattr(question, 'raw_question_ids') and question.raw_question_ids:
+        # 通过关系表关联原始问题
+        for raw_question_id in question.raw_question_ids:
+            raw_question_record = models.StdQuestionRawQuestionRecord(
+                std_question_id=db_question.id,
+                raw_question_id=raw_question_id,
+                created_by=getattr(question, 'created_by_id', None)
+            )
+            db.add(raw_question_record)
         for tag_label in question.tags:
             # 查找或创建标签
             tag = db.query(models.Tag).filter(models.Tag.label == tag_label).first()
@@ -270,7 +307,7 @@ def create_std_question(db: Session, question: schemas.StdQuestionCreate) -> mod
         db_answer = models.StdAnswer(
             std_question_id=db_question.id,
             answer=question.std_answer.answer,
-            answered_by=question.std_answer.answered_by,  # 统一字段名为answered_by
+            answered_by=question.std_answer.answered_by,  
         )
         db.add(db_answer)
     
@@ -284,10 +321,14 @@ def update_std_question(db: Session, question_id: int, question: schemas.StdQues
     if not db_question:
         return None
     
-    # 更新问题字段
+    # 只允许更新这些字段，排除版本管理和创建者相关字段
+    allowed_fields = {'body', 'question_type', 'is_valid', 'dataset_id'}
     update_data = question.dict(exclude_unset=True, exclude={'tags'})
+    
+    # 只更新允许的字段，明确排除用户相关和版本管理字段
     for field, value in update_data.items():
-        setattr(db_question, field, value)
+        if field in allowed_fields and value is not None:
+            setattr(db_question, field, value)
     
     # 处理标签更新
     if question.tags is not None:
@@ -357,18 +398,36 @@ def create_std_question_from_raw_question(
     if not raw_question:
         return None
     
+    # 获取数据集信息以确定版本
+    dataset = db.query(models.Dataset).filter(models.Dataset.id == dataset_id).first()
+    if not dataset:
+        raise ValueError(f"Dataset with id {dataset_id} not found")
+    
+    current_version = dataset.version
+    
     # 创建标准问题
     std_question = models.StdQuestion(
         dataset_id=dataset_id,  # 使用dataset_id而不是original_dataset_id
-        raw_question_id=raw_question_id,
         body=raw_question.title,  # 使用body字段而不是text
         question_type=question_type,
         is_valid=True,
+        original_version_id=current_version,  # 设置原始版本号
+        current_version_id=current_version,   # 设置当前版本号
         created_by=created_by,
         version=1
     )
     
     db.add(std_question)
+    db.flush()  # 获取标准问题ID
+    
+    # 通过关系表关联原始问题
+    raw_question_record = models.StdQuestionRawQuestionRecord(
+        std_question_id=std_question.id,
+        raw_question_id=raw_question_id,
+        created_by=created_by
+    )
+    db.add(raw_question_record)
+    
     db.commit()
     db.refresh(std_question)
     return std_question

@@ -58,16 +58,20 @@ async def create_manual_std_qa(
             if missing_ids:
                 raise HTTPException(
                     status_code=404, 
-                    detail=f"Raw questions not found: {list(missing_ids)}"
-                )
+                    detail=f"Raw questions not found: {list(missing_ids)}"                )
 
-        # 创建标准问题（不直接关联单个原始问题，而是通过关系表）
+        # 获取数据集版本信息
+        dataset = db.query(Dataset).filter(Dataset.id == std_qa_data.dataset_id).first()
+        current_version = dataset.version if dataset else 1# 创建标准问题
         std_question = StdQuestion(
             dataset_id=std_qa_data.dataset_id,
             body=std_qa_data.question,
             question_type=std_qa_data.question_type,
             created_by=current_user.id,
-            is_valid=True
+            is_valid=True,
+            version=1,  # 新创建的问题版本为1
+            original_version_id=current_version,  # 记录创建时的数据集版本
+            current_version_id=current_version  # 当前所在的数据集版本
         )
         db.add(std_question)
         db.flush()  # 获取ID但不提交事务        

@@ -24,8 +24,8 @@ export interface StdAnswerScoringPoint {
   std_answer_id: number;
   answer: string;
   score?: number;
-  created_by?: number;
-  create_time?: string | Date;
+  answered_by?: number;
+  answered_at?: string | Date;
 }
 
 export interface StdAnswer {

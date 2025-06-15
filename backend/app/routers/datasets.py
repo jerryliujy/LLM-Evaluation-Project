@@ -10,7 +10,7 @@ from app.schemas.dataset import DatasetCreate, DatasetUpdate, DatasetResponse, D
 from app.auth import get_current_active_user
 from app.crud.crud_dataset import (
     get_datasets_paginated, get_dataset as crud_get_dataset, get_dataset_versions, 
-    create_dataset_version, get_latest_dataset_version
+    create_dataset_version, get_latest_dataset_version, delete_dataset
 )
 
 router = APIRouter(prefix="/api/datasets", tags=["Datasets"])
@@ -111,25 +111,26 @@ def get_datasets_marketplace(
     # 只显示公开的数据集，或者当前用户的数据集
     if current_user_id:
         query = query.filter(
-            (Dataset.is_public == True) | (Dataset.created_by == current_user_id)
+            ((Dataset.is_public == True) | (Dataset.created_by == current_user_id)) & (Dataset.is_valid == True)
         )
     else:
-        query = query.filter(Dataset.is_public == True)
+        query = query.filter((Dataset.is_public == True) & (Dataset.is_valid == True))
     
     datasets = query.order_by(Dataset.create_time.desc()).offset(skip).limit(limit).all()
-    
-    # 为每个数据集添加统计信息 - marketplace端点
+      # 为每个数据集添加统计信息 - marketplace端点
     result = []
     for dataset in datasets:
         std_questions_count = db.query(func.count(StdQuestion.id)).filter(
             StdQuestion.dataset_id == dataset.id,
-            StdQuestion.dataset_version == dataset.version,
+            StdQuestion.original_version_id <= dataset.version,
+            StdQuestion.current_version_id >= dataset.version,
             StdQuestion.is_valid == True
         ).scalar() or 0
         
         std_answers_count = db.query(func.count(StdAnswer.id)).join(StdQuestion).filter(
             StdQuestion.dataset_id == dataset.id,
-            StdQuestion.dataset_version == dataset.version,
+            StdQuestion.original_version_id <= dataset.version,
+            StdQuestion.current_version_id >= dataset.version,
             StdQuestion.is_valid == True,
             StdAnswer.is_valid == True
         ).scalar() or 0
@@ -161,21 +162,22 @@ def get_my_datasets(
     from ..models.std_question import StdQuestion
     from ..models.std_answer import StdAnswer
     
-    query = db.query(Dataset).options(joinedload(Dataset.creator)).filter(Dataset.created_by == current_user.id)
+    query = db.query(Dataset).options(joinedload(Dataset.creator)).filter((Dataset.created_by == current_user.id) & (Dataset.is_valid == True))
     
-    datasets = query.order_by(Dataset.create_time.desc()).offset(skip).limit(limit).all()
-      # 为每个数据集添加统计信息 - my端点
+    datasets = query.order_by(Dataset.create_time.desc()).offset(skip).limit(limit).all()      # 为每个数据集添加统计信息 - my端点
     result = []
     for dataset in datasets:
         std_questions_count = db.query(func.count(StdQuestion.id)).filter(
             StdQuestion.dataset_id == dataset.id,
-            StdQuestion.dataset_version == dataset.version,
+            StdQuestion.original_version_id <= dataset.version,
+            StdQuestion.current_version_id >= dataset.version,
             StdQuestion.is_valid == True
         ).scalar() or 0
         
         std_answers_count = db.query(func.count(StdAnswer.id)).join(StdQuestion).filter(
             StdQuestion.dataset_id == dataset.id,
-            StdQuestion.dataset_version == dataset.version,
+            StdQuestion.original_version_id <= dataset.version,
+            StdQuestion.current_version_id >= dataset.version,
             StdQuestion.is_valid == True,
             StdAnswer.is_valid == True
         ).scalar() or 0
@@ -293,29 +295,59 @@ def update_dataset(
     return dataset
 
 @router.delete("/{dataset_id}")
-def delete_dataset(dataset_id: int, db: Session = Depends(get_db)):
-    """删除数据集"""
+def delete_dataset_soft(
+    dataset_id: int, 
+    db: Session = Depends(get_db),
+    current_user = Depends(get_current_active_user)
+):
+    """软删除数据集（设置is_valid为False）"""
     dataset = db.query(Dataset).filter(Dataset.id == dataset_id).first()
     if not dataset:
         raise HTTPException(status_code=404, detail="Dataset not found")
     
-    # 检查是否有关联的标准问题
-    from ..models.std_question import StdQuestion
-    std_questions_count = db.query(StdQuestion).filter(
-        StdQuestion.dataset_id == dataset_id,
-        StdQuestion.is_valid == True
-    ).count()
-    
-    if std_questions_count > 0:
+    # 检查权限：只有数据集创建者可以删除
+    if dataset.created_by != current_user.id:
         raise HTTPException(
-            status_code=400, 
-            detail=f"Cannot delete dataset: {std_questions_count} active standard questions are associated with it"
+            status_code=403, 
+            detail="You don't have permission to delete this dataset"
         )
-    
-    db.delete(dataset)
-    db.commit()
+      # 执行软删除
+    success = delete_dataset(db, dataset_id)
+    if not success:
+        raise HTTPException(status_code=500, detail="Failed to delete dataset")
     
     return {"message": "Dataset deleted successfully"}
+
+@router.post("/{dataset_id}/restore")
+def restore_dataset(
+    dataset_id: int, 
+    db: Session = Depends(get_db),
+    current_user = Depends(get_current_active_user)
+):
+    """恢复软删除的数据集（设置is_valid为True）"""
+    # 查找已删除的数据集
+    dataset = db.query(Dataset).filter(
+        Dataset.id == dataset_id,
+        Dataset.is_valid == False
+    ).first()
+    
+    if not dataset:
+        raise HTTPException(status_code=404, detail="Deleted dataset not found")
+    
+    # 检查权限：只有数据集创建者可以恢复
+    if dataset.created_by != current_user.id:
+        raise HTTPException(
+            status_code=403, 
+            detail="You don't have permission to restore this dataset"
+        )
+    
+    # 执行恢复
+    from app.crud.crud_dataset import restore_dataset as crud_restore_dataset
+    success = crud_restore_dataset(db, dataset_id)
+    if not success:
+        raise HTTPException(status_code=500, detail="Failed to restore dataset")
+    
+    return {"message": "Dataset restored successfully"}
 
 @router.get("/{dataset_id}/versions", response_model=List[DatasetResponse])
 def get_dataset_versions_endpoint(

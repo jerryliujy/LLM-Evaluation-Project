@@ -14,6 +14,9 @@ from ..models.raw_answer import RawAnswer
 from ..models.expert_answer import ExpertAnswer
 from ..models.tag import Tag
 from ..models.user import User
+from ..models.std_question import StdQuestion
+from ..models.std_answer import StdAnswer, StdAnswerScoringPoint
+from ..models.relationship_records import StdQuestionRawQuestionRecord, StdAnswerRawAnswerRecord, StdAnswerExpertAnswerRecord
 from ..auth import get_current_active_user
 from ..crud.crud_dataset import create_dataset, get_datasets_paginated
 from ..schemas.dataset import DatasetCreate
@@ -288,11 +291,26 @@ async def upload_expert_answers_data(
             
             # 创建专家回答
             if 'expert_answers' in item and isinstance(item['expert_answers'], list):
-                for expert_answer_data in item['expert_answers']:                   
+                for expert_answer_data in item['expert_answers']:                     # 处理专家用户ID，如果是字符串则尝试查找对应用户，否则使用默认用户
+                    expert_id_str = expert_answer_data.get('expert_id', 'Expert')
+                    expert_user_id = None
+                    
+                    if isinstance(expert_id_str, int):
+                        expert_user_id = expert_id_str
+                    elif isinstance(expert_id_str, str) and expert_id_str.isdigit():
+                        expert_user_id = int(expert_id_str)
+                    else:
+                        # 尝试按用户名查找用户
+                        expert_user = db.query(User).filter(User.username == expert_id_str).first()
+                        if expert_user:
+                            expert_user_id = expert_user.id
+                        else:                            # 如果找不到用户，使用默认用户ID (ID=1)
+                            expert_user_id = 1
+                    
                     expert_answer = ExpertAnswer(
                         question_id=question_id,
                         answer=expert_answer_data.get('content', ''),
-                        answered_by=expert_answer_data.get('expert_id', 'Expert'),
+                        answered_by=expert_user_id,
                         answered_at=datetime.now(),
                         is_deleted=False
                     )
@@ -351,7 +369,7 @@ async def upload_std_qa_data(
             # 验证必需字段
             if not item.get('body'):
                 continue
-              # 获取或创建raw_question_id（因为raw_question_id不能为空）
+            # 获取或创建raw_question_id（因为raw_question_id不能为空）
             raw_question_id = item.get('raw_question_id')
             if not raw_question_id:
                 # 如果没有提供raw_question_id，创建一个RawQuestion
@@ -364,35 +382,31 @@ async def upload_std_qa_data(
                 db.add(raw_question)
                 db.flush()  # 获取ID
                 raw_question_id = raw_question.id
-            
-            # 创建标准问题（设置dataset版本字段）
+                  # 创建标准问题（设置dataset版本字段）
             std_question = StdQuestion(
                 dataset_id=dataset_id,
-                dataset_version=dataset_version,  
-                raw_question_id=raw_question_id,  
                 body=item.get('body', ''),
                 question_type=item.get('question_type', 'text'),
                 is_valid=True,
                 created_by=current_user.id,
-                version=1,
+                version=1,                
                 original_version_id=dataset_version,  # 设置原始版本                
                 current_version_id=dataset_version    # 设置当前版本
             )
             db.add(std_question)
             db.flush()
             imported_questions += 1
-            # 创建标准答案
-            std_answer = StdAnswer(
-                std_question_id=std_question.id,
-                answer=item.get('answer', ''),
-                is_valid=True,
-                answered_by=current_user.username if hasattr(current_user, 'username') else str(current_user.id),
-                version=1
-            )
             
-            db.add(std_answer)
-            db.flush()
-            imported_answers += 1
+            # 如果有原始问题ID，建立关系
+            if raw_question_id:
+                relationship_record = StdQuestionRawQuestionRecord(
+                    std_question_id=std_question.id,
+                    raw_question_id=raw_question_id,
+                    created_by=current_user.id
+                )
+                db.add(relationship_record)
+                imported_relationships += 1
+            
             all_tags = set()  # set意味着标签不重复
             
             # 1. 从关联的原始问题获取标签
@@ -478,10 +492,10 @@ async def upload_std_qa_data(
                         if isinstance(key_point_data, dict):
                             scoring_point = StdAnswerScoringPoint(
                                 std_answer_id=std_answer.id,
-                                scoring_point_text=key_point_data.get('answer', ''),  # 使用scoring_point_text字段
+                                answer=key_point_data.get('answer', ''),  
                                 point_order=key_point_data.get('point_order', 1),
                                 is_valid=True,
-                                created_by=current_user.id,
+                                answered_by=current_user.id,
                                 version=1
                             )
                         

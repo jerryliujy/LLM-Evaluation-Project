@@ -37,7 +37,8 @@ def get_datasets_paginated(
     limit: Optional[int] = 20,  # 改为可选参数
     is_public: Optional[bool] = None,
     search_query: Optional[str] = None,
-    created_by: Optional[int] = None
+    created_by: Optional[int] = None,
+    include_deleted: bool = False  # 添加参数控制是否包含已删除的数据集
 ) -> Tuple[List[Dataset], int]:
     """分页获取数据集列表（每个数据集ID只返回最新版本）"""
     
@@ -55,8 +56,10 @@ def get_datasets_paginated(
             Dataset.version == max_version_subquery.c.max_version
         )
     )
+      # 过滤条件
+    if not include_deleted:
+        query = query.filter(Dataset.is_valid == True)
     
-    # 过滤条件
     if is_public is not None:
         query = query.filter(Dataset.is_public == is_public)
     
@@ -129,12 +132,30 @@ def update_dataset(
 
 
 def delete_dataset(db: Session, dataset_id: int) -> bool:
-    """删除数据集"""
-    db_dataset = db.query(Dataset).filter(Dataset.id == dataset_id).first()
+    """软删除数据集（设置is_valid为False）"""
+    db_dataset = db.query(Dataset).filter(
+        Dataset.id == dataset_id,
+        Dataset.is_valid == True  # 只能删除有效的数据集
+    ).first()
     if not db_dataset:
         return False
     
-    db.delete(db_dataset)
+    # 软删除：设置is_valid为False
+    db_dataset.is_valid = False
+    db.commit()
+    return True
+
+def restore_dataset(db: Session, dataset_id: int) -> bool:
+    """恢复软删除的数据集（设置is_valid为True）"""
+    db_dataset = db.query(Dataset).filter(
+        Dataset.id == dataset_id,
+        Dataset.is_valid == False  # 只能恢复已删除的数据集
+    ).first()
+    if not db_dataset:
+        return False
+    
+    # 恢复：设置is_valid为True
+    db_dataset.is_valid = True
     db.commit()
     return True
 
@@ -142,7 +163,8 @@ def delete_dataset(db: Session, dataset_id: int) -> bool:
 def get_public_datasets(db: Session, skip: int = 0, limit: int = 20) -> List[Dataset]:
     """获取公开数据集列表"""
     return db.query(Dataset).filter(
-        Dataset.is_public == True
+        Dataset.is_public == True,
+        Dataset.is_valid == True  # 只返回有效的数据集
     ).order_by(Dataset.create_time.desc()).offset(skip).limit(limit).all()
 
 
@@ -157,6 +179,7 @@ def search_datasets(
     return db.query(Dataset).filter(
         and_(
             Dataset.is_public == True,
+            Dataset.is_valid == True,  # 只搜索有效的数据集
             or_(
                 Dataset.name.ilike(search_term),
                 Dataset.description.ilike(search_term)

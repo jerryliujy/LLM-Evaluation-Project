@@ -33,7 +33,7 @@ export interface StandardAnswer {
 
 export interface ScoringPoint {
   id?: number
-  scoring_point_text: string
+  answer: string
   point_order?: number
   score?: number
 }

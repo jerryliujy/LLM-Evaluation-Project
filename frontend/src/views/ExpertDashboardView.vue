@@ -119,8 +119,8 @@
             <p class="question-body">{{ truncateText(question.body || '') }}</p>
             <div class="question-meta">
               <span>作者: {{ question.author }}</span>
-              <span>投票: {{ question.vote_count }}</span>
-              <span>浏览: {{ question.view_count }}</span>
+              <span>投票: {{ question.votes }}</span>
+              <span>浏览: {{ question.views }}</span>
               <span>发布: {{ formatDate(question.issued_at || '') }}</span>
             </div>
           </div>

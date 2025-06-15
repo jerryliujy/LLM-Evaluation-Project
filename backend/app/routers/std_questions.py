@@ -25,10 +25,8 @@ def create_std_question(
     # 验证数据集是否存在
     if not db.query(Dataset).filter(Dataset.id == std_question.dataset_id).first():
         raise HTTPException(status_code=404, detail="Dataset not found")
-    
     db_std_question = StdQuestion(
         dataset_id=std_question.dataset_id,
-        raw_question_id=1,  # 临时值，实际应该从原始问题获取
         body=std_question.body,  # 使用body字段而不是text
         question_type=std_question.question_type,
         is_valid=std_question.is_valid,
@@ -41,7 +39,15 @@ def create_std_question(
     db.add(db_std_question)
     db.commit()
     db.refresh(db_std_question)
-    return db_std_question
+    
+    # 重新查询以获取关联数据
+    std_question_with_relations = db.query(StdQuestion).options(
+        joinedload(StdQuestion.tags),
+        joinedload(StdQuestion.dataset),
+        joinedload(StdQuestion.created_by_user)
+    ).filter(StdQuestion.id == db_std_question.id).first()
+    
+    return StdQuestionResponse.from_db_model(std_question_with_relations)
 
 @router.get("/", response_model=PaginatedResponse[StdQuestionResponse])
 def read_std_questions_api(
@@ -49,7 +55,8 @@ def read_std_questions_api(
     limit: int = Query(20, ge=1, le=100), 
     include_deleted: bool = Query(False),
     deleted_only: bool = Query(False),
-    dataset_id: Optional[int] = Query(None),    search_query: Optional[str] = Query(None),
+    dataset_id: Optional[int] = Query(None),    
+    search_query: Optional[str] = Query(None),
     tag_filter: Optional[str] = Query(None),
     question_type_filter: Optional[str] = Query(None),
     scoring_points_filter: Optional[str] = Query(None, description="得分点筛选：has_scoring_points 或 no_scoring_points"),
@@ -75,13 +82,15 @@ def get_std_question(std_question_id: int, db: Session = Depends(get_db)):
     """获取标准问题详情"""
     std_question = db.query(StdQuestion).options(
         joinedload(StdQuestion.dataset),
-        joinedload(StdQuestion.raw_question)
+        joinedload(StdQuestion.raw_question),
+        joinedload(StdQuestion.tags),
+        joinedload(StdQuestion.created_by_user)  # 加载用户关系
     ).filter(StdQuestion.id == std_question_id).first()
     
     if not std_question:
         raise HTTPException(status_code=404, detail="Standard question not found")
     
-    return std_question
+    return StdQuestionResponse.from_db_model(std_question)
 
 @router.put("/{std_question_id}", response_model=StdQuestionResponse)
 def update_std_question(
@@ -93,12 +102,12 @@ def update_std_question(
     updated_question = crud_std_question.update_std_question(db, std_question_id, std_question_update)
     if not updated_question:
         raise HTTPException(status_code=404, detail="Standard question not found")
-    
-    # 重新查询以获取关联数据
+      # 重新查询以获取关联数据，包括用户关系
     from sqlalchemy.orm import joinedload
     std_question_with_relations = db.query(StdQuestion).options(
         joinedload(StdQuestion.tags),
-        joinedload(StdQuestion.dataset)
+        joinedload(StdQuestion.dataset),
+        joinedload(StdQuestion.created_by_user)  # 加载用户关系
     ).filter(StdQuestion.id == updated_question.id).first()
     
     return StdQuestionResponse.from_db_model(std_question_with_relations)
@@ -121,7 +130,15 @@ def restore_std_question_api(std_question_id: int, db: Session = Depends(get_db)
     db_question = crud_std_question.set_std_question_deleted_status(db, question_id=std_question_id, deleted_status=False)
     if db_question is None:
         raise HTTPException(status_code=404, detail="Error restoring StdQuestion")
-    return db_question
+    
+    # 重新查询以获取关联数据
+    std_question_with_relations = db.query(StdQuestion).options(
+        joinedload(StdQuestion.tags),
+        joinedload(StdQuestion.dataset),
+        joinedload(StdQuestion.created_by_user)
+    ).filter(StdQuestion.id == db_question.id).first()
+    
+    return StdQuestionResponse.from_db_model(std_question_with_relations)
 
 @router.delete("/{std_question_id}/force-delete/", response_model=Msg)
 def force_delete_std_question_api(std_question_id: int, db: Session = Depends(get_db)):
@@ -189,7 +206,8 @@ def create_std_question_from_raw(
     dataset_id: int,
     question_type: str = "single_choice",
     created_by: Optional[str] = None,
-    db: Session = Depends(get_db)
+    db: Session = Depends(get_db),
+    current_user = Depends(get_current_active_user)
 ):
     """从原始问题创建标准问题"""
     # 验证原始问题存在
@@ -198,19 +216,18 @@ def create_std_question_from_raw(
         raise HTTPException(status_code=404, detail="Raw question not found")
     
     # 验证数据集存在
-    if not db.query(Dataset).filter(Dataset.id == dataset_id).first():
+    dataset = db.query(Dataset).filter(Dataset.id == dataset_id).first()
+    if not dataset:
         raise HTTPException(status_code=404, detail="Dataset not found")
     
-    # 创建标准问题
-    std_question_data = StdQuestionCreate(
+    # 使用CRUD函数创建标准问题
+    return crud_std_question.create_std_question_from_raw_question(
+        db=db,
+        raw_question_id=raw_question_id,
         dataset_id=dataset_id,
-        body=raw_question.title,  # 使用body字段而不是text
         question_type=question_type,
-        is_valid=True,
-        created_by=created_by
+        created_by=current_user.id
     )
-    
-    return create_std_question(std_question_data, db)
 
 @router.post("/{std_question_id}/tags")
 def add_tags_to_std_question(

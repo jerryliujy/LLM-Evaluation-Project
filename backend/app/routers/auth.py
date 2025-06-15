@@ -107,6 +107,25 @@ async def get_my_invite_code(
     
     return {"invite_code": current_user.invite_code}
 
+@router.get("/invite-codes")
+async def get_invite_codes(
+    current_user: User = Depends(get_current_active_user)
+):
+    """获取当前用户的邀请码（用于复制）"""
+    if current_user.role != "admin":
+        raise HTTPException(
+            status_code=status.HTTP_403_FORBIDDEN,
+            detail="Only admin users can access invite codes"
+        )
+    
+    if not current_user.invite_code:
+        raise HTTPException(
+            status_code=status.HTTP_404_NOT_FOUND,
+            detail="No invite code found"
+        )
+    
+    return {"invite_code": current_user.invite_code}
+
 @router.delete("/invite-code")
 async def revoke_invite_code(
     db: Session = Depends(get_db),

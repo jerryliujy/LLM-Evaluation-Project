@@ -861,7 +861,7 @@
                   :key="point.id"
                   class="scoring-point"
                 >
-                  <span class="point-text">{{ point.scoring_point_text }}</span>
+                  <span class="point-text">{{ point.answer }}</span>
                   <span class="point-score">({{ point.score }}分)</span>
                 </li>
               </ul>

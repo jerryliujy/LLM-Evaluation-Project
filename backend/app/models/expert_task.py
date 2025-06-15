@@ -13,7 +13,7 @@ class ExpertTask(Base):
     task_name = Column(String(255), nullable=True)                                  # 任务名称（可选）
     description = Column(Text, nullable=True)                                       # 任务描述（可选）
     created_at = Column(DateTime, nullable=False, server_default=text('CURRENT_TIMESTAMP'))
-    is_active = Column(Boolean, nullable=False, server_default=text('1'))          # 任务是否激活
+    is_active = Column(Boolean, nullable=False, server_default=text('1'))                       # 任务是否激活
     
     # 关系
     expert = relationship("User", foreign_keys=[expert_id], backref="expert_tasks")

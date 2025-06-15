@@ -127,7 +127,15 @@ class AuthService {
     this.clearToken();
   }
 
-  // 邀请码管理方法
+  async getMyInviteCode(): Promise<{ invite_code: string }> {
+    try {
+      const response = await apiClient.get('/auth/invite-codes');
+      return response.data;
+    } catch (error: any) {
+      throw new Error(error.response?.data?.detail || '获取邀请码失败');
+    }
+  }
+
   async generateInviteCode(expiresInHours = 24): Promise<InviteCode> {
     try {
       const response = await apiClient.post('/auth/invite-codes', {

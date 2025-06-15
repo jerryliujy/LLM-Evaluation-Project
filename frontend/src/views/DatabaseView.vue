@@ -459,11 +459,13 @@
                       </div>
                       <div class="detail-box-content">{{ answer.content }}</div>
                     </div>
-                  </div>                </template>
-                
-                <!-- 标准答案得分点的特殊显示 -->
-                <template v-else-if="column.key === 'scoring_points_count' && selectedItem.scoring_points">
-                  <div class="scoring-points-detail">
+                  </div>                </template>                <!-- 标准答案得分点的特殊显示 -->
+                <template v-else-if="column.key === 'scoring_points_count'">
+                  <!-- 调试信息 -->
+                  <div v-if="selectedItem.id === 8" style="color: blue; font-size: 12px; margin-bottom: 5px;">
+                    调试无条件: ID=8, column.key={{ column.key }}, scoring_points存在={{ !!selectedItem.scoring_points }}, 长度={{ selectedItem.scoring_points?.length }}
+                  </div>
+                  <div v-if="selectedItem.scoring_points" class="scoring-points-detail">
                     <div class="scoring-points-summary">
                       <span class="count">共 {{ selectedItem.scoring_points.length }} 个得分点</span>
                     </div>
@@ -765,7 +767,8 @@ const message = ref("");
 const messageType = ref<"success" | "error">("success");
 
 // 表格配置
-const tableConfigs: Record<TableName, TableConfig> = {      std_questions: {
+const tableConfigs: Record<TableName, TableConfig> = {      
+  std_questions: {
     columns: [
       { key: "id", label: "ID", type: "number", className: "id-col" },
       { key: "body", label: "问题文本", type: "text", className: "text-col", multiline: true },
@@ -862,7 +865,9 @@ const loadTableData = async () => {
     } else if (viewMode.value === 'deleted_only') {
       includeDeleted = true;
       deletedOnly = true;
-    }    let result;
+    }    
+    
+    let result;
     if (selectedTable.value === 'overview_std') {
       result = await databaseService.getStdQuestionsOverview(
         skip,
@@ -871,7 +876,8 @@ const loadTableData = async () => {
         searchQuery.value || undefined,
         tagFilter.value || undefined,
         questionTypeFilter.value || undefined
-      );    } else {
+      );    
+    } else {
       result = await databaseService.getTableData(
         selectedTable.value,
         skip,
@@ -902,10 +908,19 @@ const loadTableData = async () => {
           std_answers_summary: stdAnswersSummary,
         };
       });
-    }    
+    }      
+    
     // 特殊处理标准答案数据，添加 std_question_body 和得分点相关字段
     if (selectedTable.value === 'std_answers') {
       currentData.value = result.data.map(item => {
+        // 调试输出
+        console.log(`处理标准答案 ID ${item.id}:`, {
+          id: item.id,
+          scoring_points: item.scoring_points,
+          scoring_points_count: item.scoring_points_count,
+          scoring_points_length: item.scoring_points?.length
+        });
+        
         // 处理得分点摘要
         const scoringPointsSummary = item.scoring_points && item.scoring_points.length > 0
           ? item.scoring_points
@@ -914,12 +929,15 @@ const loadTableData = async () => {
               .join('; ')
           : '无得分点';
 
-        return  {
+        const processedItem = {
           ...item,
           std_question_body: item.std_question?.body || '无关联问题',
           scoring_points_summary: scoringPointsSummary,
           scoring_points_count: item.scoring_points_count || 0
         };
+        
+        console.log(`处理后的标准答案 ID ${item.id}:`, processedItem);
+        return processedItem;
       });
     }
     totalItems.value = result.total;
@@ -1226,7 +1244,32 @@ const saveEdit = async () => {
   
   saving.value = true;
   try {
-    await databaseService.updateItem(selectedTable.value, selectedItem.value.id, editForm.value);
+    // 根据表类型过滤允许更新的字段
+    let updateData: any = {};
+    
+    if (selectedTable.value === 'std_questions') {
+      // 标准问题只允许更新这些字段
+      updateData = {
+        dataset_id: editForm.value.dataset_id,
+        body: editForm.value.body,
+        question_type: editForm.value.question_type,
+        is_valid: editForm.value.is_valid,
+        tags: editForm.value.tags
+      };    
+    } else if (selectedTable.value === 'std_answers') {
+      // 标准答案只允许更新这些字段
+      updateData = {
+        std_question_id: editForm.value.std_question_id,
+        answer: editForm.value.answer,
+        is_valid: editForm.value.is_valid,
+        scoring_points: editForm.value.scoring_points
+      };
+    } else {
+      // 其他表类型使用完整表单数据
+      updateData = editForm.value;
+    }
+    
+    await databaseService.updateItem(selectedTable.value, selectedItem.value.id, updateData);
     showMessage("保存成功", "success");
     closeEditModal();
     loadTableData();
@@ -1336,9 +1379,17 @@ const showMessage = (text: string, type: "success" | "error" = "success") => {
 
 // 得分点相关辅助函数
 const getScoringPointsCount = (item: DatabaseItem) => {
+  console.log(`getScoringPointsCount for item ${item.id}:`, {
+    scoring_points: item.scoring_points,
+    is_array: Array.isArray(item.scoring_points),
+    length: item.scoring_points?.length
+  });
+  
   if (!item.scoring_points) return 0;
   if (Array.isArray(item.scoring_points)) {
-    return item.scoring_points.filter(point => point.is_valid !== false).length;
+    const validCount = item.scoring_points.filter(point => point.is_valid !== false).length;
+    console.log(`Valid scoring points count for item ${item.id}: ${validCount}`);
+    return validCount;
   }
   return 0;
 };

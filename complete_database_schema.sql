@@ -26,10 +26,12 @@ CREATE TABLE `Dataset` (
   `description` TEXT NOT NULL,
   `created_by` INT NOT NULL,
   `is_public` TINYINT(1) NOT NULL DEFAULT 0,
+  `is_valid` TINYINT(1) NOT NULL DEFAULT 1,
   `create_time` DATETIME NOT NULL DEFAULT CURRENT_TIMESTAMP,
   PRIMARY KEY (`id`, `version`),
   INDEX `idx_dataset_created_by` (`created_by`),
   INDEX `idx_dataset_public` (`is_public`),
+  INDEX `idx_dataset_valid` (`is_valid`),
   CONSTRAINT `fk_dataset_user`
     FOREIGN KEY (`created_by`) REFERENCES `User` (`id`)
     ON DELETE CASCADE ON UPDATE CASCADE
@@ -63,8 +65,6 @@ CREATE TABLE `RawQuestion` (
 CREATE TABLE `StdQuestion` (
   `id` INT NOT NULL AUTO_INCREMENT,
   `dataset_id` INT NOT NULL,  -- 当前所在的数据集ID
-  `dataset_version` INT NOT NULL DEFAULT 1,  -- 数据集版本
-  `raw_question_id` INT NOT NULL,  -- 原始问题ID，必须不能为空
   `body` TEXT NOT NULL,
   `question_type` ENUM('choice', 'text') NOT NULL DEFAULT 'text',
   `is_valid` TINYINT(1) NOT NULL DEFAULT 1,
@@ -72,22 +72,18 @@ CREATE TABLE `StdQuestion` (
   `created_by` INT DEFAULT NULL,
   `version` INT NOT NULL DEFAULT 1,
   `previous_version_id` INT DEFAULT NULL, -- 指向前一个版本
-  `original_version_id` INT NULL,  -- 最初创建时的版本号
-  `current_version_id` INT NULL,  -- 当前所在的版本号
+  `original_version_id` INT NOT NULL,  -- 最初创建时的版本号
+  `current_version_id` INT NOT NULL,  -- 当前所在的版本号
   PRIMARY KEY (`id`),
-  INDEX `idx_stdquestion_dataset` (`dataset_id`, `dataset_version`),
-  INDEX `idx_stdquestion_rawq` (`raw_question_id`),
+  INDEX `idx_stdquestion_dataset` (`dataset_id`),
   INDEX `idx_stdquestion_valid` (`is_valid`),
   INDEX `idx_stdquestion_created_by` (`created_by`),
   INDEX `idx_stdquestion_version` (`version`),
   INDEX `idx_stdquestion_original_version` (`original_version_id`),
   INDEX `idx_stdquestion_current_version` (`current_version_id`),
   CONSTRAINT `fk_stdquestion_dataset`
-    FOREIGN KEY (`dataset_id`, `dataset_version`) REFERENCES `Dataset` (`id`, `version`)
+    FOREIGN KEY (`dataset_id`, `current_version_id`) REFERENCES `Dataset` (`id`, `version`)
     ON DELETE CASCADE ON UPDATE CASCADE,  
-  CONSTRAINT `fk_stdquestion_rawq`
-    FOREIGN KEY (`raw_question_id`) REFERENCES `RawQuestion` (`id`)
-    ON DELETE RESTRICT ON UPDATE CASCADE,
   CONSTRAINT `fk_stdquestion_user`
     FOREIGN KEY (`created_by`) REFERENCES `User` (`id`)
     ON DELETE SET NULL ON UPDATE CASCADE,
@@ -102,7 +98,7 @@ CREATE TABLE `StdAnswer` (
   `std_question_id` INT NOT NULL,
   `answer` TEXT NOT NULL,
   `is_valid` TINYINT(1) NOT NULL DEFAULT 1,
-  `answered_by` VARCHAR(100) DEFAULT NULL,
+  `answered_by` INT DEFAULT NULL,
   `answered_at` DATETIME NOT NULL DEFAULT CURRENT_TIMESTAMP,
   `version` INT NOT NULL DEFAULT 1,
   `previous_version_id` INT DEFAULT NULL, -- 指向前一个版本
@@ -110,6 +106,9 @@ CREATE TABLE `StdAnswer` (
   KEY `idx_sa_stdq` (`std_question_id`),
   INDEX `idx_stdanswer_version` (`version`),
   INDEX `idx_stdanswer_valid` (`is_valid`),
+  CONSTRAINT `fk_stdanswer_user`
+    FOREIGN KEY (`answered_by`) REFERENCES `User` (`id`)
+    ON DELETE SET NULL ON UPDATE CASCADE,
   CONSTRAINT `fk_stdanswer_stdq`
     FOREIGN KEY (`std_question_id`) REFERENCES `StdQuestion` (`id`)
     ON DELETE CASCADE ON UPDATE CASCADE,
@@ -162,7 +161,7 @@ CREATE TABLE `StdAnswerScoringPoint` (
   `answer` TEXT NOT NULL,
   `point_order` INT DEFAULT 0,
   `is_valid` TINYINT(1) NOT NULL DEFAULT 1,
-  `answered_by` VARCHAR(100) DEFAULT NULL,
+  `answered_by` INT DEFAULT NULL,
   `answered_at` DATETIME NOT NULL DEFAULT CURRENT_TIMESTAMP,
   `version` INT NOT NULL DEFAULT 1,
   `previous_version_id` INT DEFAULT NULL, -- 指向前一个版本
@@ -170,6 +169,9 @@ CREATE TABLE `StdAnswerScoringPoint` (
   KEY `idx_sasp_stdanswer` (`std_answer_id`),
   INDEX `idx_sasp_version` (`version`),
   INDEX `idx_sasp_valid` (`is_valid`),
+  CONSTRAINT `fk_sasp_user`
+    FOREIGN KEY (`answered_by`) REFERENCES `User` (`id`)
+    ON DELETE SET NULL ON UPDATE CASCADE,
   CONSTRAINT `fk_sasp_stdanswer`
     FOREIGN KEY (`std_answer_id`) REFERENCES `StdAnswer` (`id`)
     ON DELETE CASCADE ON UPDATE CASCADE,

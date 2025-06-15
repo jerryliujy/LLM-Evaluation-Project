@@ -203,7 +203,7 @@
                     class="scoring-point-item"
                   >
                     <input
-                      v-model="point.scoring_point_text"
+                      v-model="point.answer"
                       type="text"
                       class="form-input"
                       placeholder="评分点内容"
@@ -559,7 +559,7 @@ const handleTagInputConfirm = () => {
 const addScoringPoint = () => {
   formData.value.scoring_points = [
     ...(formData.value.scoring_points || []),
-    { scoring_point_text: '', score: 0 }
+    { answer: '', score: 0 }
   ]
 }
 

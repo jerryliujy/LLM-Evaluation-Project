@@ -71,26 +71,28 @@ def get_marketplace_datasets(
     )
     
     marketplace_datasets = []
-    for dataset in datasets:
-        # 统计问题总数（使用复合外键）
+    for dataset in datasets:        # 统计问题总数（使用版本范围查询）
         question_count = db.query(StdQuestion).filter(
             StdQuestion.dataset_id == dataset.id,
-            StdQuestion.dataset_version == dataset.version,
+            StdQuestion.original_version_id <= dataset.version,
+            StdQuestion.current_version_id >= dataset.version,
             StdQuestion.is_valid == True
         ).count()
         
-        # 统计选择题数量（使用复合外键）
+        # 统计选择题数量（使用版本范围查询）
         choice_question_count = db.query(StdQuestion).filter(
             StdQuestion.dataset_id == dataset.id,
-            StdQuestion.dataset_version == dataset.version,
+            StdQuestion.original_version_id <= dataset.version,
+            StdQuestion.current_version_id >= dataset.version,
             StdQuestion.is_valid == True,
             StdQuestion.question_type == 'choice'
         ).count()
         
-        # 统计文本题数量（使用复合外键）
+        # 统计文本题数量（使用版本范围查询）
         text_question_count = db.query(StdQuestion).filter(
             StdQuestion.dataset_id == dataset.id,
-            StdQuestion.dataset_version == dataset.version,
+            StdQuestion.original_version_id <= dataset.version,
+            StdQuestion.current_version_id >= dataset.version,
             StdQuestion.is_valid == True,
             StdQuestion.question_type == 'text'
         ).count()
@@ -143,13 +145,13 @@ def get_marketplace_dataset(
         if not dataset:
             raise HTTPException(
                 status_code=status.HTTP_404_NOT_FOUND,
-                detail="Dataset version not found or not public"
-            )
+                detail="Dataset version not found or not public"            )
     
-    # 获取数据集的所有标准问题（使用复合外键）
+    # 获取数据集的所有标准问题（使用版本范围查询）
     std_questions = db.query(StdQuestion).filter(
         StdQuestion.dataset_id == dataset.id,
-        StdQuestion.dataset_version == dataset.version,
+        StdQuestion.original_version_id <= dataset.version,
+        StdQuestion.current_version_id >= dataset.version,
         StdQuestion.is_valid == True
     ).all()
     
@@ -208,14 +210,18 @@ def download_marketplace_dataset(
         
         if not dataset:
             raise HTTPException(
-                status_code=status.HTTP_404_NOT_FOUND,
-                detail="Dataset version not found or not public"
+                status_code=status.HTTP_404_NOT_FOUND,                detail="Dataset version not found or not public"
             )
     
-    # 获取数据集的所有标准问题（使用复合外键）
-    std_questions = db.query(StdQuestion).filter(
+    # 获取数据集的所有标准问题（使用版本范围查询）
+    from sqlalchemy.orm import selectinload
+    std_questions = db.query(StdQuestion).options(
+        selectinload(StdQuestion.tags),
+        selectinload(StdQuestion.std_answers).selectinload(StdAnswer.answered_by_user)
+    ).filter(
         StdQuestion.dataset_id == dataset.id,
-        StdQuestion.dataset_version == dataset.version,
+        StdQuestion.original_version_id <= dataset.version,
+        StdQuestion.current_version_id >= dataset.version,
         StdQuestion.is_valid == True
     ).all()
     
@@ -241,18 +247,23 @@ def download_marketplace_dataset(
     
     # 获取数据集的问题
     questions = std_questions[:100]  # 限制数量以防止过大的响应
-    
-    # 转换为响应格式
+      # 转换为响应格式
     question_data = []
     for question in questions:
         question_info = {
             "id": question.id,
-            "question": question.question,
+            "question": question.body,
             "question_type": question.question_type,
-            "difficulty": question.difficulty,
-            "tags": question.tags,
-            "std_answer": question.std_answer,
-            "choices": question.choices
+            "tags": [tag.label for tag in question.tags] if question.tags else [],
+            "std_answer": [
+                {
+                    "id": answer.id,
+                    "answer": answer.answer,
+                    "answered_by": answer.answered_by_user.username if answer.answered_by_user else "unknown",
+                    "answered_at": answer.answered_at.isoformat() if answer.answered_at else None,
+                    "is_valid": answer.is_valid
+                } for answer in question.std_answers if answer.is_valid
+            ] if question.std_answers else [],
         }
         question_data.append(question_info)
     
@@ -1132,11 +1143,11 @@ def get_dataset_questions(
                 status_code=status.HTTP_403_FORBIDDEN,
                 detail="No permission to access this dataset"
             )
-        
-        # 获取问题列表（使用复合外键）
+          # 获取问题列表（使用版本范围查询）
         questions = db.query(StdQuestion).filter(
             StdQuestion.dataset_id == dataset.id,
-            StdQuestion.dataset_version == dataset.version,
+            StdQuestion.original_version_id <= dataset.version,
+            StdQuestion.current_version_id >= dataset.version,
             StdQuestion.is_valid == True
         ).offset(skip).limit(limit).all()
           # 转换为前端需要的格式
@@ -1157,10 +1168,10 @@ def get_dataset_questions(
             question_list.append(question_data)
         
         return {
-            "questions": question_list,
-            "total_count": db.query(StdQuestion).filter(
+            "questions": question_list,            "total_count": db.query(StdQuestion).filter(
                 StdQuestion.dataset_id == dataset.id,
-                StdQuestion.dataset_version == dataset.version,
+                StdQuestion.original_version_id <= dataset.version,
+                StdQuestion.current_version_id >= dataset.version,
                 StdQuestion.is_valid == True
             ).count()
         }

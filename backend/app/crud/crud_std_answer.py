@@ -7,6 +7,7 @@ def get_std_answer(db: Session, answer_id: int, include_deleted: bool = False) -
     query = db.query(models.StdAnswer).options(
         selectinload(models.StdAnswer.std_question),
         selectinload(models.StdAnswer.scoring_points),  # 加载所有得分点，包括已删除的
+        selectinload(models.StdAnswer.answered_by_user),
     ).filter(models.StdAnswer.id == answer_id)
     
     if not include_deleted:
@@ -39,11 +40,11 @@ def get_std_answers_paginated(
 ):
     """获取分页的标准答案数据和元数据，支持搜索和筛选"""
     from ..schemas.common import PaginatedResponse
-    from sqlalchemy import and_, or_, exists
-      # 构建基础查询
+    from sqlalchemy import and_, or_, exists      # 构建基础查询
     query = db.query(models.StdAnswer).options(
         selectinload(models.StdAnswer.std_question),
         selectinload(models.StdAnswer.scoring_points),  # 加载所有得分点，包括已删除的
+        selectinload(models.StdAnswer.answered_by_user),
     )
     
     # 应用删除状态过滤
@@ -115,31 +116,25 @@ def get_std_answers_paginated(
     for answer in answers:        # 获取得分点列表
         scoring_points_list = []
         scoring_points_data = []
+        
+        # 调试信息
+        print(f"Answer {answer.id}: has {len(answer.scoring_points) if answer.scoring_points else 0} scoring points")
+        
         if answer.scoring_points:
             for point in answer.scoring_points:
-                # 临时显示所有得分点用于调试，包括无效的
-                scoring_points_list.append(point.scoring_point_text)
+                # 暂时显示所有得分点，包括无效的，用于调试
+                print(f"  Point {point.id}: {point.answer[:50]}... (valid: {point.is_valid})")
+                scoring_points_list.append(point.answer)
                 scoring_points_data.append({
                     "id": point.id,
-                    "answer": point.scoring_point_text,  # 使用实际字段名而不是property
+                    "answer": point.answer,  
                     "std_answer_id": point.std_answer_id,
                     "point_order": point.point_order,
                     "is_valid": point.is_valid,
                     "previous_version_id": point.previous_version_id
-                })# 确保 answered_by 始终是字符串（用户名）
-        answered_by = answer.answered_by or "unknown"
+                })
         
-        # 如果 answered_by 看起来像数字ID，尝试查找对应的用户名
-        if answered_by.isdigit():
-            try:
-                user_id = int(answered_by)
-                user = db.query(models.User).filter(models.User.id == user_id).first()
-                if user and user.username:
-                    answered_by = user.username
-                else:
-                    answered_by = f"user_{answered_by}"  # 如果找不到用户，显示为 user_ID
-            except (ValueError, AttributeError):
-                pass  # 如果转换失败，保持原值
+        answered_by = answer.answered_by_user.username if answer.answered_by_user else "unknown"
 
         answer_dict = {
             "id": answer.id,
@@ -156,6 +151,12 @@ def get_std_answers_paginated(
             "scoring_points_count": len(scoring_points_list),  # 新增：得分点数量
             "scoring_points": scoring_points_data
         }
+        
+        # 调试信息：打印每个答案的得分点情况
+        print(f"Answer {answer.id}: has {len(scoring_points_data)} scoring points")
+        for i, point in enumerate(scoring_points_data):
+            print(f"  Point {point['id']}: {point['answer'][:50]}... (valid: {point['is_valid']})")
+        
         answers_data.append(answer_dict)
     
     # 计算分页信息
@@ -255,10 +256,19 @@ def force_delete_std_answer(db: Session, answer_id: int) -> bool:
             return False
         
         question_id = db_answer.std_question_id
-        
-        # 首先删除相关的评分点
+          # 首先删除相关的评分点
         db.query(models.StdAnswerScoringPoint).filter(
             models.StdAnswerScoringPoint.std_answer_id == answer_id
+        ).delete(synchronize_session=False)        
+        
+        # 删除标准答案和原始答案的关联记录
+        db.query(models.StdAnswerRawAnswerRecord).filter(
+            models.StdAnswerRawAnswerRecord.std_answer_id == answer_id
+        ).delete(synchronize_session=False)
+        
+        # 删除标准答案和专家答案的关联记录  
+        db.query(models.StdAnswerExpertAnswerRecord).filter(
+            models.StdAnswerExpertAnswerRecord.std_answer_id == answer_id
         ).delete(synchronize_session=False)
         
         # 删除标准答案
@@ -268,9 +278,18 @@ def force_delete_std_answer(db: Session, answer_id: int) -> bool:
         remaining_answers = db.query(models.StdAnswer).filter(
             models.StdAnswer.std_question_id == question_id
         ).count()
-        
         # 如果没有其他答案，强制删除关联的标准问题
         if remaining_answers == 0:
+            # 获取标准问题对象以清理标签关系
+            std_question = db.query(models.StdQuestion).filter(
+                models.StdQuestion.id == question_id
+            ).first()
+            
+            if std_question:
+                # 清除标准问题的标签关联（多对多关系）
+                std_question.tags.clear()
+                db.flush()  # 确保标签关系被清理
+            
             # 删除标准问题的相关关系记录
             db.query(models.StdQuestionRawQuestionRecord).filter(
                 models.StdQuestionRawQuestionRecord.std_question_id == question_id
@@ -310,13 +329,13 @@ def create_std_answer(db: Session, answer: schemas.StdAnswerCreate) -> models.St
         db.query(models.ExpertAnswer).filter(
             models.ExpertAnswer.id.in_(answer.referenced_expert_answer_ids)
         ).update({models.ExpertAnswer.referenced_by_std_answer_id: db_answer.id}, synchronize_session=False)
-      # 创建评分点
+    # 创建评分点
     for scoring_point_data in answer.scoring_points:
         db_scoring_point = models.StdAnswerScoringPoint(
             std_answer_id=db_answer.id,
             answer=scoring_point_data.answer,  # 统一字段名为answer
             point_order=scoring_point_data.point_order,
-            created_by=scoring_point_data.created_by
+            answered_by=scoring_point_data.created_by
         )
         db.add(db_scoring_point)
     
@@ -330,13 +349,16 @@ def update_std_answer(db: Session, answer_id: int, answer: schemas.StdAnswerUpda
     if not db_answer:
         return None
     
-    # 更新基本字段
+    # 只允许更新这些字段，排除版本管理和创建者相关字段
+    allowed_fields = {'std_question_id', 'answer', 'is_valid'}
     update_data = answer.dict(exclude_unset=True, exclude={'scoring_points', 'referenced_raw_answer_ids', 'referenced_expert_answer_ids'})
+      # 只更新允许的字段，明确排除用户相关和版本管理字段
     for field, value in update_data.items():
-        setattr(db_answer, field, value)
+        if field in allowed_fields and value is not None:
+            setattr(db_answer, field, value)
     
-    # 更新原始回答的引用关系
-    if answer.referenced_raw_answer_ids is not None:
+    # 更新原始回答的引用关系（可选功能）
+    if hasattr(answer, 'referenced_raw_answer_ids') and answer.referenced_raw_answer_ids is not None:
         # 清除旧的引用
         db.query(models.RawAnswer).filter(
             models.RawAnswer.referenced_by_std_answer_id == answer_id
@@ -347,9 +369,8 @@ def update_std_answer(db: Session, answer_id: int, answer: schemas.StdAnswerUpda
             db.query(models.RawAnswer).filter(
                 models.RawAnswer.id.in_(answer.referenced_raw_answer_ids)
             ).update({models.RawAnswer.referenced_by_std_answer_id: answer_id}, synchronize_session=False)
-    
-    # 更新专家回答的引用关系
-    if answer.referenced_expert_answer_ids is not None:
+      # 更新专家回答的引用关系（可选功能）
+    if hasattr(answer, 'referenced_expert_answer_ids') and answer.referenced_expert_answer_ids is not None:
         # 清除旧的引用
         db.query(models.ExpertAnswer).filter(
             models.ExpertAnswer.referenced_by_std_answer_id == answer_id
@@ -360,8 +381,9 @@ def update_std_answer(db: Session, answer_id: int, answer: schemas.StdAnswerUpda
             db.query(models.ExpertAnswer).filter(
                 models.ExpertAnswer.id.in_(answer.referenced_expert_answer_ids)
             ).update({models.ExpertAnswer.referenced_by_std_answer_id: answer_id}, synchronize_session=False)
-      # 如果提供了评分点，更新评分点
-    if answer.scoring_points is not None:
+    
+    # 如果提供了评分点，更新评分点（可选功能）
+    if hasattr(answer, 'scoring_points') and answer.scoring_points is not None:
         # 删除现有评分点
         db.query(models.StdAnswerScoringPoint).filter(
             models.StdAnswerScoringPoint.std_answer_id == answer_id
