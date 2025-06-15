@@ -6,6 +6,7 @@ from ..db.database import get_db
 from ..crud import crud_std_answer
 from ..models.std_answer import StdAnswer, StdAnswerScoringPoint
 from ..models.std_question import StdQuestion
+from ..models.dataset import Dataset
 from ..schemas.std_answer import (
     StdAnswerCreate, StdAnswerUpdate, StdAnswerResponse,
     StdAnswerScoringPointCreate, StdAnswerScoringPointResponse
@@ -24,17 +25,19 @@ def create_std_answer(
 ):
     """创建标准答案"""
     # 验证标准问题是否存在
-    if not db.query(StdQuestion).filter(StdQuestion.id == std_answer.std_question_id).first():
+    question = db.query(StdQuestion).filter(StdQuestion.id == std_answer.std_question_id).first()
+    if not question:
         raise HTTPException(status_code=404, detail="Standard question not found")
-      # 创建标准答案，如果没有指定answered_by则使用当前用户
-    answer_data = std_answer.dict()
-    if not answer_data.get('answered_by'):
-        answer_data['answered_by'] = current_user.id
     
-    db_std_answer = StdAnswer(**answer_data)
-    db.add(db_std_answer)
-    db.commit()
-    db.refresh(db_std_answer)
+    # 创建标准答案，如果没有指定answered_by则使用当前用户
+    if not std_answer.answered_by:
+        std_answer.answered_by = current_user.id
+    
+    # 获取数据集当前版本
+    dataset = db.query(Dataset).filter(Dataset.id == question.dataset_id).first()
+    dataset_version = dataset.version if dataset else None
+    
+    db_std_answer = crud_std_answer.create_std_answer(db, std_answer, dataset_version)
     
     # 重新查询以获取关联数据
     std_answer_with_relations = db.query(StdAnswer).options(

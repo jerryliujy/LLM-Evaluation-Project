@@ -456,11 +456,8 @@
                       <div class="detail-box-content">{{ answer.content }}</div>
                     </div>
                   </div>
-                </template>                <template v-else-if="column.key === 'expert_answers'">
-                  <!-- 调试信息 -->
-                  <div style="color: red; font-size: 12px; margin-bottom: 5px;">
-                    调试专家回答: column.key={{ column.key }}, expert_answers_detail存在={{ !!selectedItem.expert_answers_detail }}, 长度={{ selectedItem.expert_answers_detail?.length }}, expert_answers字段={{ selectedItem.expert_answers }}
-                  </div>
+                </template>                
+                <template v-else-if="column.key === 'expert_answers'">
                   
                   <!-- 优先使用expert_answers_detail -->
                   <template v-if="selectedItem.expert_answers_detail">

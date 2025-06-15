@@ -466,8 +466,7 @@ async def upload_std_qa_data(
                     # 如果提供的答案与选项不一致，记录警告但使用提供的答案
                     if set(provided_answers) != set(correct_options):
                         print(f"Warning: Provided answer '{answer_text}' doesn't match is_correct flags {correct_options} for question: {item.get('body', '')[:50]}...")
-            else:
-                # 对于问答题，直接使用提供的答案
+            else:                # 对于问答题，直接使用提供的答案
                 answer_text = item.get('answer', '')
                 if not answer_text:
                     print(f"Warning: No answer provided for question: {item.get('body', '')[:50]}...")
@@ -479,7 +478,10 @@ async def upload_std_qa_data(
                     answer=answer_text,
                     is_valid=True,
                     answered_by=current_user.id,
-                    version=1
+                    version=1,
+                    # 设置版本区间字段
+                    original_version_id=dataset_version,
+                    current_version_id=dataset_version
                 )
                 
                 db.add(std_answer)

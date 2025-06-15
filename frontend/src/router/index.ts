@@ -83,7 +83,7 @@ const routes: Array<RouteRecordRaw> = [
     props: true
   },
   {
-    path: "/database-version-edit/:datasetId/:versionId",
+    path: "/database-version-edit/:datasetId/:versionId/:workId",
     name: "DatabaseVersionEdit",
     component: () => import("../views/DatabaseVersionEditView.vue"),
     meta: { requiresAuth: true, role: 'admin' },

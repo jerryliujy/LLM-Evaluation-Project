@@ -8,6 +8,7 @@ export interface Dataset {
   created_by: number; 
   is_public: boolean;
   create_time: string;
+  version: number;
 }
 
 export interface DatasetWithStats extends Dataset {
@@ -119,6 +120,36 @@ export const datasetService = {
       await apiClient.delete(`/datasets/${id}`);
     } catch (error) {
       throw new Error("Failed to delete dataset");
+    }
+  },
+  // 创建数据集版本
+  async createVersion(
+    datasetId: number,
+    versionData: { name: string; description: string; is_public?: boolean }
+  ): Promise<{ id: number; version: number; name: string; description: string }> {
+    try {
+      const response = await apiClient.post(`/datasets/${datasetId}/versions`, versionData);
+      return response.data;
+    } catch (error) {
+      throw new Error("Failed to create dataset version");
+    }
+  },
+
+  // 获取数据集的标准问答对
+  async getDatasetStdQA(
+    datasetId: number, 
+    version?: number
+  ): Promise<any[]> {
+    try {
+      const params: any = {};
+      if (version !== undefined) {
+        params.version = version;
+      }
+      
+      const response = await apiClient.get(`/datasets/${datasetId}/std-qa`, { params });
+      return response.data;
+    } catch (error) {
+      throw new Error("Failed to fetch dataset standard Q&A");
     }
   },
 };

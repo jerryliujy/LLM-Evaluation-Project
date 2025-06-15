@@ -102,6 +102,15 @@ def create_std_qa_with_relations(
         )
         std_answer = crud_std_answer.create_std_answer(db, std_answer_data)
         
+        # 获取数据集当前版本用于答案版本管理
+        dataset = db.query(Dataset).filter(Dataset.id == request.dataset_id).first()
+        if dataset:
+            # 更新答案的版本区间字段
+            std_answer.original_version_id = dataset.version
+            std_answer.current_version_id = dataset.version
+            db.commit()
+            db.refresh(std_answer)
+        
         # 3. 创建关系记录
         created_relations = {
             'raw_question_relations': [],

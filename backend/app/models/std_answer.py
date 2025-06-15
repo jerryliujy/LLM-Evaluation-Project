@@ -14,6 +14,9 @@ class StdAnswer(Base):
     answered_at = Column(DateTime(timezone=True), server_default=text('CURRENT_TIMESTAMP'))
     version = Column(Integer, nullable=False, default=1)
     previous_version_id = Column(Integer, ForeignKey("StdAnswer.id"), nullable=True, index=True)
+      # 版本区间字段
+    original_version_id = Column(Integer, nullable=False, index=True)  # 最早出现的版本
+    current_version_id = Column(Integer, nullable=False, index=True)   # 当前有效的最新版本
     
     # Relationships
     std_question = relationship("StdQuestion", back_populates="std_answers")

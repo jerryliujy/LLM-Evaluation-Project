@@ -47,15 +47,16 @@ def get_std_answers_paginated(
         selectinload(models.StdAnswer.answered_by_user),
     )
     
-    # 应用删除状态过滤
+    # 应用删除状态过滤    
     if deleted_only:
         query = query.filter(models.StdAnswer.is_valid == False)
     elif not include_deleted:
         query = query.filter(models.StdAnswer.is_valid == True)
-      # 应用数据集过滤（通过问题关联的数据集ID）
+    
+    # 应用数据集过滤（通过问题关联的数据集ID）
     if dataset_id is not None:
         query = query.join(models.StdQuestion).filter(
-            models.StdQuestion.dataset_id <= dataset_id  # 通过问题获取数据集ID
+            models.StdQuestion.dataset_id == dataset_id  
         )
     
     # 应用搜索查询（搜索答案内容）
@@ -307,12 +308,42 @@ def force_delete_std_answer(db: Session, answer_id: int) -> bool:
         print(f"Error force deleting std answer {answer_id}: {e}")
         return False
 
-def create_std_answer(db: Session, answer: schemas.StdAnswerCreate) -> models.StdAnswer:
-    """创建标准回答"""
+def create_std_answer(db: Session, answer: schemas.StdAnswerCreate, dataset_version: Optional[int] = None) -> models.StdAnswer:
+    """创建标准回答
+    
+    Args:
+        db: 数据库会话
+        answer: 答案创建数据
+        dataset_version: 当前数据集版本，用于设置版本区间
+    """
+    # 如果没有提供数据集版本，从关联的问题获取
+    if dataset_version is None and answer.std_question_id:
+        question = db.query(models.StdQuestion).filter(
+            models.StdQuestion.id == answer.std_question_id
+        ).first()
+        if question:
+            # 从问题获取数据集信息
+            dataset = db.query(models.Dataset).filter(
+                models.Dataset.id == question.dataset_id
+            ).first()
+            if dataset:
+                dataset_version = dataset.version
+      # 确保版本区间字段有值
+    original_version_id = answer.original_version_id or dataset_version
+    current_version_id = answer.current_version_id or dataset_version
+    
+    if original_version_id is None or current_version_id is None:
+        raise ValueError("original_version_id and current_version_id must be provided or dataset_version must be available")
+    
     db_answer = models.StdAnswer(
         std_question_id=answer.std_question_id,
         answer=answer.answer,
         answered_by=answer.answered_by,  # 统一字段名为answered_by
+        version=answer.version,
+        previous_version_id=answer.previous_version_id,
+        # 设置版本区间字段
+        original_version_id=original_version_id,
+        current_version_id=current_version_id,
     )
     
     db.add(db_answer)
@@ -401,3 +432,70 @@ def update_std_answer(db: Session, answer_id: int, answer: schemas.StdAnswerUpda
     db.commit()
     db.refresh(db_answer)
     return db_answer
+
+def get_std_answers_by_dataset_version(
+    db: Session, 
+    dataset_id: int, 
+    dataset_version: int,
+    include_deleted: bool = False
+) -> List[models.StdAnswer]:
+    """根据数据集版本获取标准答案
+    
+    Args:
+        db: 数据库会话
+        dataset_id: 数据集ID
+        dataset_version: 数据集版本号
+        include_deleted: 是否包含已删除的答案
+    
+    Returns:
+        在该数据集版本中有效的标准答案列表
+    """
+    query = db.query(models.StdAnswer).options(
+        selectinload(models.StdAnswer.std_question),
+        selectinload(models.StdAnswer.scoring_points),
+        selectinload(models.StdAnswer.answered_by_user),
+    ).join(models.StdQuestion).filter(
+        models.StdQuestion.dataset_id == dataset_id,
+        # 答案在指定版本的有效区间内
+        models.StdAnswer.original_version_id <= dataset_version,
+        models.StdAnswer.current_version_id >= dataset_version
+    )
+    
+    if not include_deleted:
+        query = query.filter(models.StdAnswer.is_valid == True)
+    
+    return query.all()
+
+
+def get_std_answer_by_id_and_version(
+    db: Session, 
+    answer_id: int, 
+    dataset_version: int,
+    include_deleted: bool = False
+) -> Optional[models.StdAnswer]:
+    """根据答案ID和数据集版本获取标准答案
+    
+    Args:
+        db: 数据库会话
+        answer_id: 答案ID
+        dataset_version: 数据集版本号
+        include_deleted: 是否包含已删除的答案
+    
+    Returns:
+        在该版本中有效的标准答案，如果不存在则返回None
+    """
+    query = db.query(models.StdAnswer).options(
+        selectinload(models.StdAnswer.std_question),
+        selectinload(models.StdAnswer.scoring_points),
+        selectinload(models.StdAnswer.answered_by_user),
+    ).filter(
+        models.StdAnswer.id == answer_id,
+        # 答案在指定版本的有效区间内
+        models.StdAnswer.original_version_id <= dataset_version,
+        models.StdAnswer.current_version_id >= dataset_version
+    )
+    
+    if not include_deleted:
+        query = query.filter(models.StdAnswer.is_valid == True)
+    
+    return query.first()

@@ -14,7 +14,7 @@ from app.schemas.dataset_version_work import (
     DatasetVersionWorkSummary, VersionStdQuestionCreate, VersionStdQuestionUpdate,
     VersionStdQuestionResponse, VersionStdAnswerCreate, VersionStdAnswerUpdate,
     VersionStdAnswerResponse, VersionTagCreate, VersionTagResponse,
-    WorkStatus
+    VersionStdQaPairCreate, VersionStdQaPairResponse, WorkStatus
 )
 from app.crud.crud_dataset_version_work import (
     create_dataset_version_work, get_dataset_version_work, get_user_version_works,
@@ -22,7 +22,7 @@ from app.crud.crud_dataset_version_work import (
     cancel_dataset_version_work, delete_dataset_version_work, create_version_question,
     get_version_questions, update_version_question, delete_version_question,
     create_version_answer, update_version_answer, create_version_tag,
-    get_version_work_statistics
+    get_version_work_statistics, create_version_std_qa_pair
 )
 
 router = APIRouter(prefix="/api/dataset-version-work", tags=["Dataset Version Work"])
@@ -383,6 +383,31 @@ def create_tag_in_version_work(
     
     tag = create_version_tag(db=db, work_id=work_id, tag_data=tag_data)
     return tag
+
+
+# ============ Complete Standard QA Pair Endpoints ============
+
+@router.post("/{work_id}/std-qa-pairs", response_model=VersionStdQaPairResponse)
+def create_version_std_qa_pair_endpoint(
+    work_id: int,
+    qa_data: VersionStdQaPairCreate,
+    db: Session = Depends(get_db),
+    current_user: User = Depends(get_current_user)
+):
+    """在版本工作空间中创建完整的标准问答对"""
+    # 验证用户权限
+    work = get_dataset_version_work(db=db, work_id=work_id)
+    if not work:
+        raise HTTPException(
+            status_code=status.HTTP_404_NOT_FOUND,
+            detail="Version work not found or no permission"
+        )
+    
+    try:
+        result = create_version_std_qa_pair(db=db, work_id=work_id, qa_data=qa_data.dict())
+        return result
+    except ValueError as e:
+        raise HTTPException(status_code=status.HTTP_400_BAD_REQUEST, detail=str(e))
 
 
 @router.post("/{work_id}/create-version", response_model=dict)

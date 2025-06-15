@@ -172,6 +172,23 @@ export class DatasetVersionWorkService {
     const response = await apiClient.get(`/dataset-version-work/${workId}/preview`);
     return response.data;
   }
+
+  // ============ Complete Standard QA Pair ============
+
+  // 创建完整的版本标准问答对
+  async createVersionStdQaPair(workId: number, data: {
+    question: string;
+    answer: string;
+    question_type: 'choice' | 'text';
+    key_points: { content: string }[];
+    raw_question_ids: number[];
+    raw_answer_ids: number[];
+    expert_answer_ids: number[];
+    tags: string[];
+  }) {
+    const response = await apiClient.post(`/dataset-version-work/${workId}/std-qa-pairs`, data);
+    return response.data;
+  }
 }
 
 export const datasetVersionWorkService = new DatasetVersionWorkService();

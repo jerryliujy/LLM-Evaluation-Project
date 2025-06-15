@@ -46,6 +46,7 @@ import { ref, onMounted } from 'vue'
 import { useRouter, useRoute } from 'vue-router'
 import { versionService } from '@/services/versionService'
 import { datasetService } from '@/services/datasetService'
+import { datasetVersionWorkService } from '@/services/datasetVersionWorkService'
 
 const router = useRouter()
 const route = useRoute()
@@ -65,25 +66,32 @@ const createVersionAndStartEdit = async () => {
   
   creating.value = true
   try {
-    // 创建新版本
-    const newVersion = await versionService.createDatasetVersion(Number(datasetId.value), {
-      name: versionName.value.trim(),
-      description: versionDescription.value.trim() || undefined
-    })
+    // 获取当前数据集的最新版本号，用于创建版本工作
+    const dataset = await datasetService.getDataset(Number(datasetId.value))
     
-    const newVersionId = newVersion.id
+    // 创建版本工作（包含前一个版本和目标版本信息）
+    const workData = {
+      dataset_id: Number(datasetId.value),
+      current_version: dataset.version || 1, // 当前版本作为源版本
+      target_version: (dataset.version || 1) + 1, // 目标版本 = 当前版本 + 1
+      work_description: `创建版本: ${versionName.value.trim()}`,
+      notes: versionDescription.value.trim() || undefined
+    }
     
-    // 跳转到编辑界面
+    const versionWork = await datasetVersionWorkService.createVersionWork(workData)
+    
+    // 跳转到编辑界面，传递 workId，不在这里加载数据
     router.push({ 
       name: 'DatabaseVersionEdit', 
       params: { 
         datasetId: datasetId.value,
-        versionId: newVersionId
+        versionId: (dataset.version || 1) + 1,
+        workId: versionWork.id
       }
     })
   } catch (error) {
-    console.error('创建版本失败:', error)
-    alert('创建版本失败，请重试')
+    console.error('创建版本工作失败:', error)
+    alert('创建版本工作失败，请重试')
   } finally {
     creating.value = false
   }

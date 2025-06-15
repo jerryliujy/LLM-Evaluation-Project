@@ -216,14 +216,13 @@ def create_dataset_version(
         raise ValueError(f"Dataset {dataset_id} not found")
     
     new_version = latest_version + 1
-    
-    # 创建新版本
+      # 创建新版本
     db_dataset = Dataset(
         id=dataset_id,
         version=new_version,
         name=dataset.name,
         description=dataset.description,
-        is_public=dataset.is_public,
+        is_public=dataset.is_public if dataset.is_public is not None else False,
         created_by=created_by
     )
     

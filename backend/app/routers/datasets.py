@@ -377,7 +377,9 @@ def create_new_dataset_version(
 ):
     """创建数据集的新版本"""
     # 检查原数据集是否存在
-    original_dataset = get_dataset(db, dataset_id)
+    original_dataset = db.query(Dataset).filter(Dataset.id == dataset_id).order_by(
+        Dataset.version.desc()
+    ).first()
     if not original_dataset:
         raise HTTPException(status_code=404, detail="Dataset not found")
     
@@ -390,3 +392,147 @@ def create_new_dataset_version(
         return new_version
     except ValueError as e:
         raise HTTPException(status_code=400, detail=str(e))
+
+@router.get("/{dataset_id}/std-qa", response_model=List[dict])
+def get_dataset_std_qa(
+    dataset_id: int,
+    version: Optional[int] = Query(None, description="数据集版本，不指定则返回最新版本"),
+    db: Session = Depends(get_db)
+):
+    """获取数据集的标准问答对"""
+    # 获取数据集
+    if version is not None:
+        dataset = db.query(Dataset).filter(
+            Dataset.id == dataset_id,
+            Dataset.version == version
+        ).first()
+    else:
+        dataset = db.query(Dataset).filter(Dataset.id == dataset_id).order_by(
+            Dataset.version.desc()
+        ).first()
+    
+    if not dataset:
+        raise HTTPException(status_code=404, detail="Dataset not found")
+      # 获取该版本的所有标准问题
+    from ..models.std_question import StdQuestion
+    from ..models.std_answer import StdAnswer
+    from ..models.tag import Tag
+    
+    questions = db.query(StdQuestion).options(
+        joinedload(StdQuestion.std_answers).joinedload(StdAnswer.scoring_points),
+        joinedload(StdQuestion.tags)
+    ).filter(
+        StdQuestion.dataset_id == dataset_id,
+        # 使用版本区间查询：数据集版本应该在问题的有效版本区间内
+        StdQuestion.original_version_id <= dataset.version,
+        StdQuestion.current_version_id >= dataset.version,
+        StdQuestion.is_valid == True
+    ).all()
+    
+    result = []
+    for question in questions:
+        question_data = {
+            "id": question.id,
+            "body": question.body,
+            "question_type": question.question_type,
+            "is_valid": question.is_valid,
+            "created_at": question.created_at.isoformat() if question.created_at else None,
+            "version": question.version,
+            "tags": [tag.label for tag in question.tags] if question.tags else [],
+            "std_answers": []        
+        }
+        
+        for answer in question.std_answers:
+            # 检查答案是否在指定版本的有效区间内
+            if (answer.is_valid and 
+                answer.original_version_id <= dataset.version and 
+                answer.current_version_id >= dataset.version):
+                answer_data = {
+                    "id": answer.id,
+                    "answer": answer.answer,
+                    "answered_by": answer.answered_by,
+                    "answered_at": answer.answered_at.isoformat() if answer.answered_at else None,
+                    "scoring_points": []
+                }
+                
+                if answer.scoring_points:
+                    for point in answer.scoring_points:
+                        if point.is_valid:
+                            answer_data["scoring_points"].append({
+                                "id": point.id,
+                                "answer": point.answer,
+                                "point_order": point.point_order,
+                                "answered_by": point.answered_by
+                            })
+                
+                question_data["std_answers"].append(answer_data)
+        
+        result.append(question_data)
+    
+    return result
+
+@router.get("/{dataset_id}/versions/{version}/std-answers")
+def get_dataset_std_answers_by_version(
+    dataset_id: int,
+    version: int,
+    include_deleted: bool = Query(False, description="Include deleted answers"),
+    db: Session = Depends(get_db)
+):
+    """根据数据集版本获取标准答案"""
+    from ..crud.crud_std_answer import get_std_answers_by_dataset_version
+    
+    # 验证数据集版本是否存在
+    dataset = db.query(Dataset).filter(
+        Dataset.id == dataset_id,
+        Dataset.version == version
+    ).first()
+    
+    if not dataset:
+        raise HTTPException(
+            status_code=404, 
+            detail=f"Dataset {dataset_id} version {version} not found"
+        )
+    
+    # 获取该版本的标准答案
+    answers = get_std_answers_by_dataset_version(
+        db=db,
+        dataset_id=dataset_id,
+        dataset_version=version,
+        include_deleted=include_deleted
+    )
+    
+    # 格式化返回数据
+    result = []
+    for answer in answers:
+        answer_data = {
+            "id": answer.id,
+            "std_question_id": answer.std_question_id,
+            "answer": answer.answer,
+            "is_valid": answer.is_valid,
+            "answered_by": answer.answered_by_user.username if answer.answered_by_user else "unknown",
+            "answered_at": answer.answered_at.isoformat() if answer.answered_at else None,
+            "version": answer.version,
+            "original_version_id": answer.original_version_id,
+            "current_version_id": answer.current_version_id,
+            "std_question": {
+                "id": answer.std_question.id,
+                "body": answer.std_question.body,
+                "question_type": answer.std_question.question_type
+            } if answer.std_question else None,
+            "scoring_points": []
+        }
+        
+        if answer.scoring_points:
+            for point in answer.scoring_points:
+                if point.is_valid or include_deleted:
+                    answer_data["scoring_points"].append({
+                        "id": point.id,
+                        "answer": point.answer,
+                        "point_order": point.point_order,
+                        "is_valid": point.is_valid,
+                        "answered_by": point.answered_by_user.username if point.answered_by_user else "unknown"
+                    })
+        
+        result.append(answer_data)
+    
+    return result

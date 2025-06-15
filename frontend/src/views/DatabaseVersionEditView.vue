@@ -15,11 +15,14 @@
           </p>
         </div>
       </div>      <div class="header-actions">
-        <button @click="previewChanges" class="preview-btn" :disabled="!hasChanges">
+        <button @click="previewChanges" class="preview-btn" :disabled="!workId || !hasChanges">
           📋 预览更改
         </button>
-        <button @click="saveVersion" class="save-version-btn" :disabled="saving || !hasChanges">
-          {{ saving ? "创建版本中..." : "创建新版本" }}
+        <button v-if="!workId" @click="saveVersion" class="save-version-btn" :disabled="saving">
+          {{ saving ? "创建新版本中..." : "创建新版本" }}
+        </button>
+        <button v-else @click="finalizeVersion" class="finalize-btn" :disabled="saving || !hasChanges">
+          {{ saving ? "完成版本中..." : "完成版本" }}
         </button>
       </div>
     </div>
@@ -48,10 +51,16 @@
             ➕ 手动创建
           </button>
         </div>
-      </div>
-
+      </div>      
       <!-- 标准问答对列表 -->
       <div class="qa-list">
+        <!-- 调试信息 -->
+        <div v-if="stdQuestions.length === 0" class="no-data">
+          <p>当前没有问答对数据</p>
+          <p>调试信息: versionWorkId = {{ workId }}, datasetId = {{ datasetId }}, versionId = {{ versionId }}</p>
+          <p>stdQuestions 长度: {{ stdQuestions.length }}</p>
+        </div>
+        
         <div 
           v-for="question in stdQuestions" 
           :key="question.id"
@@ -362,6 +371,7 @@ import { useRoute, useRouter } from 'vue-router';
 import { datasetService } from '@/services/datasetService';
 import { versionService } from '@/services/versionService';
 import { datasetVersionWorkService } from '@/services/datasetVersionWorkService';
+import { apiClient } from '@/services/api';
 
 // 路由
 const route = useRoute();
@@ -370,13 +380,13 @@ const router = useRouter();
 // 响应式数据
 const datasetId = computed(() => route.params.datasetId as string);
 const versionId = computed(() => route.params.versionId as string);
+const workId = computed(() => route.params.workId as string); // 版本工作ID
 const currentDataset = ref<any>(null);
 const currentVersion = ref<any>(null);
-const versionWorkId = ref<number | null>(null); // 版本工作ID
 
 // 编辑相关
 const stdQuestions = ref<any[]>([]);
-const modifiedItems = ref<number[]>([]);
+const modifiedItems = ref<(number | string)[]>([]);
 const saving = ref(false);
 const hasChanges = computed(() => modifiedItems.value.length > 0);
 const showEditModal = ref(false);
@@ -417,13 +427,14 @@ const goBackToDatabase = () => {
 };
 
 const goToManualCreation = () => {
-  // 跳转到手动创建页面，并传递版本信息
+  // 跳转到手动创建页面，并传递版本信息和workId
   router.push({
     name: 'ManualStdQaCreation',
     params: { datasetId: datasetId.value },
     query: { 
       fromVersion: 'true',
-      versionId: versionId.value 
+      versionId: versionId.value,
+      workId: workId.value
     }
   });
 };
@@ -447,7 +458,18 @@ const loadDataset = async () => {
 
 const loadVersion = async () => {
   try {
-    currentVersion.value = await versionService.getVersion(Number(versionId.value));
+    // 获取数据集信息
+    const dataset = await datasetService.getDataset(Number(datasetId.value));
+    if (dataset) {
+      currentVersion.value = {
+        id: versionId.value,
+        version: Number(versionId.value),
+        name: dataset.name,
+        description: dataset.description
+      };
+    } else {
+      throw new Error('Dataset not found');
+    }
   } catch (error) {
     showMessage('加载版本信息失败', 'error');
     console.error('Load version error:', error);
@@ -455,18 +477,117 @@ const loadVersion = async () => {
 };
 
 const loadStdQuestions = async () => {
+  console.log('开始加载标准问题，workId:', workId.value);
+  
+  if (!workId.value) {
+    // 如果没有workId，显示错误
+    showMessage('缺少版本工作ID，无法加载数据', 'error');
+    stdQuestions.value = [];
+    modifiedItems.value = [];
+    return;
+  }
+  
   try {
-    // 加载版本中的标准问答对
-    stdQuestions.value = await versionService.getVersionQuestions(Number(versionId.value));
+    // 1. 获取版本工作信息，确定要加载哪个版本的数据
+    const versionWork = await datasetVersionWorkService.getVersionWork(Number(workId.value));
+    console.log('版本工作信息:', versionWork);
     
-    // 初始化修改项列表 - 检查哪些问题已经被修改
-    modifiedItems.value = stdQuestions.value
-      .filter(question => question.is_modified)
-      .map(question => question.id);
-      
+    // 2. 加载旧版本（current_version）的问答对数据
+    const questions = await datasetService.getDatasetStdQA(
+      Number(datasetId.value), 
+      versionWork.current_version
+    );
+    
+    console.log('加载的旧版本问答对数据:', questions);
+    
+    // 3. 加载版本工作表中的修改记录
+    const versionQuestions = await datasetVersionWorkService.getVersionQuestions(Number(workId.value));
+    console.log('版本工作表中的问题记录:', versionQuestions);
+    
+    // 4. 合并数据：旧版本数据 + 新增数据
+    const allQuestions = [...questions];
+    
+    // 5. 处理新增的数据（is_new的记录）
+    versionQuestions.forEach((vq: any) => {
+      if (vq.is_new && !vq.is_deleted) {
+        // 创建新增问题的显示对象
+        const newQuestion = {
+          id: vq.original_question_id || `new_${vq.id}`, // 使用标准问题ID或版本问题ID作为标识
+          body: vq.modified_body,
+          question_type: vq.modified_question_type || 'text',
+          is_valid: true,
+          tags: [], // 新增问题暂时没有标签
+          std_answers: [], // 新增问题的答案需要单独处理
+          is_new: true // 标记为新增
+        };
+        
+        // 检查是否已经存在（避免重复）
+        const exists = allQuestions.some((q: any) => q.id === newQuestion.id);
+        if (!exists) {
+          allQuestions.push(newQuestion);
+        }
+      }
+    });
+    
+    // 6. 处理新增问题的答案
+    for (const question of allQuestions) {
+      if (question.is_new) {
+        // 查找对应的版本问题
+        const versionQuestion = versionQuestions.find((vq: any) => 
+          (vq.original_question_id === question.id) || 
+          (question.id === `new_${vq.id}` && vq.id === parseInt(question.id.replace('new_', '')))
+        );
+        
+        if (versionQuestion && versionQuestion.version_answers) {
+          // 使用版本答案信息
+          question.std_answers = versionQuestion.version_answers.map((va: any) => ({
+            id: va.original_answer_id || `new_answer_${va.id}`,
+            answer: va.modified_answer || '',
+            answered_by: va.modified_answered_by || '',
+            scoring_points: [], // 暂时不处理得分点
+            is_new: true
+          }));
+        } else {
+          // 如果没有找到答案，使用默认值
+          question.std_answers = [{
+            id: `new_answer_${versionQuestion?.id || 'unknown'}`,
+            answer: versionQuestion?.modified_answer || '',
+            answered_by: '',
+            scoring_points: [],
+            is_new: true
+          }];
+        }
+      }
+    }
+    
+    stdQuestions.value = allQuestions;
+    
+    // 7. 根据版本工作表记录判断修改项
+    modifiedItems.value = [];
+    versionQuestions.forEach((vq: any) => {
+      if (vq.is_modified || vq.is_new || vq.is_deleted) {
+        // 如果是修改、新增或删除的记录，都算作修改项
+        if (vq.original_question_id) {
+          // 对于修改、删除或新增的问题
+          if (!modifiedItems.value.includes(vq.original_question_id)) {
+            modifiedItems.value.push(vq.original_question_id);
+          }
+        } else if (vq.is_new) {
+          // 对于新增的问题，使用版本问题ID作为标识
+          const newId = `new_${vq.id}`;
+          if (!modifiedItems.value.includes(newId)) {
+            modifiedItems.value.push(newId);
+          }
+        }
+      }
+    });
+    
+    console.log('合并后的问答对数据:', stdQuestions.value);
+    console.log('已修改的问答对:', modifiedItems.value);
+    
   } catch (error) {
-    showMessage('加载问答对失败', 'error');
-    console.error('Load std questions error:', error);
+    showMessage('加载数据失败: ' + (error as any).message, 'error');
+    console.error('Load data error:', error);
   }
 };
 
@@ -494,17 +615,54 @@ const editQuestion = (question: any) => {
 const saveEdit = async () => {
   editSaving.value = true;
   try {
-    // 这里实现保存编辑的逻辑，需要后端支持版本管理
-    const updatedQuestion = await versionService.updateVersionQuestion(
-      Number(currentVersion.value.id), 
-      editForm.value.id, 
-      editForm.value
+    if (!workId.value) {
+      showMessage('缺少版本工作ID，无法保存', 'error');
+      return;
+    }
+    
+    // 检查是否有实际修改
+    const originalQuestion = stdQuestions.value.find(q => q.id === editForm.value.id);
+    if (!originalQuestion) {
+      showMessage('找不到原始问题', 'error');
+      return;
+    }
+    
+    // 检查是否有实际修改
+    const hasChanges = 
+      originalQuestion.body !== editForm.value.body ||
+      originalQuestion.question_type !== editForm.value.question_type ||
+      JSON.stringify(originalQuestion.tags || []) !== JSON.stringify(editForm.value.tags || []) ||
+      JSON.stringify(originalQuestion.std_answers || []) !== JSON.stringify(editForm.value.std_answers || []);
+    
+    if (!hasChanges) {
+      showMessage('没有修改内容', 'error');
+      return;
+    }
+    
+    // 通过版本工作API记录修改
+    const updateData = {
+      original_question_id: editForm.value.id,
+      is_modified: true,
+      modified_body: editForm.value.body,
+      modified_question_type: editForm.value.question_type as 'text' | 'choice'
+    };
+    
+    // 创建或更新版本问题记录
+    await datasetVersionWorkService.createVersionQuestion(
+      Number(workId.value),
+      updateData
     );
     
     // 更新本地数据
     const index = stdQuestions.value.findIndex(q => q.id === editForm.value.id);
     if (index !== -1) {
-      stdQuestions.value[index] = updatedQuestion;
+      stdQuestions.value[index] = {
+        ...stdQuestions.value[index],
+        body: editForm.value.body,
+        question_type: editForm.value.question_type,
+        tags: editForm.value.tags,
+        std_answers: editForm.value.std_answers
+      };
     }
     
     // 添加到修改列表
@@ -525,10 +683,31 @@ const saveEdit = async () => {
 const deleteQuestion = async (questionId: number) => {
   if (!confirm('确定要删除这个问答对吗？')) return;
   
+  if (!workId.value) {
+    showMessage('缺少版本工作ID，无法删除', 'error');
+    return;
+  }
+  
   try {
-    await versionService.deleteVersionQuestion(Number(currentVersion.value.id), questionId);
+    // 通过版本工作API记录删除操作
+    const deleteData = {
+      original_question_id: questionId,
+      is_deleted: true
+    };
+    
+    await datasetVersionWorkService.createVersionQuestion(
+      Number(workId.value),
+      deleteData
+    );
+    
+    // 从本地列表中移除
     stdQuestions.value = stdQuestions.value.filter(q => q.id !== questionId);
-    modifiedItems.value = modifiedItems.value.filter(id => id !== questionId);
+    
+    // 添加到修改列表
+    if (!modifiedItems.value.includes(questionId)) {
+      modifiedItems.value.push(questionId);
+    }
+    
     showMessage('删除成功', 'success');
   } catch (error) {
     showMessage('删除失败', 'error');
@@ -539,27 +718,56 @@ const deleteQuestion = async (questionId: number) => {
 const createNewQA = async () => {
   createSaving.value = true;
   try {
-    const newQuestion = await versionService.createVersionQA(Number(currentVersion.value.id), {
-      question: {
-        body: createForm.value.body,
-        question_type: createForm.value.question_type,
-        tags: []
-      },
-      answer: {
-        answer: createForm.value.answer
-      }    });
+    if (!workId.value) {
+      showMessage('缺少版本工作ID，无法创建', 'error');
+      return;
+    }
     
-    stdQuestions.value.push(newQuestion);
+    // 使用版本工作表的API创建完整的标准问答对
+    const qaData = {
+      question: createForm.value.body,
+      answer: createForm.value.answer,
+      question_type: createForm.value.question_type as 'text' | 'choice',
+      key_points: [],
+      raw_question_ids: [],
+      raw_answer_ids: [],
+      expert_answer_ids: [],
+      tags: []
+    };
     
-    // 新创建的问答对也算作修改项
-    if (newQuestion.id && !modifiedItems.value.includes(newQuestion.id)) {
-      modifiedItems.value.push(newQuestion.id);
+    const response = await datasetVersionWorkService.createVersionStdQaPair(
+      Number(workId.value),
+      qaData
+    );
+    
+    // 添加到本地列表（使用标准问答对ID）
+    const questionToAdd = {
+      id: response.std_question_id, // 使用标准问题ID
+      body: createForm.value.body,
+      question_type: createForm.value.question_type,
+      is_valid: true,
+      tags: [],
+      std_answers: [{
+        id: response.std_answer_id, // 使用标准答案ID
+        answer: createForm.value.answer,
+        answered_by: '',
+        scoring_points: [],
+        is_new: true // 标记为新增
+      }],
+      is_new: true // 标记为新增
+    };
+    
+    stdQuestions.value.push(questionToAdd);
+    
+    // 新创建的问答对算作修改项
+    if (!modifiedItems.value.includes(response.std_question_id)) {
+      modifiedItems.value.push(response.std_question_id);
     }
     
     showMessage('创建成功', 'success');
     closeCreateModal();
   } catch (error) {
-    showMessage('创建失败', 'error');
+    showMessage('创建失败: ' + (error as any).message, 'error');
     console.error('Create QA error:', error);
   } finally {
     createSaving.value = false;
@@ -567,37 +775,76 @@ const createNewQA = async () => {
 };
 
 const saveVersion = async () => {
+  if (!currentDataset.value || !currentVersion.value) {
+    showMessage('数据集或版本信息不完整', 'error');
+    return;
+  }
+  
+  // 询问用户确认
+  const confirmed = confirm('确定要创建新版本吗？\n\n这将创建一个基于当前版本的新版本供您编辑。');
+  if (!confirmed) return;
+  
+  saving.value = true;
+  try {
+    // 创建版本工作，连接旧版本和新版本
+    const versionWork = await datasetVersionWorkService.createVersionWork({
+      dataset_id: Number(datasetId.value),
+      current_version: Number(versionId.value),  // 源版本
+      target_version: Number(versionId.value) + 1,  // 目标版本 = 当前版本 + 1
+      work_description: `从版本 ${versionId.value} 创建新版本`,
+      notes: `用户创建的新版本`
+    });
+    
+    // 跳转到新的编辑页面，传递workId
+    router.push({
+      name: 'DatabaseVersionEdit',
+      params: {
+        datasetId: datasetId.value,
+        versionId: Number(versionId.value) + 1,
+        workId: versionWork.id
+      }
+    });
+    
+  } catch (error: any) {
+    showMessage('创建版本失败: ' + (error.response?.data?.detail || error.message), 'error');
+    console.error('Create version error:', error);
+  } finally {
+    saving.value = false;
+  }
+};
+
+const finalizeVersion = async () => {
   if (!hasChanges.value) {
     showMessage('没有修改需要保存', 'error');
     return;
   }
   
-  if (!versionWorkId.value) {
-    showMessage('版本工作ID不存在，无法创建版本', 'error');
+  if (!workId.value) {
+    showMessage('版本工作ID不存在，无法完成版本', 'error');
     return;
   }
   
   // 询问用户确认
-  const confirmed = confirm('确定要创建新版本吗？\n\n这将应用所有修改并创建数据集的新版本。');
+  const confirmed = confirm('确定要完成并发布新版本吗？\n\n这将应用所有修改并完成新版本的创建。');
   if (!confirmed) return;
   
   saving.value = true;
   try {
-    const result = await datasetVersionWorkService.createNewVersion(versionWorkId.value);
+    const result = await datasetVersionWorkService.createNewVersion(Number(workId.value));
     
     if (result.success) {
-      showMessage(`版本创建成功！新版本号: ${result.version_info.version}`, 'success');
+      showMessage(`版本完成！新版本号: ${result.version_info.version}`, 'success');
       
       // 跳转回数据库管理
       setTimeout(() => {
         goBackToDatabase();
       }, 2000);
     } else {
-      showMessage(result.message || '版本创建失败', 'error');
+      showMessage(result.message || '版本完成失败', 'error');
     }
   } catch (error: any) {
-    showMessage(error.response?.data?.detail || '版本创建失败', 'error');
-    console.error('Create version error:', error);
+    showMessage(error.response?.data?.detail || '版本完成失败', 'error');
+    console.error('Finalize version error:', error);
   } finally {
     saving.value = false;
   }
@@ -713,122 +960,60 @@ const clearImportPreview = () => {
 const confirmImport = async () => {
   importing.value = true;
   try {
-    const response = await versionService.importDataToVersion(Number(currentVersion.value.id), importPreviewData.value);
+    if (!workId.value) {
+      showMessage('缺少版本工作ID，无法导入', 'error');
+      return;
+    }
+    
+    let importedCount = 0;
+    
+    // 使用版本工作表的API逐个创建标准问答对
+    for (const item of importPreviewData.value) {
+      try {
+        const qaData = {
+          question: item.body || '',
+          answer: item.answer || '',
+          question_type: (item.question_type || 'text') as 'text' | 'choice',
+          key_points: [],
+          raw_question_ids: [],
+          raw_answer_ids: [],
+          expert_answer_ids: [],
+          tags: item.tags || []
+        };
+        
+        await datasetVersionWorkService.createVersionStdQaPair(
+          Number(workId.value),
+          qaData
+        );
+        importedCount++;
+      } catch (error) {
+        console.error('导入单个问答对失败:', error);
+        // 继续导入其他项目
+      }
+    }
     
     // 重新加载数据
     await loadStdQuestions();
-    showMessage(`成功导入 ${response.imported} 条记录`, 'success');
+    showMessage(`成功导入 ${importedCount} 条记录`, 'success');
     closeImportModal();
   } catch (error) {
-    showMessage('导入失败', 'error');
+    showMessage('导入失败: ' + (error as any).message, 'error');
     console.error('Import error:', error);
   } finally {
     importing.value = false;
   }
 };
 
-// 初始化版本工作
-const initVersionWork = async () => {
-  try {
-    // 检查路由参数中是否传递了versionWorkId
-    const workId = route.query.workId as string;
-    if (workId) {
-      versionWorkId.value = Number(workId);
-      return;
-    }
-    
-    // 如果没有传递工作ID，创建一个新的版本工作
-    if (currentDataset.value && currentVersion.value) {
-      const newVersionWork = await datasetVersionWorkService.createVersionWork({
-        dataset_id: Number(datasetId.value),
-        current_version: currentVersion.value.version || 1,
-        target_version: (currentVersion.value.version || 1) + 1,
-        work_description: `编辑版本 ${currentVersion.value.version || 1} 创建新版本`,
-        notes: `基于版本 ${currentVersion.value.version || 1} 的修改`
-      });
-      
-      versionWorkId.value = newVersionWork.id;
-      
-      // 加载当前版本的数据到版本工作中
-      await datasetVersionWorkService.loadDatasetToVersionWork(
-        newVersionWork.id,
-        Number(datasetId.value),
-        currentVersion.value.version || 1
-      );
-      
-      // 重新加载数据以显示加载的内容
-      await loadVersionWorkData();
-      
-      showMessage('版本工作环境初始化成功', 'success');
-    }
-  } catch (error: any) {
-    showMessage('初始化版本工作失败: ' + (error.response?.data?.detail || error.message), 'error');
-    console.error('Init version work error:', error);
-  }
-};
-
-const loadVersionWorkData = async () => {
-  if (!versionWorkId.value) return;
-  
-  try {
-    // 获取版本工作的详细信息
-    const versionWork = await datasetVersionWorkService.getVersionWork(versionWorkId.value);
-    
-    // 从版本工作中构建标准问题列表
-    const workQuestions = versionWork.version_questions || [];
-    stdQuestions.value = workQuestions.map((vq: any) => {
-      // 如果是新问题或修改的问题，使用修改后的内容
-      const questionData = vq.is_new || vq.is_modified ? {
-        id: vq.id,
-        body: vq.modified_body || '',
-        question_type: vq.modified_question_type || 'text',
-        is_valid: true,
-        tags: vq.version_tags?.map((tag: any) => tag.tag_label) || [],
-        std_answers: vq.version_answers?.map((va: any) => ({
-          id: va.id,
-          answer: va.modified_answer || '',
-          answered_by: va.modified_answered_by,
-          scoring_points: va.version_scoring_points?.map((vp: any) => ({
-            id: vp.id,
-            answer: vp.modified_answer || '',
-            point_order: vp.modified_point_order || 0
-          })) || []
-        })) || []
-      } : {
-        // 未修改的问题，使用原始内容
-        id: vq.original_question?.id || vq.id,
-        body: vq.original_question?.body || '',
-        question_type: vq.original_question?.question_type || 'text',
-        is_valid: vq.original_question?.is_valid || true,
-        tags: vq.version_tags?.map((tag: any) => tag.tag_label) || [],
-        std_answers: vq.original_question?.std_answers?.map((answer: any) => ({
-          id: answer.id,
-          answer: answer.answer,
-          answered_by: answer.answered_by,
-          scoring_points: answer.scoring_points || []
-        })) || []
-      };
-      
-      return questionData;
-    }).filter((q: any) => !workQuestions.find((vq: any) => vq.id === q.id && vq.is_deleted));
-    
-    // 计算修改的项目
-    modifiedItems.value = workQuestions
-      .filter((vq: any) => vq.is_modified || vq.is_new || vq.is_deleted)
-      .map((vq: any) => vq.id);
-      
-  } catch (error: any) {
-    showMessage('加载版本工作数据失败: ' + (error.response?.data?.detail || error.message), 'error');
-    console.error('Load version work data error:', error);
-  }
-};
-
 // 生命周期
 onMounted(async () => {
+  console.log('组件挂载，开始加载数据');
+  console.log('路由参数:', { datasetId: datasetId.value, versionId: versionId.value, workId: workId.value });
+  
   await loadDataset();
   await loadVersion();
   await loadStdQuestions();
-  await initVersionWork();
+  
+  console.log('数据加载完成，stdQuestions长度:', stdQuestions.value.length);
 });
 </script>
 
@@ -917,6 +1102,26 @@ onMounted(async () => {
   cursor: not-allowed;
   transform: none;
   box-shadow: none;
+}
+
+.finalize-btn {
+  background: #28a745;
+  color: white;
+  border: none;
+  padding: 10px 20px;
+  border-radius: 5px;
+  cursor: pointer;
+  transition: background-color 0.2s ease;
+}
+
+.finalize-btn:hover:not(:disabled) {
+  background: #218838;
+}
+
+.finalize-btn:disabled {
+  background: #e9ecef;
+  color: #6c757d;
+  cursor: not-allowed;
 }
 
 .version-description-section {
@@ -1574,5 +1779,25 @@ onMounted(async () => {
   background: #e9ecef;
   color: #6c757d;
   cursor: not-allowed;
+}
+
+.no-data {
+  text-align: center;
+  padding: 40px 20px;
+  background: #f8f9fa;
+  border: 2px dashed #dee2e6;
+  border-radius: 8px;
+  margin: 20px 0;
+}
+
+.no-data p {
+  margin: 10px 0;
+  color: #6c757d;
+}
+
+.no-data p:first-child {
+  font-size: 18px;
+  font-weight: 500;
+  color: #495057;
 }
 </style>

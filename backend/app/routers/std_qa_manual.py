@@ -118,7 +118,10 @@ async def create_manual_std_qa(
             std_question_id=std_question.id,
             answer=std_qa_data.answer,
             answered_by=current_user.id,
-            is_valid=True
+            is_valid=True,
+            version=1,
+            original_version_id=current_version,  # 记录创建时的数据集版本
+            current_version_id=current_version  # 当前所在的数据集版本
         )
         db.add(std_answer)
         db.flush()  # 获取ID但不提交事务        

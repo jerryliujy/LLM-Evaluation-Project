@@ -102,10 +102,14 @@ CREATE TABLE `StdAnswer` (
   `answered_at` DATETIME NOT NULL DEFAULT CURRENT_TIMESTAMP,
   `version` INT NOT NULL DEFAULT 1,
   `previous_version_id` INT DEFAULT NULL, -- 指向前一个版本
+  `original_version_id` INT NOT NULL,  -- 最初创建时的版本号
+  `current_version_id` INT NOT NULL,  -- 当前所在的版本号
   PRIMARY KEY (`id`),
   KEY `idx_sa_stdq` (`std_question_id`),
   INDEX `idx_stdanswer_version` (`version`),
   INDEX `idx_stdanswer_valid` (`is_valid`),
+  INDEX `idx_stdanswer_original_version` (`original_version_id`),
+  INDEX `idx_stdanswer_current_version` (`current_version_id`),
   CONSTRAINT `fk_stdanswer_user`
     FOREIGN KEY (`answered_by`) REFERENCES `User` (`id`)
     ON DELETE SET NULL ON UPDATE CASCADE,

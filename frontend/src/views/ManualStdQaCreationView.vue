@@ -409,6 +409,7 @@
 import { ref, onMounted, computed, watch } from 'vue'
 import { useRoute, useRouter } from 'vue-router'
 import { datasetService } from '@/services/datasetService'
+import { datasetVersionWorkService } from '@/services/datasetVersionWorkService'
 import { databaseService } from '@/services/databaseService'
 import { apiClient } from '@/services/api'
 import { formatDate } from '@/utils/formatters'
@@ -428,6 +429,7 @@ const errorMessage = ref('')
 // 版本相关数据
 const isFromVersion = computed(() => route.query.fromVersion === 'true')
 const versionId = computed(() => route.query.versionId as string)
+const workId = computed(() => route.query.workId as string)
 
 // 表单数据
 const stdQaForm = ref({
@@ -519,12 +521,13 @@ watch(activeTab, () => {
 // 方法
 const goBack = () => {
   if (isFromVersion.value) {
-    // 返回版本编辑页面，使用正确的路由参数
+    // 返回版本编辑页面，使用正确的路由参数，包括workId
     router.push({
       name: 'DatabaseVersionEdit',
       params: { 
         datasetId: datasetId.value,
-        versionId: versionId.value 
+        versionId: versionId.value,
+        workId: workId.value
       }
     })
   } else {
@@ -919,21 +922,30 @@ const createStdQaPair = async (payload: any) => {
 
 // 在版本模式下创建标准问答对的API调用
 const createStdQaPairForVersion = async (payload: any) => {
-  // 转换数据格式以适配版本API
-  const versionPayload = {
-    question: {
-      body: payload.question,
-      question_type: payload.question_type,
-      tags: payload.tags || []
-    },
-    answer: {
-      answer: payload.answer,
-      answered_by: payload.answered_by
-    }
+  if (!workId.value) {
+    throw new Error('Missing workId for version creation');
   }
   
-  const response = await apiClient.post(`/versions/${versionId.value}/std-qa`, versionPayload)
-  return response.data
+  // 使用版本工作空间的API创建标准问答对
+  const response = await datasetVersionWorkService.createVersionStdQaPair(
+    Number(workId.value),
+    {
+      question: payload.question,
+      answer: payload.answer,
+      question_type: payload.question_type,
+      key_points: payload.key_points || [],
+      raw_question_ids: payload.raw_question_ids || [],
+      raw_answer_ids: payload.raw_answer_ids || [],
+      expert_answer_ids: payload.expert_answer_ids || [],
+      tags: payload.tags || []
+    }
+  );
+  
+  // 返回标准问答对ID，而不是版本工作表ID
+  return {
+    std_question_id: response.std_question_id,
+    std_answer_id: response.std_answer_id
+  };
 }
 
 // 监听错误消息，5秒后自动清除

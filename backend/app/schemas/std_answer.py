@@ -8,7 +8,9 @@ class StdAnswerBase(BaseModel):
     is_valid: bool = True
     answered_by: Optional[int] = None  # 创建时传入用户ID
     version: int = 1
-    previous_version_id: Optional[int] = None
+    previous_version_id: Optional[int] = None    # 版本区间字段
+    original_version_id: Optional[int] = None  # 最早出现的版本
+    current_version_id: Optional[int] = None   # 当前有效的最新版本
 
 class StdAnswerCreate(StdAnswerBase):
     pass
@@ -45,16 +47,23 @@ class StdAnswerResponse(StdAnswerBase):
             answered_at=db_obj.answered_at,
             version=db_obj.version,
             previous_version_id=db_obj.previous_version_id,
-            scoring_points=[
+            original_version_id=db_obj.original_version_id,
+            current_version_id=db_obj.current_version_id,            scoring_points=[
                 StdAnswerScoringPointResponse.from_db_model(sp) 
                 for sp in db_obj.scoring_points if sp.is_valid
-            ] if db_obj.scoring_points else []
+            ] if db_obj.scoring_points else [],
+            std_question={
+                "id": db_obj.std_question.id,
+                "body": db_obj.std_question.body,
+                "question_type": db_obj.std_question.question_type,
+                "dataset_id": db_obj.std_question.dataset_id
+            } if db_obj.std_question else None
         )
 
 class StdAnswerInDB(StdAnswerBase):
     id: int
-    answered_at: datetime  # 使用 answered_at 而不是 create_time
-    answered_by: Optional[str] = None  # 添加 answered_by 字段
+    answered_at: datetime  
+    answered_by: Optional[str] = None  
     
     class Config:
         from_attributes = True

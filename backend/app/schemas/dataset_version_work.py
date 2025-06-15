@@ -2,7 +2,7 @@
 Dataset Version Work schemas for API serialization
 """
 from pydantic import BaseModel, Field
-from typing import Optional, List
+from typing import Optional, List, Dict, Any
 from datetime import datetime
 from enum import Enum
 
@@ -215,6 +215,31 @@ class DatasetVersionWorkSummary(BaseModel):
     modified_questions: int = 0
     new_questions: int = 0
     deleted_questions: int = 0
+    
+    class Config:
+        from_attributes = True
+
+
+# ============ Complete Standard QA Creation Schema ============
+
+class VersionStdQaPairCreate(BaseModel):
+    """创建完整版本标准问答对Schema"""
+    question: str = Field(..., description="问题内容")
+    answer: str = Field(..., description="答案内容")
+    question_type: QuestionType = Field(QuestionType.TEXT, description="问题类型")
+    key_points: List[Dict[str, Any]] = Field(default_factory=list, description="得分点列表")
+    raw_question_ids: List[int] = Field(default_factory=list, description="关联的原始问题ID列表")
+    raw_answer_ids: List[int] = Field(default_factory=list, description="关联的原始答案ID列表")
+    expert_answer_ids: List[int] = Field(default_factory=list, description="关联的专家答案ID列表")
+    tags: List[str] = Field(default_factory=list, description="标签列表")
+
+
+class VersionStdQaPairResponse(BaseModel):
+    """版本标准问答对响应Schema"""
+    question_id: int
+    answer_id: int
+    scoring_point_ids: List[int] = Field(default_factory=list)
+    tag_ids: List[int] = Field(default_factory=list)
     
     class Config:
         from_attributes = True

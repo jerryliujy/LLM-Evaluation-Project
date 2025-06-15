@@ -57,7 +57,14 @@ def create_dataset_version_work(
 def get_dataset_version_work(db: Session, work_id: int) -> Optional[DatasetVersionWork]:
     """获取数据集版本工作详情"""
     return db.query(DatasetVersionWork).options(
-        joinedload(DatasetVersionWork.version_questions).joinedload(VersionStdQuestion.version_tags),
+        joinedload(DatasetVersionWork.version_questions)
+            .joinedload(VersionStdQuestion.original_question)
+            .joinedload(StdQuestion.std_answers),
+        joinedload(DatasetVersionWork.version_questions)
+            .joinedload(VersionStdQuestion.version_tags),
+        joinedload(DatasetVersionWork.version_questions)
+            .joinedload(VersionStdQuestion.version_answers)
+            .joinedload(VersionStdAnswer.version_scoring_points),
         joinedload(DatasetVersionWork.version_answers),
         joinedload(DatasetVersionWork.version_scoring_points),
         joinedload(DatasetVersionWork.version_tags)
@@ -144,15 +151,41 @@ def complete_dataset_version_work(
         return None
     
     try:
-        # 应用所有修改到实际数据集，创建新版本
+        # 1. 首先创建新的数据集版本
+        from ..crud.crud_dataset import create_dataset_version, get_latest_dataset_version
+        from ..schemas.dataset import DatasetUpdate
+        
+        # 获取当前数据集信息
+        current_dataset = db.query(Dataset).filter(
+            Dataset.id == work.dataset_id,
+            Dataset.version == work.current_version
+        ).first()
+        
+        if not current_dataset:
+            raise ValueError(f"Current dataset version {work.current_version} not found")
+        
+        # 创建新版本的数据集
+        new_dataset = Dataset(
+            id=work.dataset_id,
+            name=current_dataset.name,
+            description=current_dataset.description,
+            version=work.target_version,
+            created_by=current_dataset.created_by,
+            is_public=current_dataset.is_public
+        )
+        db.add(new_dataset)
+        db.flush()
+        
+        # 2. 应用版本工作表中的修改（包括复制未修改的问答对）
         _apply_version_changes(db, work)
         
+        # 3. 更新版本工作状态
         work.work_status = WorkStatus.COMPLETED
         work.completed_at = datetime.utcnow()
         
         db.commit()
-        db.refresh(work)
         return work
+        
     except Exception as e:
         db.rollback()
         raise e
@@ -359,45 +392,69 @@ def _apply_version_changes(db: Session, work: DatasetVersionWork):
     from ..models.tag import Tag
     from ..crud.crud_std_question import get_std_question_tags
     
-    # 1. 创建新的数据集版本
-    new_dataset_version = Dataset(
-        id=work.dataset_id,
-        version=work.target_version,
-        name=f"Dataset {work.dataset_id} v{work.target_version}",
-        description=work.work_description or f"Version {work.target_version}",
-        created_by=work.created_by,
-        is_public=False,
-        is_valid=True
-    )
-    db.add(new_dataset_version)
+    # 1. 验证目标数据集版本存在（现在应该已经创建了）
+    target_dataset = db.query(Dataset).filter(
+        Dataset.id == work.dataset_id,
+        Dataset.version == work.target_version
+    ).first()
     
-    # 2. 处理所有版本问题
+    if not target_dataset:
+        raise ValueError(f"Target dataset version {work.target_version} not found. Please ensure the dataset version was created.")
+    
+    # 2. 获取当前版本的所有问题
+    current_questions = db.query(StdQuestion).filter(
+        StdQuestion.dataset_id == work.dataset_id,
+        StdQuestion.current_version_id == work.current_version,
+        StdQuestion.is_valid == True
+    ).all()
+    
+    # 3. 获取版本工作表中的所有问题记录
     version_questions = db.query(VersionStdQuestion).filter(
         VersionStdQuestion.version_work_id == work.id
     ).all()
     
+    # 4. 处理所有版本问题
     for v_question in version_questions:
         if v_question.is_deleted:
-            # 跳过已删除的问题
-            continue
-            
-        if v_question.is_new or v_question.is_modified:
-            # 创建新的标准问题
-            new_question = _create_new_std_question(db, v_question, work)
-            
-            # 处理该问题的答案
-            _process_question_answers(db, v_question, new_question, work)
-            
-        else:
-            # 未修改的问题，只更新 current_version_id
+            # 删除的问题：将原始问题标记为无效
             if v_question.original_question_id:
                 original_question = db.query(StdQuestion).filter(
                     StdQuestion.id == v_question.original_question_id
                 ).first()
                 if original_question:
+                    original_question.is_valid = False
+            continue
+            
+        if v_question.is_new:
+            # 新增的问题：已经在create_version_std_qa_pair中创建到标准表中
+            # 这里不需要额外处理，只需要确保版本ID正确
+            if v_question.original_question_id:
+                new_question = db.query(StdQuestion).filter(
+                    StdQuestion.id == v_question.original_question_id
+                ).first()
+                if new_question:
+                    # 确保版本ID指向目标版本
+                    new_question.current_version_id = work.target_version
+        elif v_question.is_modified:
+            # 修改的问题：创建新的问题
+            new_question = _create_new_std_question(db, v_question, work)
+            _process_question_answers(db, v_question, new_question, work)
+        else:
+            # 未修改的问题，直接复制到新版本
+            if v_question.original_question_id:
+                original_question = db.query(StdQuestion).filter(
+                    StdQuestion.id == v_question.original_question_id
+                ).first()
+                if original_question:
+                    # 扩展原始问题的版本区间到包含新版本
                     original_question.current_version_id = work.target_version
     
-    db.flush()  # 确保所有更改都被写入
+    # 5. 处理未在版本工作表中记录的问题（完全未修改的问题）
+    modified_question_ids = {vq.original_question_id for vq in version_questions if vq.original_question_id}
+    for question in current_questions:
+        if question.id not in modified_question_ids:
+            # 这个问题完全没有被修改，直接扩展版本区间
+            question.current_version_id = work.target_version
 
 
 def _create_new_std_question(db: Session, v_question: VersionStdQuestion, work: DatasetVersionWork) -> StdQuestion:
@@ -408,6 +465,8 @@ def _create_new_std_question(db: Session, v_question: VersionStdQuestion, work: 
     if v_question.is_new:
         body = v_question.modified_body
         question_type = v_question.modified_question_type or 'text'
+        # 新增问题的版本ID逻辑：original_version_id和current_version_id都指向目标版本
+        # 这样新增的数据不会与原有版本产生关联
         original_version_id = work.target_version
         previous_version_id = None
     else:  # is_modified
@@ -467,15 +526,17 @@ def _process_question_answers(db: Session, v_question: VersionStdQuestion, new_q
                 original_answer = db.query(StdAnswer).filter(
                     StdAnswer.id == v_answer.original_answer_id
                 ).first()
-                if original_answer:
-                    # 创建答案副本
+                if original_answer:                    # 创建答案副本
                     new_answer = StdAnswer(
                         std_question_id=new_question.id,
                         answer=original_answer.answer,
                         is_valid=original_answer.is_valid,
                         answered_by=original_answer.answered_by,
                         version=1,
-                        previous_version_id=v_answer.original_answer_id
+                        previous_version_id=v_answer.original_answer_id,
+                        # 设置版本区间：继承原答案的起始版本，当前版本为目标版本
+                        original_version_id=original_answer.original_version_id or original_answer.id,
+                        current_version_id=work.target_version
                     )
                     db.add(new_answer)
                     db.flush()
@@ -492,6 +553,9 @@ def _create_new_std_answer(db: Session, v_answer: VersionStdAnswer, new_question
         answer_text = v_answer.modified_answer
         answered_by = v_answer.modified_answered_by or work.created_by
         previous_version_id = None
+        # 新增答案的版本ID逻辑：original_version_id和current_version_id都指向目标版本
+        # 这样新增的数据不会与原有版本产生关联
+        original_version_id = work.target_version
     else:  # is_modified
         original_answer = db.query(StdAnswer).filter(
             StdAnswer.id == v_answer.original_answer_id
@@ -500,6 +564,7 @@ def _create_new_std_answer(db: Session, v_answer: VersionStdAnswer, new_question
         answer_text = v_answer.modified_answer or original_answer.answer
         answered_by = v_answer.modified_answered_by or original_answer.answered_by
         previous_version_id = v_answer.original_answer_id
+        original_version_id = original_answer.original_version_id or original_answer.id
     
     new_answer = StdAnswer(
         std_question_id=new_question.id,
@@ -507,7 +572,9 @@ def _create_new_std_answer(db: Session, v_answer: VersionStdAnswer, new_question
         is_valid=True,
         answered_by=answered_by,
         version=1,
-        previous_version_id=previous_version_id
+        previous_version_id=previous_version_id,
+        original_version_id=original_version_id,
+        current_version_id=work.target_version
     )
     
     db.add(new_answer)
@@ -616,9 +683,8 @@ def _process_question_tags(db: Session, v_question: VersionStdQuestion, new_ques
             tag = Tag(tag_label=v_tag.tag_label)
             db.add(tag)
             db.flush()
-        
-        # 创建问题-标签关联
-        create_question_tag_record(db, new_question.id, tag.id)
+          # 创建问题-标签关联
+        create_question_tag_record(db, new_question.id, tag.label)
 
 
 def load_dataset_to_version_work(db: Session, work_id: int, dataset_id: int, version: int) -> bool:
@@ -628,10 +694,10 @@ def load_dataset_to_version_work(db: Session, work_id: int, dataset_id: int, ver
     if not work:
         raise ValueError("Version work not found")
     
-    # 获取指定版本的所有问题
+    # 获取指定版本的所有问题 - 使用current_version_id字段查询
     questions = db.query(StdQuestion).filter(
         StdQuestion.dataset_id == dataset_id,
-        StdQuestion.current_version_id == version,
+        StdQuestion.current_version_id == version,  # 使用current_version_id字段
         StdQuestion.is_valid == True
     ).all()
     
@@ -641,8 +707,8 @@ def load_dataset_to_version_work(db: Session, work_id: int, dataset_id: int, ver
             version_work_id=work_id,
             original_question_id=question.id,
             is_modified=False,
-            is_new=False,
-            is_deleted=False
+            is_deleted=False,
+            is_new=False
         )
         db.add(version_question)
         db.flush()  # 获取ID
@@ -684,7 +750,7 @@ def load_dataset_to_version_work(db: Session, work_id: int, dataset_id: int, ver
             version_tag = VersionTag(
                 version_work_id=work_id,
                 version_question_id=version_question.id,
-                tag_label=tag.tag_label,
+                tag_label=tag.label,
                 is_deleted=False,
                 is_new=False
             )
@@ -692,3 +758,189 @@ def load_dataset_to_version_work(db: Session, work_id: int, dataset_id: int, ver
     
     db.commit()
     return True
+
+
+def _extend_question_answers_version(db: Session, v_question: VersionStdQuestion, original_question: StdQuestion, work: DatasetVersionWork):
+    """扩展未修改问题下答案的版本区间"""
+    from ..models.std_answer import StdAnswer, StdAnswerScoringPoint
+    
+    # 获取该版本问题的所有答案
+    version_answers = db.query(VersionStdAnswer).filter(
+        VersionStdAnswer.version_question_id == v_question.id    ).all()
+    
+    for v_answer in version_answers:
+        if v_answer.is_deleted:
+            continue
+            
+        if not (v_answer.is_new or v_answer.is_modified):
+            # 未修改的答案，扩展原始答案的版本区间
+            if v_answer.original_answer_id:
+                original_answer = db.query(StdAnswer).filter(
+                    StdAnswer.id == v_answer.original_answer_id
+                ).first()
+                if original_answer:
+                    # 扩展版本区间到包含新版本
+                    original_answer.current_version_id = work.target_version
+                    # 得分点作为答案的属性，不需要单独的版本区间管理
+
+
+def _extend_answer_scoring_points_version(db: Session, v_answer: VersionStdAnswer, original_answer: StdAnswer, work: DatasetVersionWork):
+    """得分点作为答案的属性，不需要单独的版本区间管理，此函数保留为空"""
+    # 得分点跟随答案的版本，不需要单独处理
+    pass
+
+
+# ============ Complete Standard QA Pair Creation ============
+
+def create_version_std_qa_pair(
+    db: Session,
+    work_id: int,
+    qa_data: Dict[str, Any]
+) -> Dict[str, Any]:
+    """在版本工作空间中创建完整的标准问答对"""
+    from ..schemas.dataset_version_work import VersionStdQaPairCreate
+    from ..models.std_question import StdQuestion
+    from ..models.std_answer import StdAnswer, StdAnswerScoringPoint
+    from ..models.tag import Tag
+    
+    # 获取版本工作记录
+    work = db.query(DatasetVersionWork).filter(DatasetVersionWork.id == work_id).first()
+    if not work:
+        raise ValueError(f"Version work {work_id} not found")
+    
+    if work.work_status != WorkStatus.IN_PROGRESS:
+        raise ValueError(f"Version work {work_id} is not in progress")
+    
+    # 1. 创建版本问题记录
+    version_question = VersionStdQuestion(
+        version_work_id=work_id,
+        original_question_id=None,  # 新创建的问题没有原始问题ID
+        is_modified=False,
+        is_deleted=False,
+        is_new=True,
+        modified_body=qa_data["question"],
+        modified_question_type=qa_data.get("question_type", "text")
+    )
+    db.add(version_question)
+    db.flush()  # 获取问题ID
+    
+    # 2. 创建版本答案记录
+    version_answer = VersionStdAnswer(
+        version_work_id=work_id,
+        version_question_id=version_question.id,
+        original_answer_id=None,  # 新创建的答案没有原始答案ID
+        is_modified=False,
+        is_deleted=False,
+        is_new=True,
+        modified_answer=qa_data["answer"],
+        modified_answered_by=work.created_by
+    )
+    db.add(version_answer)
+    db.flush()  # 获取答案ID
+    
+    # 3. 同时创建标准问答对到标准表中（版本ID指向目标版本）
+    # 创建标准问题
+    std_question = StdQuestion(
+        dataset_id=work.dataset_id,
+        body=qa_data["question"],
+        question_type=qa_data.get("question_type", "text"),
+        is_valid=True,
+        created_by=work.created_by,
+        version=1,  # 新问题的版本总是从1开始
+        previous_version_id=None,
+        original_version_id=work.target_version,  # 指向目标版本
+        current_version_id=work.target_version     # 指向目标版本
+    )
+    db.add(std_question)
+    db.flush()  # 获取标准问题ID
+    
+    # 创建标准答案
+    std_answer = StdAnswer(
+        std_question_id=std_question.id,
+        answer=qa_data["answer"],
+        is_valid=True,
+        answered_by=work.created_by,
+        version=1,
+        previous_version_id=None,
+        original_version_id=work.target_version,  # 指向目标版本
+        current_version_id=work.target_version     # 指向目标版本
+    )
+    db.add(std_answer)
+    db.flush()  # 获取标准答案ID
+    
+    # 4. 创建得分点（如果有）
+    scoring_point_ids = []
+    if qa_data.get("key_points") and qa_data["question_type"] != "choice":
+        for i, point_content in enumerate(qa_data["key_points"]):
+            if point_content.get("content", "").strip():
+                # 创建版本得分点记录
+                version_scoring_point = VersionScoringPoint(
+                    version_work_id=work_id,
+                    version_answer_id=version_answer.id,
+                    original_point_id=None,
+                    is_modified=False,
+                    is_deleted=False,
+                    is_new=True,
+                    modified_answer=point_content["content"].strip(),
+                    modified_point_order=i + 1
+                )
+                db.add(version_scoring_point)
+                db.flush()
+                scoring_point_ids.append(version_scoring_point.id)
+                
+                # 同时创建标准得分点
+                std_scoring_point = StdAnswerScoringPoint(
+                    std_answer_id=std_answer.id,
+                    answer=point_content["content"].strip(),
+                    point_order=i + 1,
+                    is_valid=True,
+                    answered_by=work.created_by,
+                    version=1,
+                    previous_version_id=None
+                )
+                db.add(std_scoring_point)
+    
+    # 5. 创建标签（如果有）
+    tag_ids = []
+    if qa_data.get("tags"):
+        for tag_name in qa_data["tags"]:
+            tag_name = tag_name.strip()
+            if tag_name:
+                # 先确保Tag表中存在这个标签
+                existing_tag = db.query(Tag).filter(Tag.label == tag_name).first()
+                if not existing_tag:
+                    # 如果不存在，创建新的标签
+                    new_tag = Tag(label=tag_name)
+                    db.add(new_tag)
+                    db.flush()  # 确保标签被创建
+                
+                # 创建版本标签记录
+                version_tag = VersionTag(
+                    version_work_id=work_id,
+                    version_question_id=version_question.id,
+                    tag_label=tag_name,
+                    is_deleted=False,
+                    is_new=True
+                )
+                db.add(version_tag)
+                db.flush()
+                tag_ids.append(version_tag.id)
+                
+                # 同时创建问题-标签关联
+                from ..crud.crud_std_question import create_question_tag_record
+                create_question_tag_record(db, std_question.id, tag_name)
+    
+    # 6. 更新版本问题记录，关联到标准问题ID
+    version_question.original_question_id = std_question.id
+    version_answer.original_answer_id = std_answer.id
+    
+    db.commit()
+    
+    return {
+        "question_id": version_question.id,
+        "answer_id": version_answer.id,
+        "scoring_point_ids": scoring_point_ids,
+        "tag_ids": tag_ids,
+        "std_question_id": std_question.id,
+        "std_answer_id": std_answer.id
+    }

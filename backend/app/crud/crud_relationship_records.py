@@ -1,5 +1,5 @@
 from sqlalchemy.orm import Session
-from sqlalchemy import and_
+from sqlalchemy import and_, text
 from typing import List, Optional
 from app.models.relationship_records import (
     StdAnswerRawAnswerRecord,
@@ -222,3 +222,36 @@ def create_multiple_std_question_raw_question_records(
     for record in records:
         db.refresh(record)
     return records
+
+
+# ============ Question Tag Relationship Operations ============
+
+def create_question_tag_record(db: Session, std_question_id: int, tag_label: str) -> bool:
+    """创建标准问题与标签的关联关系"""
+    try:
+        # 直接在关联表中插入记录
+        db.execute(
+            text("INSERT IGNORE INTO QuestionTagRecords (std_question_id, tag_label) VALUES (:std_question_id, :tag_label)"),
+            {"std_question_id": std_question_id, "tag_label": tag_label}
+        )
+        db.commit()
+        return True
+    except Exception as e:
+        db.rollback()
+        print(f"Error creating question tag record: {e}")
+        return False
+
+
+def delete_question_tag_record(db: Session, std_question_id: int, tag_label: str) -> bool:
+    """删除标准问题与标签的关联关系"""
+    try:
+        result = db.execute(
+            text("DELETE FROM QuestionTagRecords WHERE std_question_id = :std_question_id AND tag_label = :tag_label"),
+            {"std_question_id": std_question_id, "tag_label": tag_label}
+        )
+        db.commit()
+        return result.rowcount > 0
+    except Exception as e:
+        db.rollback()
+        print(f"Error deleting question tag record: {e}")
+        return False

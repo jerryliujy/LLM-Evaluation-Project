@@ -431,3 +431,11 @@ def create_std_question_from_raw_question(
     db.commit()
     db.refresh(std_question)
     return std_question
+
+def get_std_question_tags(db: Session, question_id: int):
+    """获取标准问题的标签"""
+    from ..models.std_question import StdQuestion
+    question = db.query(StdQuestion).filter(StdQuestion.id == question_id).first()
+    if question:
+        return question.tags
+    return []
