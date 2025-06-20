@@ -158,4 +158,10 @@ export const rawQuestionService = {
     });
     return response.data;
   },
+
+  // 更新原始回答
+  async updateRawAnswer(id: number, answerData: Partial<RawAnswer>): Promise<RawAnswer> {
+    const response = await apiClient.put(`/raw_answers/answers/${id}/`, answerData);
+    return response.data;
+  },
 }

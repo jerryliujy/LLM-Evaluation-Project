@@ -1,113 +1,56 @@
 <template>
-  <el-dialog
-    v-model="dialogVisible"
-    :title="dialogTitle"
-    width="700px"
-    :before-close="handleClose"
-  >
-    <el-form
-      ref="formRef"
-      :model="formData"
-      :rules="rules"
-      label-width="80px"
-      label-position="top"
-    >      <el-form-item label="回答内容" prop="answer">
-        <el-input
-          v-model="formData.answer"
-          type="textarea"
-          placeholder="请输入回答内容"
-          :rows="8"
-          maxlength="3000"
-          show-word-limit
-        />
-      </el-form-item>
-
-      <el-row :gutter="20">        <el-col :span="12">
-          <el-form-item label="回答者">
-            <el-input
-              v-model="formData.answered_by"
-              placeholder="请输入回答者名称"
-            />
-          </el-form-item>
-        </el-col>        <el-col :span="12" v-if="type === 'raw'">
-          <el-form-item label="投票数">
-            <el-input
-              v-model="formData.upvotes"
-              placeholder="请输入投票数"              
-            />
-          </el-form-item>
-        </el-col>
-      </el-row>
-
-      <el-row :gutter="20" v-if="type === 'expert'">
-        <el-col :span="12">
-          <el-form-item label="来源" prop="source">
-            <el-input
-              v-model="formData.source"
-              placeholder="请输入答案来源"
-            />
-          </el-form-item>
-        </el-col>        <el-col :span="12">
-          <el-form-item label="回答时间">
-            <el-date-picker
-              v-model="formData.answered_at"
-              type="datetime"
-              placeholder="选择回答时间"
-              style="width: 100%"
-              format="YYYY-MM-DD HH:mm:ss"
-              value-format="YYYY-MM-DD HH:mm:ss"
-            />
-          </el-form-item>
-        </el-col>
-      </el-row>
-
-      <el-row v-if="type === 'raw'">
-        <el-col :span="12">
-          <el-form-item label="回答时间">
-            <el-date-picker
-              v-model="formData.answered_at"
-              type="datetime"
-              placeholder="选择回答时间"
-              style="width: 100%"
-              format="YYYY-MM-DD HH:mm:ss"
-              value-format="YYYY-MM-DD HH:mm:ss"
-            />
-          </el-form-item>
-        </el-col>
-      </el-row>
-
-      <!-- 选择问题 -->
-      <el-form-item label="关联问题" prop="question_id" v-if="!answer">
-        <el-select
-          v-model="formData.question_id"
-          placeholder="请选择关联的问题"
-          style="width: 100%"
-          filterable
-        >
-          <el-option
-            v-for="question in availableQuestions"
-            :key="question.id"
-            :label="question.title"
-            :value="question.id"
-          />
-        </el-select>
-      </el-form-item>
-    </el-form>
-
-    <template #footer>
-      <div class="dialog-footer">
-        <el-button @click="handleClose">取消</el-button>
-        <el-button type="primary" @click="handleSave" :loading="loading">
-          {{ isEdit ? '更新' : '创建' }}
-        </el-button>
+  <div v-if="dialogVisible" class="modal-overlay">
+    <div class="modal-content">
+      <div class="modal-header">
+        <span class="modal-title">{{ dialogTitle }}</span>
+        <button class="modal-close" @click="handleClose">×</button>
       </div>
-    </template>
-  </el-dialog>
+      <form @submit.prevent="handleSave">
+        <div class="form-group">
+          <label>回答内容</label>
+          <textarea v-model="formData.answer" rows="6" maxlength="3000" required placeholder="请输入回答内容"></textarea>
+          <div class="form-hint">{{ formData.answer.length }}/3000</div>
+        </div>
+        <div class="form-row">
+          <div class="form-group">
+            <label>回答者</label>
+            <input v-model="formData.answered_by" type="text" placeholder="请输入回答者名称" />
+          </div>
+          <div class="form-group" v-if="type === 'raw'">
+            <label>投票数</label>
+            <input v-model="formData.upvotes" type="number" min="0" placeholder="请输入投票数" />
+          </div>
+        </div>
+        <div class="form-row">
+          <div class="form-group">
+            <label>回答时间</label>
+            <input v-model="formData.answered_at" type="datetime-local" />
+          </div>
+          <div class="form-group" v-if="type === 'expert'">
+            <label>来源</label>
+            <input v-model="formData.source" type="text" placeholder="请输入答案来源" />
+          </div>
+        </div>
+        <div class="form-group" v-if="!answer">
+          <label>关联问题</label>
+          <select v-model="formData.question_id">
+            <option value="">请选择关联的问题</option>
+            <option v-for="question in availableQuestions" :key="question.id" :value="question.id">
+              {{ question.title }}
+            </option>
+          </select>
+        </div>
+        <div class="modal-footer">
+          <button type="button" @click="handleClose">取消</button>
+          <button type="submit" :disabled="loading">{{ isEdit ? '更新' : '创建' }}</button>
+        </div>
+      </form>
+    </div>
+  </div>
 </template>
 
 <script setup lang="ts">
 import { ref, computed, watch } from 'vue'
-import { ElMessage, type FormInstance, type FormRules } from 'element-plus'
 import { RawAnswer, ExpertAnswer } from '@/types/answers'
 import { useRawQuestionStore } from '@/store/rawQuestionStore'
 
@@ -119,7 +62,7 @@ interface Props {
 
 interface Emits {
   (e: 'update:visible', value: boolean): void
-  (e: 'save'): void
+  (e: 'save', answer: RawAnswer | ExpertAnswer): void
 }
 
 const props = defineProps<Props>()
@@ -127,11 +70,8 @@ const emit = defineEmits<Emits>()
 
 const store = useRawQuestionStore()
 
-// 响应式数据
-const formRef = ref<FormInstance>()
 const loading = ref(false)
 
-// 表单数据
 const formData = ref({
   answer: '',
   answered_by: '',
@@ -143,7 +83,6 @@ const formData = ref({
   create_time: ''
 })
 
-// 计算属性
 const dialogVisible = computed({
   get: () => props.visible,
   set: (value) => emit('update:visible', value)
@@ -158,9 +97,8 @@ const dialogTitle = computed(() => {
 
 const availableQuestions = computed(() => store.questions)
 
-// 重置表单
 const resetForm = () => {
-  const now = new Date().toISOString().slice(0, 19).replace('T', ' ')
+  const now = new Date().toISOString().slice(0, 16)
   formData.value = {
     answer: '',
     answered_by: '',
@@ -173,40 +111,16 @@ const resetForm = () => {
   }
 }
 
-// 表单验证规则
-const rules: FormRules = {
-  answer: [
-    { required: true, message: '请输入回答内容', trigger: 'blur' },
-    { min: 10, message: '回答内容至少需要10个字符', trigger: 'blur' }
-  ],
-  question_id: [
-    { required: true, message: '请选择关联问题', trigger: 'change' }
-  ],
-  source: [
-    { 
-      required: true, 
-      message: '请输入专家回答来源', 
-      trigger: 'blur',
-      validator: (rule: any, value: string, callback: (error?: Error) => void) => {
-        if (props.type === 'expert' && !value) {
-          callback(new Error('请输入专家回答来源'))
-        } else {
-          callback()
-        }
-      }
-    }
-  ]
-}
-
-// 监听props变化
 watch(() => props.answer, (newAnswer) => {
   if (newAnswer) {
-    const answered_at = newAnswer.answered_at 
-      ? (typeof newAnswer.answered_at === 'string' 
-         ? newAnswer.answered_at 
-         : newAnswer.answered_at.toISOString().slice(0, 19).replace('T', ' '))
-      : ''
-    
+    let answered_at = ''
+    if (newAnswer.answered_at) {
+      if (typeof newAnswer.answered_at === 'string') {
+        answered_at = newAnswer.answered_at.length > 16 ? newAnswer.answered_at.slice(0, 16) : newAnswer.answered_at
+      } else {
+        answered_at = new Date(newAnswer.answered_at).toISOString().slice(0, 16)
+      }
+    }
     formData.value = {
       answer: newAnswer.answer,
       answered_by: newAnswer.answered_by || '',
@@ -222,37 +136,41 @@ watch(() => props.answer, (newAnswer) => {
   }
 }, { immediate: true })
 
-// 对话框方法
 const handleClose = () => {
   dialogVisible.value = false
   resetForm()
 }
 
 const handleSave = async () => {
-  if (!formRef.value) return
+  // 简单校验
+  if (!formData.value.answer || formData.value.answer.length < 10) {
+    alert('请输入至少10个字符的回答内容')
+    return
+  }
+  if (!formData.value.question_id && !props.answer) {
+    alert('请选择关联问题')
+    return
+  }
+  if (props.type === 'expert' && !formData.value.source) {
+    alert('请输入专家回答来源')
+    return
+  }
+  loading.value = true
   try {
-    await formRef.value.validate()
-    loading.value = true
-
     const baseAnswerData = {
       id: props.answer?.id || 0,
       answer: formData.value.answer,
       question_id: formData.value.question_id,
       is_deleted: false
     }
-
     if (props.type === 'expert') {
       const expertAnswerData: ExpertAnswer = {
         ...baseAnswerData,
         answered_by: formData.value.answered_by,
-        answered_at: formData.value.answered_at
+        answered_at: formData.value.answered_at,
+        source: formData.value.source
       }
-
-      if (isEdit.value) {
-        store.updateExpertAnswer(expertAnswerData)
-      } else {
-        store.addExpertAnswer(expertAnswerData)
-      }
+      emit('save', expertAnswerData)
     } else {
       const rawAnswerData: RawAnswer = {
         ...baseAnswerData,
@@ -260,20 +178,11 @@ const handleSave = async () => {
         answered_at: formData.value.answered_at,
         upvotes: formData.value.upvotes
       }
-
-      if (isEdit.value) {
-        store.updateRawAnswer(rawAnswerData)
-      } else {
-        store.addRawAnswer(rawAnswerData)
-      }
+      emit('save', rawAnswerData)
     }
-
-    emit('save')
-    ElMessage.success(isEdit.value ? '回答已更新' : '回答已创建')
     handleClose()
   } catch (error) {
-    console.error('保存回答失败:', error)
-    ElMessage.error('保存失败，请重试')
+    alert('保存失败，请重试')
   } finally {
     loading.value = false
   }
@@ -281,9 +190,123 @@ const handleSave = async () => {
 </script>
 
 <style scoped>
-.dialog-footer {
+.modal-overlay {
+  position: fixed;
+  top: 0; left: 0; right: 0; bottom: 0;
+  background: rgba(0,0,0,0.25);
+  z-index: 1000;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+}
+.modal-content {
+  background: #fff;
+  border-radius: 12px;
+  width: 420px;
+  max-width: 95vw;
+  box-shadow: 0 8px 32px rgba(0,0,0,0.18);
+  padding: 28px 28px 18px 28px;
+  position: relative;
+  animation: modal-fade-in 0.18s;
+}
+@keyframes modal-fade-in {
+  from { opacity: 0; transform: translateY(30px); }
+  to { opacity: 1; transform: none; }
+}
+.modal-header {
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+  margin-bottom: 18px;
+}
+.modal-title {
+  font-size: 21px;
+  font-weight: 600;
+  color: #222;
+}
+.modal-close {
+  background: none;
+  border: none;
+  font-size: 26px;
+  cursor: pointer;
+  color: #aaa;
+  transition: color 0.2s;
+}
+.modal-close:hover {
+  color: #409eff;
+}
+.form-group {
+  margin-bottom: 18px;
+  display: flex;
+  flex-direction: column;
+}
+.form-group label {
+  font-size: 15px;
+  color: #333;
+  margin-bottom: 6px;
+  font-weight: 500;
+}
+.form-row {
+  display: flex;
+  gap: 16px;
+}
+.form-row .form-group {
+  flex: 1;
+  margin-bottom: 0;
+}
+textarea, input, select {
+  font-size: 15px;
+  padding: 7px 10px;
+  border: 1px solid #e0e0e0;
+  border-radius: 5px;
+  outline: none;
+  background: #fafbfc;
+  transition: border-color 0.2s;
+}
+textarea:focus, input:focus, select:focus {
+  border-color: #409eff;
+  background: #fff;
+}
+textarea {
+  resize: vertical;
+  min-height: 80px;
+}
+.form-hint {
+  font-size: 12px;
+  color: #aaa;
+  margin-top: 2px;
+  align-self: flex-end;
+}
+.modal-footer {
   display: flex;
   justify-content: flex-end;
-  gap: 12px;
+  gap: 14px;
+  margin-top: 18px;
+}
+.modal-footer button {
+  min-width: 90px;
+  padding: 8px 0;
+  border-radius: 5px;
+  border: none;
+  background: #f3f4f6;
+  color: #333;
+  cursor: pointer;
+  font-size: 15px;
+  font-weight: 500;
+  transition: background 0.18s, color 0.18s;
+}
+.modal-footer button[type="submit"] {
+  background: #409eff;
+  color: #fff;
+}
+.modal-footer button[type="submit"]:hover {
+  background: #337ecc;
+}
+.modal-footer button[type="button"]:hover {
+  background: #e6e8eb;
+}
+.modal-footer button:disabled {
+  opacity: 0.6;
+  cursor: not-allowed;
 }
 </style>

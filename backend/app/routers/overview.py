@@ -51,7 +51,8 @@ async def get_std_questions_overview(
             ExpertAnswer.is_deleted == False
         )),        selectinload(StdQuestion.raw_question_records).selectinload(
             StdQuestionRawQuestionRecord.raw_question
-        ).selectinload(RawQuestion.tags),          selectinload(StdQuestion.std_answers.and_(
+        ).selectinload(RawQuestion.tags),          
+        selectinload(StdQuestion.std_answers.and_(
             StdAnswer.is_valid == True if not include_invalid else True
         )).selectinload(StdAnswer.answered_by_user),
         joinedload(StdQuestion.dataset),  # 修正为正确的关系名称

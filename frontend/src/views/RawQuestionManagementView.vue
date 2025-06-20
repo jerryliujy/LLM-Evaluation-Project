@@ -456,7 +456,7 @@
       v-model:visible="addDialogVisible"
       @save="handleQuestionAnswerSave"
     />
-    
+
     <AnswerEditDialog
       v-model:visible="answerDialogVisible"
       :answer="currentAnswer"
@@ -533,7 +533,7 @@ const standardQADialogVisible = ref(false)
 const importDialogVisible = ref(false)
 const detailDialogVisible = ref(false)
 const currentQuestion = ref<RawQuestion | null>(null)
-const currentAnswer = ref<RawAnswer | ExpertAnswer | null>(null)
+const currentAnswer = ref<RawAnswer | null>(null)
 const currentAnswerType = ref<'raw' | 'expert'>('raw')
 
 // 计算属性
@@ -627,8 +627,6 @@ const loadData = async (loadMore = false) => {
       const newData = response || []
       if (loadMore) {
         allQuestions.value.push(...newData)
-      } else {
-        allQuestions.value = newData
       }} else if (viewMode.value === 'raw-answers') {
       response = await rawQuestionService.getRawAnswersView(skip, limit, include_deleted, deleted_only)      // 将原始回答数据转换为问题格式以便在表格中显示
       const newData = (response.data || []).map((answer: any) => ({
@@ -752,22 +750,35 @@ const editQuestion = (question: RawQuestion) => {
   questionDialogVisible.value = true
 }
 
-// 编辑原始回答（仅显示提示信息，因为原始回答按设计不可编辑）
+// 编辑原始回答（允许编辑）
 const editRawAnswer = (question: RawQuestion) => {
   if (question.is_deleted) {
     showMessage('已删除的原始回答不允许编辑', 'warning')
     return
   }
-  showMessage('根据系统设计，原始回答内容不可编辑，只能删除或恢复', 'info')
+  // 保证 upvotes 字段存在
+  currentAnswer.value = { ...question.original_data, upvotes: question.original_data.upvotes ?? '0' }
+  currentAnswerType.value = 'raw'
+  answerDialogVisible.value = true
 }
 
-// 编辑专家回答（仅显示提示信息，因为编辑功能需要专门的编辑器）
-const editExpertAnswer = (question: RawQuestion) => {
-  if (question.is_deleted) {
-    showMessage('已删除的专家回答不允许编辑', 'warning')
-    return
+// 保存原始回答编辑
+const saveRawAnswerEdit = async (editedAnswer?: RawAnswer) => {
+  const answer = editedAnswer || currentAnswer.value
+  if (!answer) return
+  try {
+    await rawQuestionService.updateRawAnswer(answer.id, {
+      answer: answer.answer,
+      upvotes: answer.upvotes || '0',
+      answered_by: answer.answered_by,
+      answered_at: answer.answered_at
+    })
+    showMessage('原始回答已更新', 'success')
+    answerDialogVisible.value = false
+    await loadData()
+  } catch (error) {
+    showMessage('原始回答更新失败', 'error')
   }
-  showMessage('专家回答编辑功能请使用专家仪表板', 'info')
 }
 
 const viewQuestion = (question: RawQuestion) => {
@@ -957,10 +968,8 @@ const handleQuestionAnswerSave = async (data: { question: Partial<RawQuestion>, 
   }
 }
 
-const handleAnswerSave = () => {
-  showMessage('回答已保存', 'success')
-  answerDialogVisible.value = false
-  loadData() // 重新加载数据
+const handleAnswerSave = (editedAnswer: RawAnswer) => {
+  saveRawAnswerEdit(editedAnswer)
 }
 
 const handleStandardQACreated = () => {

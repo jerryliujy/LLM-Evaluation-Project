@@ -115,6 +115,18 @@ def force_delete_raw_question_api(
     
     return Msg(message=f"Raw question {question_id} permanently deleted")
 
+@router.put("/{question_id}/", response_model=RawQuestion)
+def update_raw_question_api(
+    question_id: int,
+    question_update: RawQuestionCreate,  
+    db: Session = Depends(get_db),
+    current_user: User = Depends(require_admin_or_expert)
+):
+    db_question = crud_raw_question.update_raw_question(db, question_id, question_update)
+    if db_question is None:
+        raise HTTPException(status_code=404, detail="RawQuestion not found")
+    return db_question
+
 @router.post("/delete-multiple/", response_model=Msg)
 def delete_multiple_raw_questions_api(
     question_ids: List[int] = Body(...), 

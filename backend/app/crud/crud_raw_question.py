@@ -73,6 +73,23 @@ def get_raw_questions_paginated(db: Session, skip: int = 0, limit: int = 10, inc
         "has_next": skip + limit < total,
         "has_prev": skip > 0    }
 
+def update_raw_question(db: Session, question_id: int, question_update: schemas.RawQuestionCreate) -> Optional[models.RawQuestion]:
+    db_question = db.query(models.RawQuestion).filter(models.RawQuestion.id == question_id, models.RawQuestion.is_deleted == False).first()
+    if not db_question:
+        return None
+    # 只更新允许的字段
+    db_question.title = question_update.title
+    db_question.url = question_update.url if question_update.url and question_update.url.strip() else None
+    db_question.body = question_update.body
+    db_question.votes = question_update.votes
+    db_question.views = question_update.views
+    db_question.author = question_update.author
+    db_question.tags_json = question_update.tags_json
+    db_question.issued_at = question_update.issued_at
+    db.commit()
+    db.refresh(db_question)
+    return db_question
+
 def set_raw_question_deleted_status(db: Session, question_id: int, deleted_status: bool) -> Optional[models.RawQuestion]:
     db_question = db.query(models.RawQuestion).filter(models.RawQuestion.id == question_id).first()
     if db_question:
@@ -227,3 +244,20 @@ def create_raw_question_with_answers(db: Session, question_data: schemas.RawQues
         # 发生错误时回滚
         db.rollback()
         raise e
+
+def update_raw_question(db: Session, question_id: int, question_update: schemas.RawQuestionCreate) -> Optional[models.RawQuestion]:
+    db_question = db.query(models.RawQuestion).filter(models.RawQuestion.id == question_id, models.RawQuestion.is_deleted == False).first()
+    if not db_question:
+        return None
+    # 只更新允许的字段
+    db_question.title = question_update.title
+    db_question.url = question_update.url if question_update.url and question_update.url.strip() else None
+    db_question.body = question_update.body
+    db_question.votes = question_update.votes
+    db_question.views = question_update.views
+    db_question.author = question_update.author
+    db_question.tags_json = question_update.tags_json
+    db_question.issued_at = question_update.issued_at
+    db.commit()
+    db.refresh(db_question)
+    return db_question

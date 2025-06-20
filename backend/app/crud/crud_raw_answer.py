@@ -112,3 +112,15 @@ def force_delete_raw_answer(db: Session, answer_id: int) -> bool:
         db.rollback()
         print(f"Error in force_delete_raw_answer: {e}")
         return False
+
+def update_raw_answer(db: Session, answer_id: int, answer_update: schemas.RawAnswerBase) -> Optional[models.RawAnswer]:
+    db_answer = db.query(models.RawAnswer).filter(models.RawAnswer.id == answer_id, models.RawAnswer.is_deleted == False).first()
+    if not db_answer:
+        return None
+    db_answer.answer = answer_update.answer
+    db_answer.upvotes = answer_update.upvotes
+    db_answer.answered_by = answer_update.answered_by
+    db_answer.answered_at = answer_update.answered_at
+    db.commit()
+    db.refresh(db_answer)
+    return db_answer

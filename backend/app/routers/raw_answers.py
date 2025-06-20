@@ -2,12 +2,12 @@ from fastapi import APIRouter, Depends, HTTPException, Body, Query
 from sqlalchemy.orm import Session, joinedload
 from typing import List
 from app.crud import crud_raw_answer
-from app.schemas import RawAnswer, RawAnswerCreate, Msg
+from app.schemas import RawAnswer, RawAnswerCreate, Msg, RawAnswerBase
 from app.schemas.common import PaginatedResponse
 from app.models import User
 from app.models.raw_answer import RawAnswer as RawAnswerModel
 from app.db.database import get_db
-from app.auth import get_current_active_user
+from app.auth import get_current_active_user, require_admin_or_expert
 
 router = APIRouter(
     prefix="/api/raw_answers",
@@ -27,6 +27,18 @@ def read_raw_answers_api(
     result = crud_raw_answer.get_raw_answers_paginated(
         db, skip=skip, limit=limit, include_deleted=include_deleted, deleted_only=deleted_only    )
     return result
+
+@router.put("/answers/{answer_id}/", response_model=RawAnswer)
+def update_raw_answer_api(
+    answer_id: int,
+    answer_update: RawAnswerBase,
+    db: Session = Depends(get_db),
+    current_user: User = Depends(require_admin_or_expert)
+):
+    db_answer = crud_raw_answer.update_raw_answer(db, answer_id, answer_update)
+    if db_answer is None:
+        raise HTTPException(status_code=404, detail="RawAnswer not found")
+    return db_answer
 
 @router.delete("/{answer_id}/", response_model=Msg)
 def delete_raw_answer_api(answer_id: int, db: Session = Depends(get_db)):
