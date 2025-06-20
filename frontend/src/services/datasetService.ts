@@ -76,12 +76,9 @@ export const datasetService = {
   },
 
   // 获取数据集详情
-  async getDataset(id: number, version?: number): Promise<Dataset> {
+  async getDataset(id: number, version: number): Promise<Dataset> {
     try {
-      const params: any = {};
-      if (version !== undefined) {
-        params.version = version;
-      }
+      const params: any = { version };
       const response = await apiClient.get(`/datasets/${id}`, { params });
       return response.data;
     } catch (error) {
@@ -140,16 +137,9 @@ export const datasetService = {
   },
 
   // 获取数据集的标准问答对
-  async getDatasetStdQA(
-    datasetId: number, 
-    version?: number
-  ): Promise<any[]> {
+  async getDatasetStdQA(datasetId: number, version: number): Promise<any[]> {
     try {
-      const params: any = {};
-      if (version !== undefined) {
-        params.version = version;
-      }
-      
+      const params: any = { version };
       const response = await apiClient.get(`/datasets/${datasetId}/std-qa`, { params });
       return response.data;
     } catch (error) {

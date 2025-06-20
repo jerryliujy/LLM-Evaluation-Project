@@ -1,6 +1,7 @@
 /**
  * LLM评测相关的API服务 - 任务管理版本
  */
+import { version } from 'vue';
 import { apiClient } from './api';
 
 export interface MarketplaceDataset {
@@ -118,14 +119,18 @@ export const llmEvaluationService = {  // 获取数据集市场列表
   },
 
   // 获取单个数据集信息
-  async getMarketplaceDataset(datasetId: number): Promise<MarketplaceDataset> {
-    const response = await apiClient.get(`/llm-evaluation/marketplace/datasets/${datasetId}`);
+  async getMarketplaceDataset(datasetId: number, versionId: number): Promise<MarketplaceDataset> {
+    const response = await apiClient.get(
+      `/llm-evaluation/marketplace/datasets/${datasetId}`, 
+      { params: { version: versionId } });
     return response.data;
   },
 
   // 下载数据集
-  async downloadDataset(datasetId: number): Promise<DatasetDownloadResponse> {
-    const response = await apiClient.get(`/llm-evaluation/marketplace/datasets/${datasetId}/download`);
+  async downloadDataset(datasetId: number, versionId: number): Promise<DatasetDownloadResponse> {
+    const response = await apiClient.get(
+      `/llm-evaluation/marketplace/datasets/${datasetId}/download/`, 
+      { params: { version: versionId }});
     return response.data;
   },
 
@@ -201,8 +206,10 @@ export const llmEvaluationService = {  // 获取数据集市场列表
   },
 
   // 获取单个数据集详情
-  async getDatasetInfo(datasetId: number): Promise<MarketplaceDataset> {
-    const response = await apiClient.get(`/llm-evaluation/marketplace/datasets/${datasetId}`);
+  async getDatasetInfo(datasetId: number, versionId: number): Promise<MarketplaceDataset> {
+    const response = await apiClient.get(
+      `/llm-evaluation/marketplace/datasets/${datasetId}`, 
+      { params: { version: versionId }});
     return response.data;
   },
 
@@ -320,8 +327,8 @@ export const llmEvaluationService = {  // 获取数据集市场列表
   },  
   
   // 获取数据集的问题列表
-  async getDatasetQuestions(datasetId: number): Promise<any> {
-    const response = await apiClient.get(`/llm-evaluation/datasets/${datasetId}/questions`);
+  async getDatasetQuestions(datasetId: number, versionId: number): Promise<any> {
+    const response = await apiClient.get(`/llm-evaluation/datasets/${datasetId}/questions`, { params: { version: versionId } });
     return response.data;
   },
 

@@ -146,7 +146,7 @@ def get_marketplace_dataset(
         if not dataset:
             raise HTTPException(
                 status_code=status.HTTP_404_NOT_FOUND,
-                detail="Dataset version not found or not public"            )
+                detail="Dataset version not found or not public")
     
     # 获取数据集的所有标准问题（使用版本范围查询）
     std_questions = db.query(StdQuestion).filter(

@@ -1656,7 +1656,7 @@
 </template>
 
 <script setup lang="ts">
-import { ref, reactive, computed, watch, onMounted, onUnmounted } from 'vue'
+import { ref, reactive, computed, watch, onMounted, onUnmounted, version } from 'vue'
 import { useRoute, useRouter, onBeforeRouteLeave } from 'vue-router'
 import { llmEvaluationService } from '@/services/llmEvaluationService'
 import ManualEvaluationEntry from '@/components/ManualEvaluationEntry.vue'
@@ -2009,6 +2009,7 @@ const initializeView = async () => {
   try {
     // 获取路由参数
     const datasetId = route.params.datasetId as string
+    const versionId = route.params.versionId as string
     const taskId = route.query.taskId as string
     const step = route.query.step as string
     const view = route.query.view as string
@@ -2019,7 +2020,7 @@ const initializeView = async () => {
     }
     
     // 加载数据集信息
-    await loadDatasetInfo(parseInt(datasetId))
+    await loadDatasetInfo(parseInt(datasetId), parseInt(versionId))
     
     // 加载可用模型和默认prompt
     await Promise.all([
@@ -2190,9 +2191,10 @@ const resumeTaskForResults = async (taskId: number) => {
 }
 
 // 加载数据集信息
-const loadDatasetInfo = async (datasetId: number) => {
+const loadDatasetInfo = async (datasetId: number, versionId: number) => {
   try {
-    currentDataset.value = await llmEvaluationService.getDatasetInfo(datasetId)
+    console.log("load version:", versionId)
+    currentDataset.value = await llmEvaluationService.getDatasetInfo(datasetId, versionId)
   } catch (error) {
     console.error('加载数据集信息失败:', error)
     showMessage('加载数据集信息失败', 'error')
@@ -2319,12 +2321,6 @@ const saveCurrentStepConfig = async () => {
     showMessage('保存配置失败', 'error')
   }
 }
-
-// 这个方法已不再使用 -   // 任务只在用户点击"开始生成答案"时创建
-// const createNewTask = async () => {
-//   // 移除了自动创建任务的逻辑
-//   // 任务会在startAnswerGeneration()中创建
-// }
 
 const prevStep = () => {
   if (currentStep.value > 0) {

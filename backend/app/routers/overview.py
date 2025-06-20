@@ -28,6 +28,7 @@ async def get_std_questions_overview(
     db: Session = Depends(get_db)
 ):
     """获取标准问题总览（包含关联的原始问题和标准答案）"""
+    print(f"Version ID: {version}")
     
     # 构建基础查询 - 通过关系表关联原始问题，并只包含未删除的原始问题
     query = db.query(StdQuestion).join(

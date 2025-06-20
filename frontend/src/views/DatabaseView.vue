@@ -1,12 +1,15 @@
 <template>
-  <div class="database-view">    <div class="header">
+  <div class="database-view">    
+    <div class="header">
       <div class="header-left">
         <div class="dataset-info" v-if="currentDataset">
           <h2>{{ currentDataset.name }}</h2>
           <p class="dataset-description">{{ currentDataset.description }}</p>
         </div>
         <h2 v-else>数据库管理</h2>
-      </div>      <div class="header-actions">        <select v-model="selectedTable" @change="loadTableData" class="table-select">
+      </div>      
+      <div class="header-actions">        
+        <select v-model="selectedTable" @change="loadTableData" class="table-select">
           <option value="overview_std">标准问答总览</option>
           <option value="std_questions">标准问题</option>
           <option value="std_answers">标准答案</option>
@@ -35,7 +38,8 @@
         <span class="stat-value">{{ deletedCount }}</span>
       </div>
     </div>    <!-- 操作栏 -->
-    <div class="actions-bar" v-if="!isOverviewTable">      <div class="bulk-actions">
+    <div class="actions-bar" v-if="!isOverviewTable">      
+      <div class="bulk-actions">
         <button 
           @click="selectAll" 
           class="action-btn"
@@ -722,7 +726,7 @@
 </template>
 
 <script setup lang="ts">
-import { ref, computed, onMounted } from "vue";
+import { ref, computed, onMounted, watch } from "vue";
 import { useRoute, useRouter } from "vue-router";
 import { databaseService } from "@/services/databaseService";
 import { datasetService } from "@/services/datasetService";
@@ -757,7 +761,8 @@ interface DatabaseItem {
 
 // 响应式数据
 const selectedTable = ref<TableName>("overview_std");
-const currentDatasetId = ref<number | undefined>(undefined);
+const currentDatasetId = ref<number | null>(null);
+const currentVersion = ref<number | null>(null);
 const currentDataset = ref<any>(null);
 const currentData = ref<DatabaseItem[]>([]);
 const selectedItems = ref<number[]>([]);
@@ -868,9 +873,9 @@ const deletedCount = computed(() => {
 
 const loadDataset = async (versionNumber?: number) => {
   if (!currentDatasetId.value) return;
-  
+
   try {
-    currentDataset.value = await datasetService.getDataset(currentDatasetId.value, versionNumber);
+    currentDataset.value = await datasetService.getDataset(currentDatasetId.value, currentVersion.value);
   } catch (error) {
     showMessage("加载数据集信息失败", "error");
     console.error("Load dataset error:", error);
@@ -895,18 +900,19 @@ const loadTableData = async () => {
     }    
     
     // 获取当前数据集的版本信息
-    const currentVersion = currentDataset.value?.version;
+    const version = currentVersion.value === null ? undefined : currentVersion.value;
+    const datasetId = currentDatasetId.value === null ? undefined : currentDatasetId.value;
     
     let result;
     if (selectedTable.value === 'overview_std') {
       result = await databaseService.getStdQuestionsOverview(
         skip,
         limit,
-        currentDatasetId.value,
+        datasetId,
         searchQuery.value || undefined,
         tagFilter.value || undefined,
         questionTypeFilter.value || undefined,
-        currentVersion
+        version
       );    
     } else {
       result = await databaseService.getTableData(
@@ -914,7 +920,7 @@ const loadTableData = async () => {
         skip,
         limit,
         includeDeleted,
-        currentDatasetId.value,
+        datasetId,
         deletedOnly,
         searchQuery.value || undefined,
         tagFilter.value || undefined,
@@ -922,7 +928,7 @@ const loadTableData = async () => {
         stdQuestionFilter.value || undefined,
         scoringPointFilter.value || undefined,
         scoringPointsFilter.value || undefined,
-        currentVersion
+        version
       );
     }
     currentData.value = result.data;    // 特殊处理标准问题数据，添加 tags、dataset_name 和答案摘要字段
@@ -1516,9 +1522,17 @@ const removeScoringPoint = (index: number) => {
 
 // 生命周期
 onMounted(async () => {
+  // 从路由参数获取id和version
+  if (route.params.id) {
+    currentDatasetId.value = Number(route.params.id);
+  }
+  if (route.params.version) {
+    currentVersion.value = Number(route.params.version);
+  }
   // 从路由参数获取数据集ID和版本
   const datasetId = route.params.id || route.query.dataset;
   const version = route.params.version || route.query.version;
+  console.log("current version:", version)
   
   if (datasetId && !isNaN(Number(datasetId))) {
     currentDatasetId.value = Number(datasetId);

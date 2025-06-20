@@ -575,6 +575,7 @@ def _apply_version_changes(db: Session, work: DatasetVersionWork):
 def _create_new_std_question(db: Session, v_question: VersionStdQuestion, work: DatasetVersionWork) -> StdQuestion:
     """创建新的标准问题"""
     from ..models.std_question import StdQuestion
+    from ..models.relationship_records import StdQuestionRawQuestionRecord
     
     # 确定问题内容和类型
     if v_question.is_new:
@@ -615,6 +616,29 @@ def _create_new_std_question(db: Session, v_question: VersionStdQuestion, work: 
     # 处理标签
     _process_question_tags(db, v_question, new_question)
     
+    # 处理原始问题关联
+    raw_question_ids = getattr(v_question, 'raw_question_ids', None)
+    if raw_question_ids:
+        for raw_question_id in raw_question_ids:
+            record = StdQuestionRawQuestionRecord(
+                std_question_id=new_question.id,
+                raw_question_id=raw_question_id,
+                created_by=work.created_by
+            )
+            db.add(record)
+    # 对于被修改的问题，如果没有raw_question_ids，则自动继承原问题的关联
+    if v_question.is_modified and not raw_question_ids:
+        from ..models.relationship_records import StdQuestionRawQuestionRecord
+        original_records = db.query(StdQuestionRawQuestionRecord).filter(
+            StdQuestionRawQuestionRecord.std_question_id == v_question.original_question_id
+        ).all()
+        for rec in original_records:
+            record = StdQuestionRawQuestionRecord(
+                std_question_id=new_question.id,
+                raw_question_id=rec.raw_question_id,
+                created_by=work.created_by
+            )
+            db.add(record)
     return new_question
 
 
@@ -688,6 +712,7 @@ def _process_question_answers(db: Session, v_question: VersionStdQuestion, new_q
 def _create_new_std_answer(db: Session, v_answer: VersionStdAnswer, new_question: StdQuestion, work: DatasetVersionWork) -> StdAnswer:
     """创建新的标准答案"""
     from ..models.std_answer import StdAnswer
+    from ..models.relationship_records import StdAnswerRawAnswerRecord, StdAnswerExpertAnswerRecord
     
     if v_answer.is_new:
         answer_text = v_answer.modified_answer
@@ -724,6 +749,52 @@ def _create_new_std_answer(db: Session, v_answer: VersionStdAnswer, new_question
     
     db.add(new_answer)
     db.flush()
+
+    # 处理原始回答关联
+    raw_answer_ids = getattr(v_answer, 'raw_answer_ids', None)
+    if raw_answer_ids:
+        for raw_answer_id in raw_answer_ids:
+            record = StdAnswerRawAnswerRecord(
+                std_answer_id=new_answer.id,
+                raw_answer_id=raw_answer_id,
+                created_by=work.created_by
+            )
+            db.add(record)
+    # 对于被修改的答案，如果没有raw_answer_ids，则自动继承原答案的关联
+    if v_answer.is_modified and not raw_answer_ids:
+        original_records = db.query(StdAnswerRawAnswerRecord).filter(
+            StdAnswerRawAnswerRecord.std_answer_id == v_answer.original_answer_id
+        ).all()
+        for rec in original_records:
+            record = StdAnswerRawAnswerRecord(
+                std_answer_id=new_answer.id,
+                raw_answer_id=rec.raw_answer_id,
+                created_by=work.created_by
+            )
+            db.add(record)
+
+    # 处理专家回答关联
+    expert_answer_ids = getattr(v_answer, 'expert_answer_ids', None)
+    if expert_answer_ids:
+        for expert_answer_id in expert_answer_ids:
+            record = StdAnswerExpertAnswerRecord(
+                std_answer_id=new_answer.id,
+                expert_answer_id=expert_answer_id,
+                created_by=work.created_by
+            )
+            db.add(record)
+    # 对于被修改的答案，如果没有expert_answer_ids，则自动继承原答案的关联
+    if v_answer.is_modified and not expert_answer_ids:
+        original_records = db.query(StdAnswerExpertAnswerRecord).filter(
+            StdAnswerExpertAnswerRecord.std_answer_id == v_answer.original_answer_id
+        ).all()
+        for rec in original_records:
+            record = StdAnswerExpertAnswerRecord(
+                std_answer_id=new_answer.id,
+                expert_answer_id=rec.expert_answer_id,
+                created_by=work.created_by
+            )
+            db.add(record)
     return new_answer
 
 
@@ -823,7 +894,7 @@ def _process_question_tags(db: Session, v_question: VersionStdQuestion, new_ques
             continue
             
         # 查找或创建标签
-        tag = db.query(Tag).filter(Tag.tag_label == v_tag.tag_label).first()
+        tag = db.query(Tag).filter(Tag.label == v_tag.tag_label).first()
         if not tag:
             tag = Tag(tag_label=v_tag.tag_label)
             db.add(tag)
@@ -971,6 +1042,18 @@ def create_version_std_qa_pair(
     )
     db.add(std_question)
     db.flush()  # 获取标准问题ID
+
+    # 处理原始问题关联
+    raw_question_ids = qa_data["raw_question_ids"]
+    if raw_question_ids:
+        from ..models.relationship_records import StdQuestionRawQuestionRecord
+        for raw_question_id in raw_question_ids:
+            record = StdQuestionRawQuestionRecord(
+                std_question_id=std_question.id,
+                raw_question_id=raw_question_id,
+                created_by=work.created_by
+            )
+            db.add(record)
     
     # 创建标准答案
     std_answer = StdAnswer(
@@ -985,28 +1068,30 @@ def create_version_std_qa_pair(
     )
     db.add(std_answer)
     db.flush()  # 获取标准答案ID
-    
-    # 4. 创建得分点（如果有）
-    scoring_point_ids = []
-    if qa_data.get("key_points"):
-        for i, point in enumerate(qa_data["key_points"]):
-            # 处理point可能是字典或字符串的情况
-            if isinstance(point, dict):
-                point_content = point.get("content", "")
-            else:
-                point_content = str(point)
-            
-            if point_content.strip():  # 只创建非空的得分点
-                scoring_point = StdAnswerScoringPoint(
-                    std_answer_id=std_answer.id,
-                    answer=point_content.strip(),
-                    point_order=i + 1,
-                    is_valid=True,
-                    answered_by=work.created_by
-                )
-                db.add(scoring_point)
-                db.flush()
-                scoring_point_ids.append(scoring_point.id)
+
+    # 4.1. 处理原始回答关联
+    raw_answer_ids = qa_data["raw_answer_ids"]
+    if raw_answer_ids:
+        from ..models.relationship_records import StdAnswerRawAnswerRecord
+        for raw_answer_id in raw_answer_ids:
+            record = StdAnswerRawAnswerRecord(
+                std_answer_id=std_answer.id,
+                raw_answer_id=raw_answer_id,
+                created_by=work.created_by
+            )
+            db.add(record)
+
+    # 4.2. 处理专家回答关联
+    expert_answer_ids = qa_data["expert_answer_ids"]
+    if expert_answer_ids:
+        from ..models.relationship_records import StdAnswerExpertAnswerRecord
+        for expert_answer_id in expert_answer_ids:
+            record = StdAnswerExpertAnswerRecord(
+                std_answer_id=std_answer.id,
+                expert_answer_id=expert_answer_id,
+                created_by=work.created_by
+            )
+            db.add(record)
     
     # 5. 创建版本问题记录
     version_question = VersionStdQuestion(
@@ -1020,6 +1105,33 @@ def create_version_std_qa_pair(
     )
     db.add(version_question)
     db.flush()
+
+    # 5.1. 写入VersionTag表：合并原始问题tag和qa_data['tags']
+    # 先获取所有引用的原始问题ID
+    tag_set = set()
+    if raw_question_ids:
+        from ..models.raw_question import RawQuestion
+        for raw_qid in raw_question_ids:
+            raw_q = db.query(RawQuestion).filter(RawQuestion.id == raw_qid).first()
+            if raw_q and raw_q.tags:
+                for tag in raw_q.tags:
+                    tag_set.add(tag.label)
+                    
+    # 再加上qa_data['tags']
+    for tag in qa_data.get('tags', []):
+        tag_set.add(tag)
+        
+    # 写入VersionTag表
+    from ..models.version_tables import VersionTag
+    for tag_label in tag_set:
+        version_tag = VersionTag(
+            version_work_id=work_id,
+            version_question_id=version_question.id,
+            tag_label=tag_label,
+            is_deleted=False,
+            is_new=True
+        )
+        db.add(version_tag)
     
     # 6. 创建版本答案记录
     version_answer = VersionStdAnswer(
@@ -1035,11 +1147,32 @@ def create_version_std_qa_pair(
     db.flush()
     
     # 7. 创建版本得分点记录
+    scoring_point_ids = []
+    if qa_data.get("key_points"):
+        for i, point in enumerate(qa_data["key_points"]):
+            # 处理point可能是字典或字符串的情况
+            if isinstance(point, dict):
+                point_content = point.get("answer", "")
+            else:
+                point_content = str(point)
+            
+            if point_content.strip():  # 只创建非空的得分点
+                scoring_point = StdAnswerScoringPoint(
+                    std_answer_id=std_answer.id,
+                    answer=point_content.strip(),
+                    point_order=i + 1,
+                    is_valid=True,
+                    answered_by=work.created_by
+                )
+                db.add(scoring_point)
+                db.flush()
+                scoring_point_ids.append(scoring_point.id)
+    
     for i, point_id in enumerate(scoring_point_ids):
         # 处理point可能是字典或字符串的情况
         point = qa_data["key_points"][i]
         if isinstance(point, dict):
-            point_content = point.get("content", "")
+            point_content = point.get("answer", "")
         else:
             point_content = str(point)
         

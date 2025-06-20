@@ -262,7 +262,7 @@
 </template>
 
 <script setup lang="ts">
-import { ref, computed, onMounted, onUnmounted } from "vue";
+import { ref, computed, onMounted, onUnmounted, version } from "vue";
 import { useRouter, useRoute } from "vue-router";
 import { datasetService, type DatasetWithStats, type DatasetCreate } from "@/services/datasetService";
 import { authService, type User } from "@/services/authService";
@@ -328,7 +328,8 @@ const enterDataset = (dataset: DatasetWithStats) => {
   // 跳转到数据库查看页面，传递数据集ID
   router.push({
     name: "DatabaseView",
-    params: { id: dataset.id.toString() }
+    params: { id: dataset.id.toString(),
+              version: dataset.version.toString()}
   });
 };
 
@@ -348,10 +349,11 @@ const goToDataImportForNew = () => {
 };
 
 const goToLLMEvaluation = (dataset: DatasetWithStats) => {
-  // 跳转到LLM评测页面，传递数据集ID
+  console.log("current version:", dataset.version)
+  // 跳转到LLM评测页面，传递数据集ID和版本ID
   router.push({
     name: "LLMEvaluation",
-    params: { datasetId: dataset.id.toString() }
+    params: { datasetId: dataset.id.toString(), versionId: dataset.version.toString() }
   });
 };
 
@@ -369,7 +371,7 @@ const downloadDataset = async (dataset: DatasetWithStats) => {
   downloadingId.value = dataset.id;
   try {
     // 调用LLM评测服务的下载API
-    const response = await llmEvaluationService.downloadDataset(dataset.id);
+    const response = await llmEvaluationService.downloadDataset(dataset.id, dataset.version);
     
     // 创建下载链接
     const blob = new Blob([JSON.stringify(response, null, 2)], {

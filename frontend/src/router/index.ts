@@ -50,15 +50,8 @@ const routes: Array<RouteRecordRaw> = [
     meta: { requiresAuth: true, role: 'admin' }
   },
   {
-    path: "/database/:id",
-    name: "DatabaseView",
-    component: DatabaseView,
-    meta: { requiresAuth: true },
-    props: true
-  },
-  {
     path: "/database/:id/version/:version",
-    name: "DatabaseViewWithVersion",
+    name: "DatabaseView",
     component: DatabaseView,
     meta: { requiresAuth: true },
     props: true
@@ -103,7 +96,7 @@ const routes: Array<RouteRecordRaw> = [
     meta: { requiresAuth: true, role: 'user' }
   },
   {
-    path: "/llm-evaluation/:datasetId?",
+    path: "/llm-evaluation/:datasetId/version/:versionId",
     name: "LLMEvaluation", 
     component: () => import("../views/LLMEvaluationView.vue"),
     meta: { requiresAuth: true, role: 'user' },
